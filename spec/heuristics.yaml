@@ -1,0 +1,21 @@
+semantic:
+  tissue_cell_keywords: ["cell", "cells"]
+  tissue_cell_suffixes: ["cells", "cell", "lymphocyte", "neuron", "macrophage"]
+  treatment_identity_keywords: ["cell", "cells"]
+  treatment_genotype_keywords: ["ko", "knockout", "transgenic", "+/+", "+/-", "-/-", "cre"]
+  treatment_tissue_keywords: ["liver", "brain", "blood", "intestine"]
+
+  disease_cues: ["disease", "tumor", "cancer", "carcinoma", "leukemia", "lymphoma", "infection", "patient", "diagnos"]
+
+consistency:
+  single_cell_data_types: ["scRNA-seq", "snRNA-seq", "scATAC-seq", "snATAC-seq"]
+  single_cell_keywords: ["single cell", "single-cell", "single nucleus", "single-nucleus", "10x", "chromium", "drop-seq", "smart-seq"]
+
+  microarray_data_type: "Microarray"
+  sequencing_keywords: ["rna-seq", "atac-seq", "chip-seq", "nextseq", "novaseq", "hiseq", "miseq", "sequencing"]
+
+  healthy_value: "Healthy"
+  disease_keywords: ["tumor", "cancer", "carcinoma", "leukemia", "lymphoma", "disease:"]
+
+  organism_conflicts:
+    - ["Mus musculus", "Homo sapiens"]
