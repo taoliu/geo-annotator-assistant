@@ -1,0 +1,36 @@
+# Example configuration for geo-gsm-annotator-agent
+
+versions:
+  prompt_version: "v1"
+  validator_version: "v1"
+
+parser:
+  # Integrate your existing geo-gsm-parser repo here (module import or subprocess wrapper).
+  mode: "stub"           # stub | module | subprocess
+  module_path: ""        # used if mode=module
+  command: ""            # used if mode=subprocess
+
+llm:
+  mode: "stub"           # stub | api | local
+  model_name: "ft-geo-labeler"
+  timeout_seconds: 60
+
+rag:
+  persist_path: "/path/to/chroma_persist"
+  collections:
+    EFO: "efo_assay"
+    UBERON: "uberon"
+    CELLOSAURUS: "cellosaurus"
+    DOID: "doid"
+    NCIT: "ncit_malignant_neoplasm_descendants"
+  k: 10
+
+thresholds:
+  data_type: 0.75
+  tissue_type: 0.75
+  cell_line: 0.80
+  disease: 0.75
+
+limits:
+  max_repairs_per_field: 2
+  max_total_repairs: 6

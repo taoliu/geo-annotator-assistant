@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "geo-gsm-annotator-agent"
+version = "0.1.0"
+description = "Ontology-grounded AI agent for GEO GSM metadata annotation"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{name="Team"}]
+dependencies = [
+  "pyyaml>=6.0",
+  "jsonschema>=4.20",
+  "chromadb>=0.5.0",
+]
+
+[project.scripts]
+geo-gsm-annotate = "agent.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

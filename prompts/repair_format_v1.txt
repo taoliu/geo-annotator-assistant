@@ -1,0 +1,6 @@
+Fix the output to be VALID JSON ONLY, with exactly these keys:
+gse_accession, gsm_accession, data_type, organism, tissue_type, cell_line, disease, treatment
+No extra text.
+
+BAD OUTPUT:
+{{BAD_OUTPUT}}

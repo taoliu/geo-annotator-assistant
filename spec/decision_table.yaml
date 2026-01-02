@@ -1,0 +1,82 @@
+# Deterministic mapping from failure codes to actions.
+# action: ACCEPT | REPAIR | FALLBACK | ESCALATE
+
+invalid_json:
+  action: REPAIR
+  field: null
+  repair_template: repair_format_v1
+  max_attempts: 2
+  fallback_value: null
+  severity: high
+
+missing_keys:
+  action: REPAIR
+  field: null
+  repair_template: repair_missing_keys_v1
+  max_attempts: 2
+  fallback_value: null
+  severity: high
+
+extra_keys:
+  action: REPAIR
+  field: null
+  repair_template: repair_remove_extra_keys_v1
+  max_attempts: 2
+  fallback_value: null
+  severity: high
+
+word_limit_violation:
+  action: REPAIR
+  field: null
+  repair_template: repair_shorten_values_v1
+  max_attempts: 2
+  fallback_value: null
+  severity: medium
+
+ontology_no_match:
+  action: REPAIR
+  field: null
+  repair_template: repair_ontology_guided_v1
+  max_attempts: 2
+  fallback_value: null
+  severity: high
+
+tissue_is_cell_type:
+  action: REPAIR
+  field: tissue_type
+  repair_template: repair_tissue_v1
+  max_attempts: 2
+  fallback_value: "Unknown"
+  severity: medium
+
+treatment_identity_leakage:
+  action: REPAIR
+  field: treatment
+  repair_template: repair_treatment_v1
+  max_attempts: 2
+  fallback_value: "None"
+  severity: medium
+
+assay_platform_conflict:
+  action: REPAIR
+  field: data_type
+  repair_template: repair_data_type_v1
+  max_attempts: 2
+  fallback_value: null
+  severity: high
+
+disease_unsupported:
+  action: FALLBACK
+  field: disease
+  repair_template: null
+  max_attempts: 0
+  fallback_value: "Healthy"
+  severity: medium
+
+repeated_failure:
+  action: ESCALATE
+  field: null
+  repair_template: null
+  max_attempts: 0
+  fallback_value: null
+  severity: high
