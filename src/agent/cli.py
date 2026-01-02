@@ -5,10 +5,11 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import Any
 
 from agent.config import load_config
-from agent.prompts import load_prompts
+from agent.run_batch import run_batch
+from agent.run_single import run_single_gsm
+from agent.writer import write_run_outputs
 
 
 class _ArgumentParser(argparse.ArgumentParser):
@@ -35,41 +36,21 @@ def _read_gsm_file(path: str) -> list[str]:
     return gsm_ids
 
 
-def _get_nested(config: dict[str, Any], *keys: str) -> Any:
-    current: Any = config
-    for key in keys:
-        if not isinstance(current, dict):
-            return None
-        current = current.get(key)
-    return current
-
-
-def _print_summary(gsm_ids: list[str], config: dict[str, Any], prompts: dict[str, str]) -> None:
-    print(f"GSM count: {len(gsm_ids)}")
-
-    prompt_version = _get_nested(config, "versions", "prompt_version")
-    if prompt_version is not None:
-        print(f"Prompt version: {prompt_version}")
-
-    validator_version = _get_nested(config, "versions", "validator_version")
-    if validator_version is not None:
-        print(f"Validator version: {validator_version}")
-
-    rag_persist_path = _get_nested(config, "rag", "persist_path")
-    if rag_persist_path is None:
-        rag_persist_path = "(missing)"
-    print(f"RAG persist path: {rag_persist_path}")
-
-    rag_collections = _get_nested(config, "rag", "collections")
-    if isinstance(rag_collections, dict):
-        collection_keys = sorted(rag_collections.keys())
-    else:
-        collection_keys = []
-    collections_label = ", ".join(collection_keys) if collection_keys else "(none)"
-    print(f"RAG collections: {collections_label}")
-
-    prompt_files = ", ".join(sorted(prompts.keys()))
-    print(f"Loaded prompts: {prompt_files}")
+def _print_summary(
+    summary: dict[str, int],
+    output_paths: dict[str, str] | None,
+    dry_run: bool,
+) -> None:
+    print(f"Total: {summary['n_total']}")
+    print(f"Accepted: {summary['n_accepted']}")
+    print(f"Flagged: {summary['n_flagged']}")
+    if dry_run:
+        print("Dry-run: no files written")
+        return
+    if output_paths:
+        print(f"Annotations: {output_paths.get('annotations', '')}")
+        print(f"Audit: {output_paths.get('audit', '')}")
+        print(f"Flagged: {output_paths.get('flagged', '')}")
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -79,7 +60,11 @@ def _build_parser() -> argparse.ArgumentParser:
     group.add_argument("--gsm-file", help="Path to a file containing GSM identifiers.")
     parser.add_argument("--output-dir", default="outputs", help="Directory for outputs.")
     parser.add_argument("--config", required=True, help="Path to YAML config file.")
-    parser.add_argument("--dry-run", action="store_true", help="Load config/prompts only.")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run the pipeline but skip writing output files.",
+    )
     return parser
 
 
@@ -88,20 +73,29 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     try:
-        if args.gsm:
-            gsm_ids = [args.gsm]
-        else:
-            gsm_ids = _read_gsm_file(args.gsm_file)
-
         config = load_config(args.config)
 
-        prompt_dir = Path.cwd() / "prompts"
-        prompts = load_prompts(str(prompt_dir))
+        if args.gsm:
+            annotation, audit, is_flagged = run_single_gsm(args.gsm, config)
+            annotations = [annotation]
+            audits = [audit]
+            flagged = [annotation] if is_flagged else []
+            summary = {
+                "n_total": 1,
+                "n_accepted": 0 if is_flagged else 1,
+                "n_flagged": 1 if is_flagged else 0,
+            }
+        else:
+            gsm_ids = _read_gsm_file(args.gsm_file)
+            annotations, audits, flagged, summary = run_batch(gsm_ids, config)
 
-        _print_summary(gsm_ids, config, prompts)
-
+        output_paths = None
         if not args.dry_run:
-            print("Pipeline stub: no processing performed.")
+            output_paths = write_run_outputs(
+                args.output_dir, annotations, audits, flagged
+            )
+
+        _print_summary(summary, output_paths, args.dry_run)
     except Exception as exc:
         print(f"runtime error: {exc}", file=sys.stderr)
         raise SystemExit(2) from exc
