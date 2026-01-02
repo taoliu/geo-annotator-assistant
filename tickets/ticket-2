@@ -1,3 +1,5 @@
+Ticket #2: AGENT-WS-002 Implement Decision engine
+
 You are working in repo `geo-gsm-annotator-agent`.
 
 Goal: implement the deterministic decision engine that maps validation failures to next actions, using the existing YAML decision table at `spec/decision_table.yaml`.
