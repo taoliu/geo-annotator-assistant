@@ -13,24 +13,41 @@ def consistency_validate(parsed_output: Dict[str, str], context_text: str) -> Li
 
     dt = parsed_output.get("data_type", "").lower()
     if dt in {"scrna-seq", "snrna-seq", "scatac-seq", "snatac-seq"}:
-        sc_kw = ["single cell", "single-cell", "single nucleus", "single-nucleus", "10x", "smart-seq", "drop-seq", "chromium"]
+        sc_kw = [
+            "single cell",
+            "single-cell",
+            "single nucleus",
+            "single-nucleus",
+            "10x",
+            "chromium",
+            "drop-seq",
+            "smart-seq",
+        ]
         if not any(k in ctx for k in sc_kw):
             flags.append(SINGLE_CELL_EVIDENCE_MISSING)
 
     if dt == "microarray":
-        seq_kw = ["illumina novaseq", "nextseq", "hiseq", "miseq", "sequencing", "rna-seq", "atac-seq", "chip-seq"]
+        seq_kw = [
+            "rna-seq",
+            "atac-seq",
+            "chip-seq",
+            "nextseq",
+            "novaseq",
+            "hiseq",
+            "miseq",
+            "sequencing",
+        ]
         if any(k in ctx for k in seq_kw):
             flags.append(ASSAY_PLATFORM_CONFLICT)
 
-    disease = parsed_output.get("disease", "")
-    if disease == "Healthy":
-        disease_kw = ["tumor", "cancer", "carcinoma", "leukemia", "lymphoma", "disease:", "infect"]
+    disease = parsed_output.get("disease", "").lower()
+    if disease == "healthy":
+        disease_kw = ["tumor", "cancer", "carcinoma", "leukemia", "lymphoma", "disease:"]
         if any(k in ctx for k in disease_kw):
             flags.append(HEALTHY_DISEASE_CONFLICT)
 
     org = parsed_output.get("organism", "").lower()
     if org:
-        # simple check for common mismatches
         if "mus musculus" in org and "homo sapiens" in ctx:
             flags.append(ORGANISM_CONTEXT_CONFLICT)
         if "homo sapiens" in org and "mus musculus" in ctx:
