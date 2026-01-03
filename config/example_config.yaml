@@ -11,9 +11,15 @@ parser:
   command: ""            # used if mode=subprocess
 
 llm:
-  mode: "stub"           # stub | api | local
-  model_name: "ft-geo-labeler"
-  timeout_seconds: 60
+  mode: "stub"           # stub | local_transformers
+  apply_chat_template: true
+  max_new_tokens: 256
+  temperature: 0.0
+  top_p: 1.0
+  device: "auto"         # auto | cpu | mps
+  dtype: "auto"          # auto | float16 | bfloat16 | float32
+  model_path: "./llama-3.2-1b-it"
+  stop: []
 
 rag:
   persist_path: "/path/to/chroma_persist"

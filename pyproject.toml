@@ -16,6 +16,12 @@ dependencies = [
   "GEOparse",
   "tqdm",
   "requests",
+  "torch>=2.5",
+  "transformers",
+  "accelerate",
+  "bitsandbytes; sys_platform != 'darwin'",
+  "flash-attn; sys_platform != 'darwin'",
+  "mlx-lm; sys_platform == 'darwin'",
 ]
 
 [project.scripts]

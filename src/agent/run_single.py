@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import json
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -22,6 +21,7 @@ from validator.decision_engine import load_decision_table
 from validator.format_validator import validate_format
 from validator.ontology_validator import ground_all_fields
 from validator.semantic_validator import semantic_validate
+from llm.factory import create_llm_client
 
 REQUIRED_KEYS: List[str] = [
     "gse_accession",
@@ -86,22 +86,6 @@ def _stub_parse(gsm_accession: str) -> Tuple[str, Optional[str], str]:
         "Sample Library Strategy: RNA-Seq\n"
     )
     return context_text, context_text, gse_accession
-
-
-def _stub_llm_output(gsm_accession: str, gse_accession: str, llm_cfg: Dict) -> str:
-    if llm_cfg.get("stub_invalid_json"):
-        return "{invalid json"
-    output = {
-        "gse_accession": gse_accession,
-        "gsm_accession": gsm_accession,
-        "data_type": "RNA-seq",
-        "organism": "Homo sapiens",
-        "tissue_type": "Blood",
-        "cell_line": "No",
-        "disease": "Healthy",
-        "treatment": "None",
-    }
-    return json.dumps(output, ensure_ascii=True)
 
 
 def _normalize_output(
@@ -218,11 +202,12 @@ def run_single_gsm(gsm_accession: str, cfg: dict) -> tuple[dict, dict, bool]:
     state.parsed_jsonl = parsed_jsonl
     state.gse_accession = gse_accession
 
+    label_prompt = _load_label_prompt(cfg)
+    final_prompt = f"{label_prompt}\n\n{context_text}"
+
     llm_cfg = cfg.get("llm", {})
-    if llm_cfg.get("mode") == "stub":
-        raw_output = _stub_llm_output(gsm_accession, gse_accession, llm_cfg)
-    else:
-        raise ValueError(f"Unsupported LLM mode: {llm_cfg.get('mode')}")
+    client = create_llm_client(llm_cfg)
+    raw_output = client.generate(final_prompt)
 
     state.llm_raw_outputs.append(raw_output)
 
@@ -301,10 +286,8 @@ def run_single_from_context_record(
     final_prompt = f"{label_prompt}\n\n{context_text}"
 
     llm_cfg = cfg.get("llm", {})
-    if llm_cfg.get("mode") == "stub":
-        raw_output = _stub_llm_output(gsm_accession, gse_accession, llm_cfg)
-    else:
-        raise ValueError(f"Unsupported LLM mode: {llm_cfg.get('mode')}")
+    client = create_llm_client(llm_cfg)
+    raw_output = client.generate(final_prompt)
 
     state.llm_raw_outputs.append(raw_output)
 
