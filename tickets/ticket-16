@@ -1,0 +1,321 @@
+Ticket #16: AGENT-WS-016 — Implement LLM-based repair loop for format violations and decision-based repairs (full 8-field JSON)
+
+You are working in repo `geo-gsm-annotator-agent`.
+
+Ticket: AGENT-WS-016 — Implement LLM-based repair loop for format violations and decision-based repairs (full 8-field JSON)
+
+Background:
+With local transformers LLM, first-pass outputs often violate format constraints (word_limit_violation, extra text, etc.).
+Currently, REPAIR actions in repair_loop are stubbed (no LLM call), so real outputs remain FLAGGED.
+
+Goal:
+1) Add an LLM-powered "format repair pre-loop" that retries the model when format validation fails.
+2) Update decision-based repair loop to actually call the LLM on REPAIR actions.
+3) Repairs always request a FULL 8-field JSON output (simplest) and overwrite the prior proposal.
+4) Add tests using a fake LLM client (monkeypatch) to simulate repair behavior (no real model required).
+
+Key constraints:
+- Keep behavior deterministic where possible (temperature=0 in config).
+- Preserve all raw outputs in state.llm_raw_outputs and parsed outputs in state.llm_parsed_outputs.
+- Validators remain the same.
+- No ontology grounders needed.
+
+Files to update:
+- `src/agent/run_single.py`
+- `src/agent/repair_loop.py`
+- `src/agent/prompts.py` (if needed to load templates)
+- Add tests: `tests/test_llm_repair_loops.py`
+- Ensure required prompt templates exist:
+  - `prompts/label_v1.txt` (already)
+  - `prompts/repair_format_v1.txt` (must exist; update if necessary)
+  - `prompts/repair_ontology_guided_v1.txt` or a general repair template (optional)
+If repair_format_v1.txt is weak, strengthen it per below.
+
+A) Strengthen `prompts/repair_format_v1.txt` (if needed)
+It must instruct:
+- Input: previous model output + the GEO context
+- Task: return ONLY a JSON object with exactly the 8 keys
+- Each value: <= 5 words, single phrase, no lists
+- No extra text
+- If unsure, use safe placeholders:
+  tissue_type="Unknown", cell_line="No", disease="Healthy", treatment="None", data_type="Unknown", organism="Unknown"
+Return only JSON.
+
+B) Implement format repair pre-loop in `run_single.py`
+Where you currently do:
+- raw_output = llm.generate(final_prompt)
+- validate_format(raw_output) ...
+
+Change to:
+1) Load label prompt template (label_v1) and build final_prompt = template + "\n\n" + context_text
+2) Call llm once to get raw_output; append to state.llm_raw_outputs
+3) Validate format:
+   - if format passes, proceed
+   - else, run up to cfg["limits"]["max_format_repairs"] times (default 2):
+     - Build repair prompt:
+       repair_template = load "repair_format_v1.txt"
+       repair_prompt = repair_template + "\n\n" + "CONTEXT:\n" + context_text + "\n\n" + "PREVIOUS_OUTPUT:\n" + raw_output
+     - Call llm.generate(repair_prompt) to get raw_output2
+     - Append to llm_raw_outputs
+     - Re-validate format
+     - Stop early if passes
+4) If still failing after retries:
+   - set state.format_errors from last validate
+   - set state.final_decision="FLAGGED"
+   - set state.flags include "format_unrepaired"
+   - build audit and return
+
+Store parsed dict (if any) from validate_format into state.llm_parsed_outputs (append for each attempt where parsing succeeded).
+
+C) Update decision-based repair loop in `agent/repair_loop.py`
+Currently REPAIR is stubbed. Update apply_repairs signature to accept optional callables:
+
+```python
+def apply_repairs(
+    state: PipelineState,
+    decision_table: dict,
+    llm_client=None,
+    context_text: str | None = None,
+    prompt_loader=None,
+    max_total_repairs: int | None = None,
+) -> PipelineState:
+```
+
+Behavior changes:
+
+* For Decision.action == REPAIR:
+
+  * require llm_client and context_text; if missing, keep old stub behavior (for tests/backward compatibility)
+  * Choose repair prompt template name from Decision.repair_template
+  * Load the template using prompt_loader (or agent.prompts.load_prompt function)
+  * Build repair prompt as:
+    template + "\n\nCONTEXT:\n" + context_text + "\n\nPREVIOUS_OUTPUT:\n" + json.dumps(state.final_output)
+  * Call llm_client.generate(repair_prompt)
+  * Append raw to state.llm_raw_outputs
+  * Run validate_format on returned raw
+
+    * If passes: overwrite state.final_output with parsed dict (and ensure keys exist with placeholders)
+    * If fails: try format repair pre-loop? (NOT required here)
+
+      * For simplicity: if format fails during a REPAIR action, record state.format_errors and continue;
+        decision engine will retry up to max_attempts then fallback.
+  * After overwriting final_output, re-run semantic + consistency + ontology validators to recompute failures.
+
+    * To avoid circular imports, implement a small helper in run_single.py to "validate_all(parsed_output, context_text, cfg)" and pass it into apply_repairs as a callable.
+    * OR (simpler) keep apply_repairs purely mechanical and do re-validation outside in run_single.
+      Preferred: keep apply_repairs mechanical and perform re-validation in run_single after each successful repair output.
+
+So implement in apply_repairs:
+
+* On successful REPAIR output format parse:
+
+  * update state.final_output
+  * record repair_history entry
+  * increment attempts
+  * return state with a marker that output changed (e.g., state.flags append "repaired_output_updated") OR just continue loop and let run_single revalidate.
+    You may redesign slightly if needed, but keep minimal.
+
+D) Update run_single to support decision-based repair with revalidation
+In `run_single_from_context_record`:
+
+* after first successful format pass, compute:
+  semantic_errors, consistency_flags, ontology matches/failures
+* build failures_by_field (include consistency flags mapping; already done)
+* set state.final_output = parsed_output (copy)
+* call apply_repairs with llm_client + context_text + prompt_loader + max_total_repairs
+* BUT since apply_repairs may update state.final_output after REPAIR actions, run_single must:
+
+  * after each REPAIR update, re-run validations and rebuild failures_by_field before next decision
+    Simplest implementation approach:
+* Move the "repair loop" orchestration into run_single (while-loop) and keep apply_repairs smaller.
+  But avoid large refactor if possible.
+  Acceptable approach:
+
+1. Add a new function in run_single.py: `run_decision_repairs(state, decision_table, llm_client, cfg, context_text) -> state`
+
+   * It will:
+
+     * build failures_by_field from current validation outputs
+     * call decision engine
+     * if REPAIR, call llm, validate_format, update final_output
+     * re-run validations
+     * repeat until resolved or flagged
+       This may be easier than retrofitting apply_repairs.
+
+Pick the approach that minimizes disruption and keeps tests passing.
+
+E) Add config limits
+In config/example_config.yaml, ensure:
+limits:
+max_format_repairs: 2
+max_total_repairs: 5
+
+F) Tests (no real LLM)
+Create `tests/test_llm_repair_loops.py` using a FakeLLMClient:
+
+* FakeLLMClient holds a queue of outputs to return on generate() calls.
+
+Test 1: format repair pre-loop fixes word limit
+
+* First output violates word_limit_violation (treatment too long)
+* Second output is valid concise JSON
+* Run run_single_from_context_record with llm.mode stub? No, use custom llm client injection.
+  Implement run_single to allow injection in cfg for tests OR monkeypatch create_llm_client to return FakeLLMClient.
+  Assert:
+* final_decision ACCEPT
+* llm_raw_outputs length == 2
+* format_errors empty
+
+Test 2: decision-based repair fixes healthy_disease_conflict
+
+* First output has disease=Healthy but context contains "cancer"
+* Consistency flag triggers REPAIR for disease
+* FakeLLM returns corrected JSON (disease="Cancer")
+* Assert accepted and disease updated
+
+Test 3: unrepaired format leads to FLAGGED
+
+* FakeLLM returns invalid format twice, still fails -> final_decision FLAGGED and flags include format_unrepaired
+
+Note:
+
+* For tests, keep ontology grounding as no-op/empty to avoid complexity.
+
+Acceptance criteria:
+
+* All tests pass: `uv run python -m pytest -q`
+* Running local transformers mode should reduce format failures (not tested in unit tests)
+
+Deliverables:
+
+* updated run_single.py and repair loop logic
+* updated repair_format_v1.txt if needed
+* tests/test_llm_repair_loops.py
+
+----
+Ticket #16-b: AGENT-WS-016b  
+
+You are working in repo `geo-gsm-annotator-agent`.
+
+Ticket: AGENT-WS-016b — Fix format-repair loop control flow + add JSON extraction for fenced/noisy outputs
+
+Observed bug:
+With local transformers, audit shows multiple LLM attempts:
+- Attempt #1 is valid JSON but violates word limit
+- Attempts #2/#3 return fenced JSON (```json ... ```) plus extra commentary
+Pipeline ends with:
+- format_errors: ["invalid_json"]
+- flags: ["format_unrepaired"]
+- final_decision: FLAGGED
+even though at least one attempt contains a parseable JSON object.
+
+This indicates:
+1) The format-repair loop does not stop at first successful format validation.
+2) The format validator fails to extract JSON from fenced/noisy model output.
+3) Final format_errors is being overwritten by last attempt even if an earlier attempt passed.
+
+Goal:
+A) Make format repair loop stop at the FIRST attempt that yields a dict that passes format validation.
+B) Make format validator robust: if raw output is not pure JSON, extract the first JSON object (including fenced blocks) and parse it.
+C) Add regression tests reproducing the exact failure pattern.
+
+Files to update:
+- `src/validator/format_validator.py`
+- `src/agent/run_single.py`
+- Add tests: `tests/test_format_repair_extraction.py`
+
+A) Update format validator: JSON extraction
+In `validator/format_validator.py` (or helper file inside validator), implement:
+
+1) `extract_json_candidate(text: str) -> str | None`
+Must handle:
+- Markdown fenced blocks:
+  - If text contains ```json ... ``` return content inside first such fenced block
+  - else if contains ``` ... ``` return content inside first fenced block
+- Otherwise, find first '{' and extract a balanced JSON object:
+  - scan characters, track brace depth
+  - handle strings and escapes (ignore braces inside quoted strings)
+  - return substring from first '{' to matching closing '}' when depth returns to 0
+If no candidate found, return None.
+
+2) Modify validate_format(raw_text, expected_keys, ...) to:
+- First try json.loads(raw_text)
+- If fails:
+  - candidate = extract_json_candidate(raw_text)
+  - if candidate: try json.loads(candidate)
+- If still fails: return (None, ["invalid_json"] + other info as currently)
+IMPORTANT: Do not change other existing format rules besides improving parsing robustness.
+
+Ensure that when parsing succeeds, the validator uses the parsed dict for downstream checks (keys, word limits, etc).
+
+B) Fix format repair loop in `agent/run_single.py`
+Locate the "format repair pre-loop" logic. Ensure:
+
+- It iterates attempts: initial + up to max_format_repairs
+- For each attempt:
+  - raw = llm.generate(...)
+  - append raw to state.llm_raw_outputs
+  - parsed, errors = validate_format(raw, expected_keys)
+  - if parsed is not None: append parsed to state.llm_parsed_outputs (append-only)
+  - if errors is empty:
+      - accept this parsed output as the proposal
+      - set state.format_errors = []
+      - break out of the loop immediately
+  - else:
+      - keep last errors in a local variable (do not overwrite state.format_errors yet)
+      - continue to next attempt
+
+After loop:
+- If no attempt succeeded:
+  - set state.format_errors = last_errors
+  - set state.final_decision="FLAGGED"
+  - add state.flags += ["format_unrepaired"]
+  - build audit and return
+
+Also ensure you do NOT set final_decision=FLAGGED merely because state.flags is non-empty (this was fixed in WS-014).
+Only flag here if format is unrepaired.
+
+C) Update repair_format_v1 prompt (optional but recommended)
+If `prompts/repair_format_v1.txt` exists, strengthen with one line:
+- "Return raw JSON only. Do not use code fences. Do not add commentary."
+This reduces reliance on extraction, but extraction must still exist.
+
+D) Add tests: `tests/test_format_repair_extraction.py`
+
+Test 1: validator extracts fenced JSON
+- raw = "Here is JSON:\n```json\n{...}\n```\nSome text"
+- validate_format should parse and return parsed dict (format errors may exist depending on values).
+- assert "invalid_json" is NOT present.
+
+Test 2: validator extracts first balanced JSON
+- raw = "prefix {\"a\":1} suffix"
+- extraction works and parses (use expected_keys accordingly)
+
+Test 3: run_single stops at successful repair attempt
+- Use a FakeLLM client (queue of outputs):
+  - attempt1: valid JSON but violates word_limit (treatment too long)
+  - attempt2: fenced JSON with short values (passes)
+  - attempt3: garbage (should NOT be used if loop stops correctly)
+- Monkeypatch llm.factory.create_llm_client to return FakeLLM.
+- Run run_single_from_context_record with max_format_repairs >= 2.
+- Assert:
+  - state/audit indicates ACCEPT (or at least not format_unrepaired)
+  - llm_raw_outputs length == 2 (stop early)
+  - format_errors == []
+
+If run_single_from_context_record returns only (primary, audit, flagged), assert flagged False.
+
+E) Run full test suite:
+- `uv run python -m pytest -q`
+
+Acceptance criteria:
+- Existing tests still pass.
+- New tests pass.
+- Re-running your local transformers JSONL job should no longer fail with invalid_json due to fences.
+- Format repairs should stop at first successful attempt rather than being overwritten by later failures.
+
+Deliverables:
+- updated validator/format_validator.py with extraction
+- updated agent/run_single.py loop logic
+- new tests/test_format_repair_extraction.py
+- (optional) updated prompts/repair_format_v1.txt

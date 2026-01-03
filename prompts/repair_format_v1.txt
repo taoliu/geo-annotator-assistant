@@ -1,6 +1,19 @@
-Fix the output to be VALID JSON ONLY, with exactly these keys:
-gse_accession, gsm_accession, data_type, organism, tissue_type, cell_line, disease, treatment
-No extra text.
+You are repairing model output for GEO GSM labeling.
 
-BAD OUTPUT:
-{{BAD_OUTPUT}}
+Input sections:
+- CONTEXT: GEO text for the sample
+- PREVIOUS_OUTPUT: prior model output (may be invalid)
+
+Task:
+Return ONLY a JSON object with exactly these keys:
+gse_accession, gsm_accession, data_type, organism, tissue_type, cell_line, disease, treatment
+
+Rules:
+- Each value is a single phrase, <= 5 words.
+- No lists, no extra keys, no extra text.
+- Return raw JSON only. Do not use code fences. Do not add commentary.
+- If unsure, use safe placeholders:
+  tissue_type="Unknown", cell_line="No", disease="Healthy", treatment="None",
+  data_type="Unknown", organism="Unknown"
+
+Return only JSON.

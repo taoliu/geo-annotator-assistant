@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import copy
+import json
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from agent.audit import build_audit_record
-from agent.prompts import load_prompts
-from agent.repair_loop import apply_repairs
+from agent.prompts import load_prompt
 from agent.state import PipelineState
 from validator.consistency_validator import (
     ASSAY_PLATFORM_CONFLICT,
@@ -17,7 +16,7 @@ from validator.consistency_validator import (
     SINGLE_CELL_EVIDENCE_MISSING,
     consistency_validate,
 )
-from validator.decision_engine import load_decision_table
+from validator.decision_engine import decide_next_action, load_decision_table
 from validator.format_validator import validate_format
 from validator.ontology_validator import ground_all_fields
 from validator.semantic_validator import semantic_validate
@@ -57,23 +56,32 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def _load_label_prompt(cfg: dict) -> str:
-    prompt_version = cfg.get("versions", {}).get("prompt_version", "v1")
-    prompt_name = _PROMPT_VERSION_MAP.get(prompt_version)
-    if not prompt_name:
-        raise ValueError(f"Unsupported prompt_version: {prompt_version}")
-
+def _resolve_prompt_dir(cfg: dict) -> str:
     prompt_dir = cfg.get("prompt_dir")
     if not prompt_dir:
         paths_cfg = cfg.get("paths") if isinstance(cfg.get("paths"), dict) else {}
         prompt_dir = paths_cfg.get("prompt_dir") if paths_cfg else None
     if not prompt_dir:
         prompt_dir = str(_repo_root() / "prompts")
+    return prompt_dir
 
-    prompts = load_prompts(prompt_dir)
-    if prompt_name not in prompts:
-        raise ValueError(f"Prompt template not found: {prompt_name}")
-    return prompts[prompt_name]
+
+def _make_prompt_loader(cfg: dict):
+    prompt_dir = _resolve_prompt_dir(cfg)
+
+    def _load(prompt_name: str) -> str:
+        return load_prompt(prompt_dir, prompt_name)
+
+    return _load
+
+
+def _load_label_prompt(cfg: dict) -> str:
+    prompt_version = cfg.get("versions", {}).get("prompt_version", "v1")
+    prompt_name = _PROMPT_VERSION_MAP.get(prompt_version)
+    if not prompt_name:
+        raise ValueError(f"Unsupported prompt_version: {prompt_version}")
+    prompt_dir = _resolve_prompt_dir(cfg)
+    return load_prompt(prompt_dir, prompt_name)
 
 
 def _stub_parse(gsm_accession: str) -> Tuple[str, Optional[str], str]:
@@ -161,29 +169,251 @@ def _build_failures_by_field(
     return failures
 
 
-def _run_repairs(
+def _increment_attempts(state: PipelineState, field: str) -> None:
+    state.attempts_by_field[field] = state.attempts_by_field.get(field, 0) + 1
+
+
+def _total_attempts(state: PipelineState) -> int:
+    return sum(state.attempts_by_field.values())
+
+
+def _update_validation_state(
     state: PipelineState,
-    failures_by_field: Dict[str, List[str]],
+    parsed_output: Dict[str, str],
+    context_text: str,
+    cfg: dict,
+) -> None:
+    state.semantic_errors = semantic_validate(parsed_output, context_text)
+    state.consistency_flags = consistency_validate(parsed_output, context_text)
+
+    matches, ontology_failures = ground_all_fields(
+        parsed_output,
+        context_text,
+        cfg.get("rag", {}),
+    )
+    state.ontology_matches = {
+        field: match.to_dict() if hasattr(match, "to_dict") else match
+        for field, match in matches.items()
+    }
+    state.ontology_failures = _filter_missing_grounders(ontology_failures)
+
+
+def _generate_with_format_repairs(
+    state: PipelineState,
+    client,
+    context_text: str,
+    cfg: dict,
+    prompt_loader,
+) -> tuple[Optional[Dict[str, str]], List[str]]:
+    last_errors: List[str] = []
+    label_prompt = _load_label_prompt(cfg)
+    final_prompt = f"{label_prompt}\n\n{context_text}"
+    raw_output = client.generate(final_prompt)
+    state.llm_raw_outputs.append(raw_output)
+
+    parsed_output, format_errors = validate_format(raw_output, REQUIRED_KEYS)
+    if parsed_output is not None:
+        state.llm_parsed_outputs.append(parsed_output)
+    if not format_errors:
+        return parsed_output, []
+    last_errors = format_errors
+
+    max_repairs = cfg.get("limits", {}).get("max_format_repairs", 2)
+    repair_template = prompt_loader("repair_format_v1")
+    for _ in range(max_repairs):
+        repair_prompt = (
+            f"{repair_template}\n\nCONTEXT:\n{context_text}\n\nPREVIOUS_OUTPUT:\n"
+            f"{raw_output}"
+        )
+        raw_output = client.generate(repair_prompt)
+        state.llm_raw_outputs.append(raw_output)
+        parsed_output, format_errors = validate_format(raw_output, REQUIRED_KEYS)
+        if parsed_output is not None:
+            state.llm_parsed_outputs.append(parsed_output)
+        if not format_errors:
+            return parsed_output, []
+        last_errors = format_errors
+
+    return parsed_output, last_errors
+
+
+def _run_decision_repairs(
+    state: PipelineState,
     decision_table: Dict,
+    llm_client,
+    cfg: dict,
+    context_text: str,
+    prompt_loader,
     max_total_repairs: Optional[int],
 ) -> PipelineState:
-    repair_state = copy.deepcopy(state)
-    repair_state.semantic_errors = failures_by_field
-    repair_state.ontology_failures = {}
-    repair_state.consistency_flags = []
+    while True:
+        failures_by_field = _build_failures_by_field(
+            state.semantic_errors,
+            state.ontology_failures,
+            state.consistency_flags,
+        )
+        if not failures_by_field:
+            state.final_decision = "ACCEPT"
+            return state
 
-    apply_repairs(
-        repair_state,
+        if max_total_repairs is not None and _total_attempts(state) >= max_total_repairs:
+            state.final_decision = "FLAGGED"
+            if "max_repairs_exceeded" not in state.flags:
+                state.flags.append("max_repairs_exceeded")
+            return state
+
+        decision = decide_next_action(
+            failures_by_field,
+            state.attempts_by_field,
+            decision_table,
+        )
+
+        if decision.decision_type == "ACCEPT":
+            if failures_by_field:
+                state.final_decision = "FLAGGED"
+            else:
+                state.final_decision = "ACCEPT"
+            return state
+
+        if decision.decision_type == "ESCALATE":
+            state.final_decision = "FLAGGED"
+            if decision.failure_code and decision.failure_code not in state.flags:
+                state.flags.append(decision.failure_code)
+            return state
+
+        field = decision.field
+        if not field:
+            state.final_decision = "FLAGGED"
+            if decision.failure_code and decision.failure_code not in state.flags:
+                state.flags.append(decision.failure_code)
+            return state
+
+        if decision.decision_type == "FALLBACK":
+            if state.final_output is None:
+                state.final_output = {}
+            state.final_output[field] = decision.fallback_value
+            _increment_attempts(state, field)
+            state.repair_history.append(
+                {
+                    "failure_code": decision.failure_code,
+                    "field": field,
+                    "fallback_value": decision.fallback_value,
+                }
+            )
+            state.format_errors = []
+            _update_validation_state(state, state.final_output, context_text, cfg)
+            continue
+
+        if decision.decision_type == "REPAIR":
+            _increment_attempts(state, field)
+            state.repair_history.append(
+                {
+                    "failure_code": decision.failure_code,
+                    "field": field,
+                    "repair_template": decision.repair_template,
+                }
+            )
+            if llm_client is None or context_text is None:
+                continue
+            if not decision.repair_template:
+                state.final_decision = "FLAGGED"
+                if decision.failure_code and decision.failure_code not in state.flags:
+                    state.flags.append(decision.failure_code)
+                return state
+
+            try:
+                repair_template = prompt_loader(decision.repair_template)
+            except Exception:
+                if "repair_template_missing" not in state.flags:
+                    state.flags.append("repair_template_missing")
+                if state.repair_history:
+                    state.repair_history[-1]["template_missing"] = True
+                continue
+            previous_output = state.final_output or {}
+            repair_prompt = (
+                f"{repair_template}\n\nCONTEXT:\n{context_text}\n\nPREVIOUS_OUTPUT:\n"
+                f"{json.dumps(previous_output, ensure_ascii=True)}"
+            )
+            raw_output = llm_client.generate(repair_prompt)
+            state.llm_raw_outputs.append(raw_output)
+            parsed_output, format_errors = validate_format(raw_output, REQUIRED_KEYS)
+            state.format_errors = format_errors
+            if parsed_output is not None:
+                state.llm_parsed_outputs.append(parsed_output)
+            if parsed_output is None or format_errors:
+                continue
+
+            state.final_output = dict(parsed_output)
+            state.format_errors = []
+            _update_validation_state(state, state.final_output, context_text, cfg)
+            continue
+
+        state.final_decision = "FLAGGED"
+        if decision.failure_code and decision.failure_code not in state.flags:
+            state.flags.append(decision.failure_code)
+        return state
+
+
+def _run_llm_pipeline(state: PipelineState, cfg: dict) -> tuple[dict, dict, bool]:
+    context_text = state.context_text
+    if not context_text:
+        raise ValueError("context_text is required for LLM labeling.")
+
+    prompt_loader = _make_prompt_loader(cfg)
+    llm_cfg = cfg.get("llm", {})
+    client = create_llm_client(llm_cfg)
+
+    parsed_output, format_errors = _generate_with_format_repairs(
+        state,
+        client,
+        context_text,
+        cfg,
+        prompt_loader,
+    )
+    state.format_errors = format_errors
+    if parsed_output is None or format_errors:
+        state.final_decision = "FLAGGED"
+        if "format_unrepaired" not in state.flags:
+            state.flags.append("format_unrepaired")
+        state.final_output = _normalize_output(
+            {},
+            state.gsm_accession,
+            state.gse_accession,
+        )
+        audit_record = build_audit_record(state)
+        return state.final_output, audit_record, True
+
+    state.final_output = dict(parsed_output)
+    state.format_errors = []
+    _update_validation_state(state, state.final_output, context_text, cfg)
+
+    decision_table = load_decision_table(
+        str(_repo_root() / "spec" / "decision_table.yaml")
+    )
+    _run_decision_repairs(
+        state,
         decision_table,
-        max_total_repairs=max_total_repairs,
+        client,
+        cfg,
+        context_text,
+        prompt_loader,
+        cfg.get("limits", {}).get("max_total_repairs"),
     )
 
-    state.final_output = repair_state.final_output
-    state.final_decision = repair_state.final_decision
-    state.flags = repair_state.flags
-    state.attempts_by_field = repair_state.attempts_by_field
-    state.repair_history = repair_state.repair_history
-    return repair_state
+    state.final_output = _normalize_output(
+        state.final_output or {},
+        state.gsm_accession,
+        state.gse_accession,
+    )
+    if state.final_decision is None:
+        unresolved = bool(state.semantic_errors) or bool(state.ontology_failures) or bool(
+            state.consistency_flags
+        )
+        state.final_decision = "FLAGGED" if unresolved else "ACCEPT"
+
+    audit_record = build_audit_record(state)
+    flagged = state.final_decision != "ACCEPT"
+    return state.final_output, audit_record, flagged
 
 
 def run_single_gsm(gsm_accession: str, cfg: dict) -> tuple[dict, dict, bool]:
@@ -201,70 +431,7 @@ def run_single_gsm(gsm_accession: str, cfg: dict) -> tuple[dict, dict, bool]:
     state.context_text = context_text
     state.parsed_jsonl = parsed_jsonl
     state.gse_accession = gse_accession
-
-    label_prompt = _load_label_prompt(cfg)
-    final_prompt = f"{label_prompt}\n\n{context_text}"
-
-    llm_cfg = cfg.get("llm", {})
-    client = create_llm_client(llm_cfg)
-    raw_output = client.generate(final_prompt)
-
-    state.llm_raw_outputs.append(raw_output)
-
-    parsed_output, format_errors = validate_format(raw_output, REQUIRED_KEYS)
-    state.format_errors = format_errors
-    state.llm_parsed_outputs.append(parsed_output or {})
-
-    if parsed_output is None:
-        state.final_decision = "FLAGGED"
-        state.final_output = _normalize_output({}, gsm_accession, gse_accession)
-        audit_record = build_audit_record(state)
-        return state.final_output, audit_record, True
-
-    state.semantic_errors = semantic_validate(parsed_output, context_text)
-    state.consistency_flags = consistency_validate(parsed_output, context_text)
-
-    matches, ontology_failures = ground_all_fields(
-        parsed_output,
-        context_text,
-        cfg.get("rag", {}),
-    )
-    state.ontology_matches = {
-        field: match.to_dict() if hasattr(match, "to_dict") else match
-        for field, match in matches.items()
-    }
-    state.ontology_failures = _filter_missing_grounders(ontology_failures)
-
-    failures_by_field = _build_failures_by_field(
-        state.semantic_errors,
-        state.ontology_failures,
-        state.consistency_flags,
-    )
-
-    decision_table = load_decision_table(
-        str(_repo_root() / "spec" / "decision_table.yaml")
-    )
-
-    state.final_output = dict(parsed_output)
-    repair_state = _run_repairs(
-        state,
-        failures_by_field,
-        decision_table,
-        cfg.get("limits", {}).get("max_total_repairs"),
-    )
-
-    state.final_output = _normalize_output(
-        state.final_output or {}, gsm_accession, gse_accession
-    )
-    if state.final_decision is None:
-        unresolved = bool(repair_state.semantic_errors) or bool(
-            repair_state.ontology_failures
-        )
-        state.final_decision = "FLAGGED" if unresolved else "ACCEPT"
-
-    audit_record = build_audit_record(state)
-    flagged = state.final_decision != "ACCEPT"
-    return state.final_output, audit_record, flagged
+    return _run_llm_pipeline(state, cfg)
 
 
 def run_single_from_context_record(
@@ -281,67 +448,4 @@ def run_single_from_context_record(
         versions=dict(cfg.get("versions", {})),
     )
     state.context_text = context_text
-
-    label_prompt = _load_label_prompt(cfg)
-    final_prompt = f"{label_prompt}\n\n{context_text}"
-
-    llm_cfg = cfg.get("llm", {})
-    client = create_llm_client(llm_cfg)
-    raw_output = client.generate(final_prompt)
-
-    state.llm_raw_outputs.append(raw_output)
-
-    parsed_output, format_errors = validate_format(raw_output, REQUIRED_KEYS)
-    state.format_errors = format_errors
-    state.llm_parsed_outputs.append(parsed_output or {})
-
-    if parsed_output is None:
-        state.final_decision = "FLAGGED"
-        state.final_output = _normalize_output({}, gsm_accession, gse_accession)
-        audit_record = build_audit_record(state)
-        return state.final_output, audit_record, True
-
-    state.semantic_errors = semantic_validate(parsed_output, context_text)
-    state.consistency_flags = consistency_validate(parsed_output, context_text)
-
-    matches, ontology_failures = ground_all_fields(
-        parsed_output,
-        context_text,
-        cfg.get("rag", {}),
-    )
-    state.ontology_matches = {
-        field: match.to_dict() if hasattr(match, "to_dict") else match
-        for field, match in matches.items()
-    }
-    state.ontology_failures = _filter_missing_grounders(ontology_failures)
-
-    failures_by_field = _build_failures_by_field(
-        state.semantic_errors,
-        state.ontology_failures,
-        state.consistency_flags,
-    )
-
-    decision_table = load_decision_table(
-        str(_repo_root() / "spec" / "decision_table.yaml")
-    )
-
-    state.final_output = dict(parsed_output)
-    repair_state = _run_repairs(
-        state,
-        failures_by_field,
-        decision_table,
-        cfg.get("limits", {}).get("max_total_repairs"),
-    )
-
-    state.final_output = _normalize_output(
-        state.final_output or {}, gsm_accession, gse_accession
-    )
-    if state.final_decision is None:
-        unresolved = bool(repair_state.semantic_errors) or bool(
-            repair_state.ontology_failures
-        )
-        state.final_decision = "FLAGGED" if unresolved else "ACCEPT"
-
-    audit_record = build_audit_record(state)
-    flagged = state.final_decision != "ACCEPT"
-    return state.final_output, audit_record, flagged
+    return _run_llm_pipeline(state, cfg)

@@ -2,13 +2,26 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Dict, List, Optional
 
 from agent.state import PipelineState
+from validator.format_validator import validate_format
 from validator.decision_engine import decide_next_action
 
 _FORMAT_FIELD = "__format__"
 _CONSISTENCY_FIELD = "__consistency__"
+_REQUIRED_KEYS: List[str] = [
+    "gse_accession",
+    "gsm_accession",
+    "data_type",
+    "organism",
+    "tissue_type",
+    "cell_line",
+    "disease",
+    "treatment",
+]
 
 
 def _has_failures(state: PipelineState) -> bool:
@@ -55,9 +68,38 @@ def _total_attempts(state: PipelineState) -> int:
     return sum(state.attempts_by_field.values())
 
 
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _load_repair_prompt(
+    prompt_name: Optional[str],
+    prompt_loader,
+) -> str:
+    if not prompt_name:
+        raise ValueError("Repair template name is required for REPAIR actions.")
+    if prompt_loader is None:
+        from agent.prompts import load_prompt
+
+        prompt_dir = str(_repo_root() / "prompts")
+        return load_prompt(prompt_dir, prompt_name)
+    if callable(prompt_loader):
+        return prompt_loader(prompt_name)
+    if isinstance(prompt_loader, dict):
+        name = prompt_name if prompt_name.endswith(".txt") else f"{prompt_name}.txt"
+        if prompt_name in prompt_loader:
+            return prompt_loader[prompt_name]
+        if name in prompt_loader:
+            return prompt_loader[name]
+    raise ValueError(f"Prompt template not found: {prompt_name}")
+
+
 def apply_repairs(
     state: PipelineState,
     decision_table: dict,
+    llm_client=None,
+    context_text: Optional[str] = None,
+    prompt_loader=None,
     max_total_repairs: Optional[int] = None,
 ) -> PipelineState:
     if not _has_failures(state):
@@ -131,7 +173,41 @@ def apply_repairs(
                     "repair_template": decision.repair_template,
                 }
             )
-            continue
+            if llm_client is None or context_text is None:
+                continue
+
+            try:
+                repair_template = _load_repair_prompt(
+                    decision.repair_template,
+                    prompt_loader,
+                )
+            except Exception:
+                if "repair_template_missing" not in state.flags:
+                    state.flags.append("repair_template_missing")
+                if state.repair_history:
+                    state.repair_history[-1]["template_missing"] = True
+                continue
+            previous_output = state.final_output or {}
+            repair_prompt = (
+                f"{repair_template}\n\nCONTEXT:\n{context_text}\n\nPREVIOUS_OUTPUT:\n"
+                f"{json.dumps(previous_output, ensure_ascii=True)}"
+            )
+            raw_output = llm_client.generate(repair_prompt)
+            state.llm_raw_outputs.append(raw_output)
+            parsed_output, format_errors = validate_format(
+                raw_output,
+                _REQUIRED_KEYS,
+            )
+            state.format_errors = format_errors
+            if parsed_output is not None:
+                state.llm_parsed_outputs.append(parsed_output)
+            if parsed_output is None or format_errors:
+                continue
+
+            state.final_output = dict(parsed_output)
+            if state.repair_history:
+                state.repair_history[-1]["output_updated"] = True
+            return state
 
         state.final_decision = "FLAGGED"
         if decision.failure_code and decision.failure_code not in state.flags:

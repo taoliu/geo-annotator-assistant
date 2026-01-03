@@ -11,15 +11,15 @@ parser:
   command: ""            # used if mode=subprocess
 
 llm:
-  mode: "stub"           # stub | local_transformers
+  mode: "local_transformers"           # stub | local_transformers
   apply_chat_template: true
-  max_new_tokens: 256
+  max_new_tokens: 1028
   temperature: 0.0
   top_p: 1.0
   device: "auto"         # auto | cpu | mps
   dtype: "auto"          # auto | float16 | bfloat16 | float32
   model_path: "./llama-3.2-1b-it"
-  stop: []
+  stop: ["\nCONTEXT:", "\nPREVIOUS_OUTPUT:"]
 
 rag:
   persist_path: "/path/to/chroma_persist"
@@ -39,5 +39,4 @@ thresholds:
 
 limits:
   max_repairs_per_field: 2
-  max_format_repairs: 2
-  max_total_repairs: 5
+  max_total_repairs: 6
