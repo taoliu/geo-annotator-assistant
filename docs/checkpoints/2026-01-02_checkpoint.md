@@ -45,11 +45,33 @@ uv run python -m agent.cli \
 
 ---
 
-## 7. How to Resume This Project
+## Update: Local LLM Integration Completed (2026-01-03)
+
+Since the initial checkpoint, the annotation pipeline now supports
+real local LLM inference using HuggingFace Transformers.
+
+Completed work:
+- In-process LLM backend (no HTTP server required)
+- Chat-template prompting enabled by default
+- Robust JSON extraction from noisy model outputs
+- Format repair loop implemented and verified
+- Decision-based semantic repair enabled
+- GSE batch annotation validated end-to-end
+
+Current status:
+- All samples in GSE112494 successfully annotated
+- No false FLAGGED results due to format noise
+- Full audit trails generated per GSM
+
+Known limitations:
+- Small models (≈1B) show limited semantic accuracy
+- Ontology grounding not yet enabled
+
+## How to Resume This Project
 
 To resume in a future session:
 
 1. Read this checkpoint
 2. Read `docs/whitepaper.md`
 3. Inspect `tickets/` for completed tickets
-4. Start with AGENT-WS-013
+

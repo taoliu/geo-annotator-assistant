@@ -147,3 +147,15 @@ As of 2026-01-02:
 ## 9. Guiding Principle
 
 **LLMs propose. Ontologies ground. Rules decide. Humans arbitrate.**
+
+### LLM-Based Annotation Engine (v0.1)
+
+The annotation engine now uses a local in-process instruction-tuned LLM
+(HuggingFace Transformers) rather than a stub or external API.
+
+Key properties:
+- Chat-template–based prompting
+- Strict JSON schema enforcement
+- Multi-stage validation and repair loops
+- Deterministic fallback behavior
+- Full auditability of all model attempts
