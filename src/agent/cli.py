@@ -8,6 +8,7 @@ from pathlib import Path
 
 from agent.config import load_config
 from agent.run_batch import run_batch
+from agent.run_gse import run_gse_from_jsonl
 from agent.run_single import run_single_gsm
 from agent.writer import write_run_outputs
 
@@ -53,11 +54,31 @@ def _print_summary(
         print(f"Flagged: {output_paths.get('flagged', '')}")
 
 
+def _resolve_output_dir(
+    base_dir: str,
+    annotations: list[dict],
+    use_gse_subdir: bool,
+) -> str:
+    if not use_gse_subdir:
+        return base_dir
+    gse_values = {
+        record.get("gse_accession")
+        for record in annotations
+        if record.get("gse_accession")
+    }
+    if len(gse_values) == 1:
+        gse_accession = next(iter(gse_values))
+        return str(Path(base_dir) / gse_accession)
+    return base_dir
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = _ArgumentParser(description="Run the GEO GSM annotator agent.")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--gsm", help="Single GSM identifier to process.")
     group.add_argument("--gsm-file", help="Path to a file containing GSM identifiers.")
+    group.add_argument("--jsonl", help="Path to JSONL context records.")
+    group.add_argument("--gse", help="GSE accession to process.")
     parser.add_argument("--output-dir", default="outputs", help="Directory for outputs.")
     parser.add_argument("--config", required=True, help="Path to YAML config file.")
     parser.add_argument(
@@ -85,14 +106,25 @@ def main(argv: list[str] | None = None) -> None:
                 "n_accepted": 0 if is_flagged else 1,
                 "n_flagged": 1 if is_flagged else 0,
             }
-        else:
+        elif args.gsm_file:
             gsm_ids = _read_gsm_file(args.gsm_file)
             annotations, audits, flagged, summary = run_batch(gsm_ids, config)
+        elif args.jsonl:
+            annotations, audits, flagged, summary = run_gse_from_jsonl(
+                args.jsonl, config
+            )
+        else:
+            raise ValueError(
+                "GSE mode not implemented yet. Please use --jsonl instead."
+            )
 
+        output_dir = _resolve_output_dir(
+            args.output_dir, annotations, bool(args.jsonl or args.gse)
+        )
         output_paths = None
         if not args.dry_run:
             output_paths = write_run_outputs(
-                args.output_dir, annotations, audits, flagged
+                output_dir, annotations, audits, flagged
             )
 
         _print_summary(summary, output_paths, args.dry_run)

@@ -21,7 +21,7 @@ def gse_dict_to_prompt(gse_dict): # this is for gsm!
         platform = sample_entry.get("platform", [{}])[0]  # Assume first platform (why??)
         sample_data = sample_entry.get("sample_data", {})
 
-        content_text = (
+        context_text = (
             f"Series Accession: {series.get('series gse accession', 'N/A')}\n"
             f"Sample ID: {gsm_id}\n"
             f"Sample Title: {sample_data.get('sample title', 'N/A')}\n"
@@ -39,6 +39,6 @@ def gse_dict_to_prompt(gse_dict): # this is for gsm!
             f"Series Filename: {series.get('series filename', 'N/A')}\n"
             f"Platform: {platform.get('platform title', 'N/A')} ({platform.get('platform technology', 'N/A')})\n"
         )
-        prompts.append({"content_text": content_text, "gsm_accession": gsm_id, "gse_accession": series.get("series gse accession", "N/A")})
+        prompts.append({"context_text": context_text, "gsm_accession": gsm_id, "gse_accession": series.get("series gse accession", "N/A")})
 
     return prompts

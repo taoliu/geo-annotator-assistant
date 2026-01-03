@@ -1,0 +1,79 @@
+"""GSE-mode runner for JSONL GSM context records."""
+
+from __future__ import annotations
+
+from typing import Any, Dict, List
+
+from agent.run_single import run_single_from_context_record
+from ingest.read_context_jsonl import iter_gsm_contexts
+
+_REQUIRED_KEYS: List[str] = [
+    "gse_accession",
+    "gsm_accession",
+    "data_type",
+    "organism",
+    "tissue_type",
+    "cell_line",
+    "disease",
+    "treatment",
+]
+
+_PLACEHOLDERS: Dict[str, str] = {
+    "gse_accession": "Unknown",
+    "data_type": "Unknown",
+    "organism": "Unknown",
+    "tissue_type": "Unknown",
+    "cell_line": "No",
+    "disease": "Healthy",
+    "treatment": "None",
+}
+
+
+def _build_failure_annotation(record: dict) -> Dict[str, str]:
+    annotation = {key: _PLACEHOLDERS.get(key, "Unknown") for key in _REQUIRED_KEYS}
+    annotation["gsm_accession"] = record.get("gsm_accession", "Unknown")
+    annotation["gse_accession"] = record.get("gse_accession", "Unknown")
+    return annotation
+
+
+def _build_failure_audit(record: dict, error_message: str) -> Dict[str, str]:
+    message = error_message or "Unknown error"
+    return {
+        "gsm_accession": record.get("gsm_accession", "Unknown"),
+        "gse_accession": record.get("gse_accession", "Unknown"),
+        "error": message,
+        "final_decision": "FLAGGED",
+    }
+
+
+def run_gse_from_jsonl(
+    jsonl_path: str,
+    cfg: dict,
+) -> tuple[list[dict], list[dict], list[dict], dict]:
+    annotations: List[Dict[str, Any]] = []
+    audits: List[Dict[str, Any]] = []
+    flagged: List[Dict[str, Any]] = []
+    n_flagged = 0
+
+    for record in iter_gsm_contexts(jsonl_path):
+        try:
+            annotation, audit, is_flagged = run_single_from_context_record(
+                record, cfg
+            )
+        except Exception as exc:
+            annotation = _build_failure_annotation(record)
+            audit = _build_failure_audit(record, str(exc))
+            is_flagged = True
+
+        annotations.append(annotation)
+        audits.append(audit)
+        if is_flagged:
+            flagged.append(annotation)
+            n_flagged += 1
+
+    summary = {
+        "n_total": len(annotations),
+        "n_accepted": len(annotations) - n_flagged,
+        "n_flagged": n_flagged,
+    }
+    return annotations, audits, flagged, summary

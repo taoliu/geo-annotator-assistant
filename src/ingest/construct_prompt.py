@@ -10,7 +10,7 @@ from .utils import gse_dict_to_prompt
 
 def main():
     # configure args
-    description = "%(prog)s -- Extract information of each sample in a GEO series from the given SOFT file. Then store the extracted content in prompt for each GSM in a jsonl file. The 'question' text will be added to the prompt."
+    description = "%(prog)s -- Extract information of each sample in a GEO series from the given SOFT file. Then store the extracted context in prompt for each GSM in a jsonl file."
     epilog = """
 Example:
 

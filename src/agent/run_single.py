@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from agent.audit import build_audit_record
+from agent.prompts import load_prompts
 from agent.repair_loop import apply_repairs
 from agent.state import PipelineState
 from validator.consistency_validator import (
@@ -33,6 +34,8 @@ REQUIRED_KEYS: List[str] = [
     "treatment",
 ]
 
+_PROMPT_VERSION_MAP = {"v1": "label_v1.txt"}
+
 _PLACEHOLDERS: Dict[str, str] = {
     "data_type": "Unknown",
     "organism": "Unknown",
@@ -52,6 +55,25 @@ _CONSISTENCY_FIELD_MAP = {
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
+
+
+def _load_label_prompt(cfg: dict) -> str:
+    prompt_version = cfg.get("versions", {}).get("prompt_version", "v1")
+    prompt_name = _PROMPT_VERSION_MAP.get(prompt_version)
+    if not prompt_name:
+        raise ValueError(f"Unsupported prompt_version: {prompt_version}")
+
+    prompt_dir = cfg.get("prompt_dir")
+    if not prompt_dir:
+        paths_cfg = cfg.get("paths") if isinstance(cfg.get("paths"), dict) else {}
+        prompt_dir = paths_cfg.get("prompt_dir") if paths_cfg else None
+    if not prompt_dir:
+        prompt_dir = str(_repo_root() / "prompts")
+
+    prompts = load_prompts(prompt_dir)
+    if prompt_name not in prompts:
+        raise ValueError(f"Prompt template not found: {prompt_name}")
+    return prompts[prompt_name]
 
 
 def _stub_parse(gsm_accession: str) -> Tuple[str, Optional[str], str]:
@@ -194,6 +216,83 @@ def run_single_gsm(gsm_accession: str, cfg: dict) -> tuple[dict, dict, bool]:
     state.context_text = context_text
     state.parsed_jsonl = parsed_jsonl
     state.gse_accession = gse_accession
+
+    llm_cfg = cfg.get("llm", {})
+    if llm_cfg.get("mode") == "stub":
+        raw_output = _stub_llm_output(gsm_accession, gse_accession, llm_cfg)
+    else:
+        raise ValueError(f"Unsupported LLM mode: {llm_cfg.get('mode')}")
+
+    state.llm_raw_outputs.append(raw_output)
+
+    parsed_output, format_errors = validate_format(raw_output, REQUIRED_KEYS)
+    state.format_errors = format_errors
+    state.llm_parsed_outputs.append(parsed_output or {})
+
+    if parsed_output is None:
+        state.final_decision = "FLAGGED"
+        state.final_output = _normalize_output({}, gsm_accession, gse_accession)
+        audit_record = build_audit_record(state)
+        return state.final_output, audit_record, True
+
+    state.semantic_errors = semantic_validate(parsed_output, context_text)
+    state.consistency_flags = consistency_validate(parsed_output, context_text)
+
+    matches, ontology_failures = ground_all_fields(
+        parsed_output,
+        context_text,
+        cfg.get("rag", {}),
+    )
+    state.ontology_matches = {
+        field: match.to_dict() if hasattr(match, "to_dict") else match
+        for field, match in matches.items()
+    }
+    state.ontology_failures = _filter_missing_grounders(ontology_failures)
+
+    failures_by_field = _build_failures_by_field(
+        state.semantic_errors,
+        state.ontology_failures,
+        state.consistency_flags,
+    )
+
+    decision_table = load_decision_table(
+        str(_repo_root() / "spec" / "decision_table.yaml")
+    )
+
+    state.final_output = dict(parsed_output)
+    _run_repairs(
+        state,
+        failures_by_field,
+        decision_table,
+        cfg.get("limits", {}).get("max_total_repairs"),
+    )
+
+    state.final_output = _normalize_output(
+        state.final_output or {}, gsm_accession, gse_accession
+    )
+
+    audit_record = build_audit_record(state)
+    flagged = state.final_decision != "ACCEPT"
+    return state.final_output, audit_record, flagged
+
+
+def run_single_from_context_record(
+    record: dict,
+    cfg: dict,
+) -> tuple[dict, dict, bool]:
+    gsm_accession = record["gsm_accession"]
+    gse_accession = record["gse_accession"]
+    context_text = record["context_text"]
+
+    state = PipelineState(
+        gsm_accession=gsm_accession,
+        gse_accession=gse_accession,
+        versions=dict(cfg.get("versions", {})),
+    )
+    state.context_text = context_text
+
+    label_prompt = _load_label_prompt(cfg)
+    final_prompt = f"{label_prompt}\n\n{context_text}"
 
     llm_cfg = cfg.get("llm", {})
     if llm_cfg.get("mode") == "stub":
