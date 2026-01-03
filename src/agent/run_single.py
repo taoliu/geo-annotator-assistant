@@ -182,7 +182,7 @@ def _run_repairs(
     failures_by_field: Dict[str, List[str]],
     decision_table: Dict,
     max_total_repairs: Optional[int],
-) -> None:
+) -> PipelineState:
     repair_state = copy.deepcopy(state)
     repair_state.semantic_errors = failures_by_field
     repair_state.ontology_failures = {}
@@ -199,6 +199,7 @@ def _run_repairs(
     state.flags = repair_state.flags
     state.attempts_by_field = repair_state.attempts_by_field
     state.repair_history = repair_state.repair_history
+    return repair_state
 
 
 def run_single_gsm(gsm_accession: str, cfg: dict) -> tuple[dict, dict, bool]:
@@ -260,7 +261,7 @@ def run_single_gsm(gsm_accession: str, cfg: dict) -> tuple[dict, dict, bool]:
     )
 
     state.final_output = dict(parsed_output)
-    _run_repairs(
+    repair_state = _run_repairs(
         state,
         failures_by_field,
         decision_table,
@@ -270,6 +271,11 @@ def run_single_gsm(gsm_accession: str, cfg: dict) -> tuple[dict, dict, bool]:
     state.final_output = _normalize_output(
         state.final_output or {}, gsm_accession, gse_accession
     )
+    if state.final_decision is None:
+        unresolved = bool(repair_state.semantic_errors) or bool(
+            repair_state.ontology_failures
+        )
+        state.final_decision = "FLAGGED" if unresolved else "ACCEPT"
 
     audit_record = build_audit_record(state)
     flagged = state.final_decision != "ACCEPT"
@@ -337,7 +343,7 @@ def run_single_from_context_record(
     )
 
     state.final_output = dict(parsed_output)
-    _run_repairs(
+    repair_state = _run_repairs(
         state,
         failures_by_field,
         decision_table,
@@ -347,6 +353,11 @@ def run_single_from_context_record(
     state.final_output = _normalize_output(
         state.final_output or {}, gsm_accession, gse_accession
     )
+    if state.final_decision is None:
+        unresolved = bool(repair_state.semantic_errors) or bool(
+            repair_state.ontology_failures
+        )
+        state.final_decision = "FLAGGED" if unresolved else "ACCEPT"
 
     audit_record = build_audit_record(state)
     flagged = state.final_decision != "ACCEPT"

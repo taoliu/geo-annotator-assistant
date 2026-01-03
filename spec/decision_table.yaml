@@ -60,8 +60,32 @@ treatment_identity_leakage:
 assay_platform_conflict:
   action: REPAIR
   field: data_type
-  repair_template: repair_data_type_v1
+  repair_template: repair_data_type_from_context_v1
   max_attempts: 2
+  fallback_value: "Unknown"
+  severity: high
+
+healthy_disease_conflict:
+  action: REPAIR
+  field: disease
+  repair_template: repair_disease_from_context_v1
+  max_attempts: 2
+  fallback_value: "Unknown"
+  severity: high
+
+single_cell_evidence_missing:
+  action: REPAIR
+  field: data_type
+  repair_template: repair_data_type_from_context_v1
+  max_attempts: 2
+  fallback_value: "Unknown"
+  severity: medium
+
+organism_context_conflict:
+  action: ESCALATE
+  field: organism
+  repair_template: null
+  max_attempts: 0
   fallback_value: null
   severity: high
 

@@ -114,6 +114,12 @@ def apply_repairs(
                 }
             )
             _clear_failures_for_field(state, field)
+            if decision.failure_code in state.consistency_flags:
+                state.consistency_flags = [
+                    flag
+                    for flag in state.consistency_flags
+                    if flag != decision.failure_code
+                ]
             continue
 
         if decision.decision_type == "REPAIR":

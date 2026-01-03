@@ -1,0 +1,14 @@
+Use the GEO TEXT to set the data_type field.
+
+Rules:
+- Return a concise data type (<=5 words).
+- If evidence is unclear, return "Unknown".
+- Output JSON ONLY with exactly these keys:
+  gse_accession, gsm_accession, data_type, organism, tissue_type, cell_line, disease, treatment
+- Keep every field from ORIGINAL OUTPUT unchanged except data_type.
+
+ORIGINAL OUTPUT:
+{{BAD_OUTPUT}}
+
+GEO TEXT:
+{{CONTEXT}}

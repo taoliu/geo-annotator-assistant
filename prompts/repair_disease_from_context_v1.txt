@@ -1,0 +1,14 @@
+Use the GEO TEXT to set the disease field.
+
+Rules:
+- Return a single phrase (<=5 words) for disease.
+- If there is no disease evidence, return "Healthy".
+- Output JSON ONLY with exactly these keys:
+  gse_accession, gsm_accession, data_type, organism, tissue_type, cell_line, disease, treatment
+- Keep every field from ORIGINAL OUTPUT unchanged except disease.
+
+ORIGINAL OUTPUT:
+{{BAD_OUTPUT}}
+
+GEO TEXT:
+{{CONTEXT}}
