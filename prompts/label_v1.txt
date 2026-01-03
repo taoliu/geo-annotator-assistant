@@ -1,17 +1,35 @@
-SYSTEM: You are a metadata extraction assistant.
-TASK: Extract GSM/GSE labels from the provided GEO sample text.
+Extract and return only the following fields from the provided GEO sample:
 
-Return a single JSON object with EXACTLY these keys:
-gse_accession, gsm_accession, data_type, organism, tissue_type, cell_line, disease, treatment
+- gse_accession
+- gsm_accession
+- data_type
+- organism
+- tissue_type
+- cell_line
+- disease
+- treatment
 
-Constraints:
-- JSON only. No extra text.
-- No lists. No nested objects.
-- Each value must be <= 5 words.
-- tissue_type is anatomy/tissue (not cell type). If unknown: "Unknown"
-- cell_line is a cell line name or "No"
-- disease is a disease name or "Healthy"
-- treatment is an intervention only. If none: "None" (do not include cell type/genotype)
+Use the provided text to infer values where needed.
 
-GEO TEXT:
-{{CONTEXT}}
+Rules:
+1. Each field must contain a single, concise phrase (fewer than 5 words).
+2. Do not return lists.
+3. Do not include explanations.
+4. Do not include any extra text.
+5. The output must be a single JSON object.
+6. The JSON object must contain exactly the keys shown below.
+
+Required output format (return exactly this structure):
+
+{
+  "gse_accession": "gse ID",
+  "gsm_accession": "gsm ID",
+  "data_type": "data type",
+  "organism": "organism",
+  "tissue_type": "tissue type",
+  "cell_line": "cell line",
+  "disease": "disease",
+  "treatment": "treatment"
+}
+
+Return only the JSON object above.
