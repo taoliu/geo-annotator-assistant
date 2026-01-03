@@ -1,77 +1,83 @@
-# Project Checkpoint — 2026-01-02
-## GEO GSM Metadata Annotator Agent
+# Checkpoint — 2026-01-02
 
-This document captures the current implementation status and next steps for the
-`geo-gsm-annotator-agent` project. It is intended as a **handoff checkpoint**
-for future development sessions (human or AI).
+## Context
 
----
+This checkpoint records the work leading up to and stabilizing
+the first fully functional local-LLM annotation pipeline.
 
-## 1. Project Goal (Reminder)
-
-Build an **AI agent** that:
-- Takes a **GEO GSM accession** as input
-- Fetches and parses GSM + parent GSE metadata
-- Uses an LLM to propose standardized labels
-- Grounds labels against biomedical ontologies
-- Applies deterministic validation and repair
-- Produces high-quality, auditable GSM metadata
-- Flags ambiguous samples for human review
-
-Target output fields:
-- data_type
-- organism
-- tissue_type
-- cell_line
-- disease
-- treatment
+The corresponding stable capability snapshot is documented in:
+- `docs/milestones/v0.1-llm.md`
 
 ---
 
-## 2. Current Status (As of 2026-01-02)
+## Major Work Completed
 
-### ✅ Walking skeleton complete
-
-The system is fully runnable end-to-end **with stubs**, including:
-
-```bash
-uv run python -m agent.cli \
-  --gsm GSM000000 \
-  --config config/example_config.yaml \
-  --output-dir /tmp/out
-2. **AGENT-WS-014** — Integrate real LLM caller
-3. **AGENT-WS-015** — Implement ontology grounders (ChromaDB)
-4. **AGENT-WS-016** — Human review ingestion + override re-run
+- Integrated a real local LLM using HuggingFace Transformers
+- Enabled chat-template prompting by default
+- Added robust JSON extraction to tolerate fenced/noisy outputs
+- Implemented a format repair retry loop
+- Implemented decision-based semantic repair using a decision table
+- Enabled batch GSE processing via JSONL input
+- Verified end-to-end execution with real GEO data
 
 ---
 
-## Update: Local LLM Integration Completed (2026-01-03)
+## Key Issues Encountered and Resolved
 
-Since the initial checkpoint, the annotation pipeline now supports
-real local LLM inference using HuggingFace Transformers.
+### 1. Noisy LLM Outputs
+Small instruction-tuned models frequently returned:
+- Markdown code fences
+- Extra explanations
+- Mixed text + JSON
 
-Completed work:
-- In-process LLM backend (no HTTP server required)
-- Chat-template prompting enabled by default
-- Robust JSON extraction from noisy model outputs
-- Format repair loop implemented and verified
-- Decision-based semantic repair enabled
-- GSE batch annotation validated end-to-end
+Resolution:
+- Implemented JSON extraction in the format validator
+- Validation operates on extracted JSON, not raw text
 
-Current status:
-- All samples in GSE112494 successfully annotated
-- No false FLAGGED results due to format noise
-- Full audit trails generated per GSM
+### 2. Repair Loop Control Flow Bug
+Initial repair logic overwrote successful attempts
+with later failing attempts.
 
-Known limitations:
-- Small models (≈1B) show limited semantic accuracy
-- Ontology grounding not yet enabled
+Resolution:
+- Repair loops now stop at the first successful parse
+- Only unrepaired failures propagate to FLAGGED
 
-## How to Resume This Project
+### 3. Overly Strict Consistency Handling
+Consistency flags (e.g. healthy vs disease conflict)
+were initially treated as fatal.
 
-To resume in a future session:
+Resolution:
+- Routed consistency flags through the decision engine
+- Enabled repair or fallback instead of automatic rejection
 
-1. Read this checkpoint
-2. Read `docs/whitepaper.md`
-3. Inspect `tickets/` for completed tickets
+### 4. Stub Repair Logic Blocking Real Use
+Early repair logic was stubbed and did not call the LLM.
 
+Resolution:
+- Enabled LLM-backed repairs returning full schema
+- Added bounded retry limits
+
+---
+
+## Observations
+
+- Small models (~1B parameters) can follow format rules
+  but struggle with nuanced biological semantics
+- Repair loops and fallback values are essential for stability
+- Audit logs proved critical for debugging subtle failures
+
+---
+
+## Known Limitations at This Checkpoint
+
+- Ontology grounding not yet implemented
+- Assay vs molecule confusion remains common in small models
+- No automatic escalation to larger models
+
+---
+
+## Status
+
+- Pipeline is stable
+- All samples in test GSEs annotate successfully
+- No false FLAGGED results due to formatting noise

@@ -1,161 +1,185 @@
-# GEO GSM Metadata Annotator Agent
-## Project White Paper
+# GEO GSM Metadata Annotation Agent — Whitepaper
+
+## Overview
+
+This project implements a modular, auditable system for annotating
+GEO GSM samples with structured biological metadata using
+large language models (LLMs) and controlled vocabularies.
+
+The primary goal is to extract concise, standardized labels
+(e.g. assay type, tissue, disease) from heterogeneous GEO metadata
+while preserving reproducibility, transparency, and scientific rigor.
 
 ---
 
-## 1. Motivation
+## System Design Principles
 
-GEO (Gene Expression Omnibus) contains millions of samples (GSMs) with rich but
-**heterogeneous and inconsistently structured metadata**. This limits:
-- large-scale meta-analysis
-- cross-study integration
-- automated dataset discovery
-- downstream machine learning
+The system is designed around the following core principles:
 
-Manual curation does not scale. Pure LLM-based annotation is powerful but unsafe
-without grounding and validation.
+1. **Separation of concerns**
+2. **Strict output contracts**
+3. **Repair over rejection**
+4. **Audit-first execution**
+5. **Ontology compatibility**
 
-This project builds a **hybrid AI agent** that combines:
-- LLM inference
-- biomedical ontologies
-- deterministic validation
-- human-in-the-loop review
+These principles guide all architectural decisions.
 
 ---
 
-## 2. Scope
+## High-Level Architecture
 
-### Input
-- GSM accession number
-- GSM metadata (SOFT format)
-- Parent GSE metadata
+The pipeline is composed of four logically independent stages:
 
-### Output
-A standardized GSM annotation with fixed fields:
+1. **Ingestion**
+2. **LLM-based reasoning**
+3. **Validation and repair**
+4. **Output curation and auditing**
 
-| Field | Description |
-|------|------------|
-| data_type | Assay / technology |
-| organism | Species |
-| tissue_type | Anatomical tissue |
-| cell_line | Immortalized cell line or `No` |
-| disease | Disease or `Healthy` |
-| treatment | Experimental intervention |
-
-Each output is accompanied by a full **audit record**.
+Each stage can evolve independently.
 
 ---
 
-## 3. High-Level Architecture
+## Ingestion Layer
 
-1. **Fetcher / Parser**
-   - Downloads GSM SOFT
-   - Extracts GSM + GSE context
-   - Produces JSONL text for LLM
+The ingestion layer is responsible for:
+- Downloading GEO SOFT files
+- Parsing GSM- and GSE-level metadata
+- Producing a per-GSM textual context
 
-2. **LLM Label Proposal**
-   - Fine-tuned model
-   - Produces strict JSON output
-   - No ontology knowledge assumed
+The output of ingestion is a JSONL file where each record contains:
+- `context_text` (human-readable evidence)
+- `gsm_accession`
+- `gse_accession`
 
-3. **Validation & Grounding**
-   - Format validation
-   - Semantic heuristics
-   - Cross-field consistency checks
-   - Ontology grounding (RAG via ChromaDB)
-
-4. **Decision & Repair**
-   - Decision table maps failures → actions
-   - Bounded repair attempts
-   - Conservative fallbacks
-   - Escalation to human review
-
-5. **Outputs**
-   - annotations.jsonl
-   - audit.jsonl
-   - flagged.jsonl
+Ingestion **does not** define prompts or schemas and does not
+perform reasoning.
 
 ---
 
-## 4. Ontology Strategy
+## LLM-Based Annotation Engine
 
-Controlled vocabularies are enforced via ontology grounding:
-
-| Field | Ontology |
-|------|---------|
-| data_type | EFO (assay branch) |
-| tissue_type | UBERON |
-| cell_line | Cellosaurus |
-| disease | NCIt (malignant neoplasm subset), DOID fallback |
-
-Grounding uses:
-- Local ChromaDB (vector + metadata)
-- Deterministic thresholds
-- Explicit fallback rules
-
----
-
-## 5. Validation Philosophy
-
-### Key principles
-- Never trust raw LLM output
-- Prefer `Unknown` / `No` / `Healthy` over hallucination
-- Escalate ambiguity rather than guessing
-- Keep logic transparent and auditable
-
-### Validation layers
-1. Format (JSON, keys, word limits)
-2. Semantic (cell vs tissue, treatment leakage)
-3. Consistency (assay vs platform, disease vs context)
-4. Ontology grounding (score thresholds)
-
----
-
-## 6. Human-in-the-Loop Design
-
-The system explicitly supports human review:
-- Ambiguous samples are written to `flagged.jsonl`
-- Audit records explain *why* a sample was flagged
-- Future work will support curator overrides
-
-This ensures:
-- traceability
-- continuous improvement
-- trust in downstream analyses
-
----
-
-## 7. Implementation Status
-
-As of 2026-01-02:
-- Full walking skeleton implemented
-- All logic tested (49 unit tests)
-- Parser, LLM, and ontology grounders are stubbed
-- Ready for real-world integration
-
----
-
-## 8. Future Directions
-
-- Full-scale GSM batch processing
-- Active learning from human corrections
-- Confidence scoring per field
-- Integration with GEO search and downstream pipelines
-
----
-
-## 9. Guiding Principle
-
-**LLMs propose. Ontologies ground. Rules decide. Humans arbitrate.**
-
-### LLM-Based Annotation Engine (v0.1)
-
-The annotation engine now uses a local in-process instruction-tuned LLM
-(HuggingFace Transformers) rather than a stub or external API.
+The annotation engine uses an instruction-tuned LLM to infer
+structured labels from the GSM context text.
 
 Key properties:
-- Chat-template–based prompting
-- Strict JSON schema enforcement
-- Multi-stage validation and repair loops
-- Deterministic fallback behavior
-- Full auditability of all model attempts
+
+- **Local in-process inference**
+  - Models are loaded directly from local weights
+  - No external API or HTTP server is required
+  - Suitable for restricted environments (HPC, secured servers)
+
+- **Chat-template prompting**
+  - Prompts are rendered using the tokenizer’s native chat template
+  - Improves instruction adherence and output consistency
+
+- **Fixed schema contract**
+  - The model must return exactly eight fields:
+    - `gse_accession`
+    - `gsm_accession`
+    - `data_type`
+    - `organism`
+    - `tissue_type`
+    - `cell_line`
+    - `disease`
+    - `treatment`
+
+---
+
+## Validation Layer
+
+All model outputs are validated deterministically.
+
+Validation includes:
+- JSON parseability
+- Exact key matching
+- Word-length constraints
+- Basic semantic consistency checks
+- Cross-field consistency checks
+
+The system is intentionally strict about schema correctness.
+
+---
+
+## Robust Output Parsing
+
+LLMs frequently emit:
+- Markdown code fences
+- Explanatory text
+- Mixed formatting
+
+The validator therefore extracts the **first valid JSON object**
+from the model output before validation.
+
+This improves robustness without weakening schema enforcement.
+
+---
+
+## Repair Loops
+
+Rather than rejecting invalid outputs, the system attempts repair.
+
+Two repair mechanisms exist:
+
+### Format Repair
+Triggered when schema or formatting rules fail.
+The model is re-prompted to correct formatting errors.
+
+### Decision-Based Repair
+Triggered by semantic or consistency failures.
+A decision table governs:
+- Whether to repair
+- Which field to target
+- How many attempts are allowed
+- When to fall back or escalate
+
+Repairs always return the **full schema**, simplifying validation
+and merge logic.
+
+---
+
+## Decision Engine
+
+All non-trivial failures are routed through a decision table.
+
+Each failure type maps to:
+- an action (REPAIR, FALLBACK, ESCALATE)
+- a target field
+- retry limits
+- severity level
+
+This makes system behavior explicit, testable, and extensible.
+
+---
+
+## Audit and Reproducibility
+
+Every GSM annotation produces a complete audit record containing:
+- Prompt and validator versions
+- All raw LLM outputs (initial + repairs)
+- Parsed outputs
+- Validation results
+- Repair history
+- Final decision and output
+
+This enables full reproducibility and post-hoc analysis.
+
+---
+
+## Controlled Vocabulary Alignment (Planned)
+
+The system is designed to integrate ontology grounding
+(e.g. EFO, UBERON, DOID, Cellosaurus, NCIT).
+
+Ontology alignment is treated as a validation and repair stage,
+not as a post-processing step.
+
+---
+
+## Summary
+
+This architecture allows the system to leverage LLM reasoning
+while maintaining strong guarantees required for scientific
+metadata curation.
+
+The design favors transparency, extensibility, and correctness
+over raw throughput.
