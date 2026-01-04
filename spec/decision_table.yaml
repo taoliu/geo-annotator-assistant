@@ -33,13 +33,109 @@ word_limit_violation:
   fallback_value: null
   severity: medium
 
-ontology_no_match:
-  action: REPAIR
+ontology_index_unavailable:
+  action: ACCEPT
   field: null
+  repair_template: null
+  max_attempts: 0
+  fallback_value: null
+  severity: low
+
+ontology_no_match_tissue_type:
+  action: REPAIR
+  field: tissue_type
   repair_template: repair_ontology_guided_v1
   max_attempts: 2
   fallback_value: null
   severity: high
+
+ontology_ambiguous_tissue_type:
+  action: REPAIR
+  field: tissue_type
+  repair_template: repair_ontology_guided_v1
+  max_attempts: 2
+  fallback_value: null
+  severity: high
+
+ontology_low_confidence_tissue_type:
+  action: REPAIR
+  field: tissue_type
+  repair_template: repair_ontology_guided_v1
+  max_attempts: 2
+  fallback_value: null
+  severity: medium
+
+ontology_no_match_disease:
+  action: REPAIR
+  field: disease
+  repair_template: repair_ontology_guided_v1
+  max_attempts: 2
+  fallback_value: null
+  severity: high
+
+ontology_ambiguous_disease:
+  action: REPAIR
+  field: disease
+  repair_template: repair_ontology_guided_v1
+  max_attempts: 2
+  fallback_value: null
+  severity: high
+
+ontology_low_confidence_disease:
+  action: REPAIR
+  field: disease
+  repair_template: repair_ontology_guided_v1
+  max_attempts: 2
+  fallback_value: null
+  severity: medium
+
+ontology_no_match_cell_line:
+  action: REPAIR
+  field: cell_line
+  repair_template: repair_ontology_guided_v1
+  max_attempts: 2
+  fallback_value: null
+  severity: high
+
+ontology_ambiguous_cell_line:
+  action: REPAIR
+  field: cell_line
+  repair_template: repair_ontology_guided_v1
+  max_attempts: 2
+  fallback_value: null
+  severity: high
+
+ontology_low_confidence_cell_line:
+  action: REPAIR
+  field: cell_line
+  repair_template: repair_ontology_guided_v1
+  max_attempts: 2
+  fallback_value: null
+  severity: medium
+
+ontology_no_match_data_type:
+  action: REPAIR
+  field: data_type
+  repair_template: repair_ontology_guided_v1
+  max_attempts: 2
+  fallback_value: null
+  severity: high
+
+ontology_ambiguous_data_type:
+  action: REPAIR
+  field: data_type
+  repair_template: repair_ontology_guided_v1
+  max_attempts: 2
+  fallback_value: null
+  severity: high
+
+ontology_low_confidence_data_type:
+  action: REPAIR
+  field: data_type
+  repair_template: repair_ontology_guided_v1
+  max_attempts: 2
+  fallback_value: null
+  severity: medium
 
 tissue_is_cell_type:
   action: REPAIR

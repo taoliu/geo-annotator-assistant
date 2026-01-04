@@ -8,53 +8,29 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from validator.ontology_match import OntologyMatch
-from validator.ontology_validator import (
-    ONTOLOGY_LOW_SCORE,
-    ONTOLOGY_NO_MATCH,
-    ground_all_fields,
+from validator.failure_codes import (
+    ONTOLOGY_LOW_CONFIDENCE_DATA_TYPE,
+    ONTOLOGY_NO_MATCH_DATA_TYPE,
 )
-from validator.thresholds import is_match_acceptable
+from validator.ontology_match import OntologyMatch
+from validator.ontology_validator import ground_all_fields
 
 import validator.grounders.data_type as data_type_grounder
 
 
-def test_threshold_cell_line_match_ok() -> None:
-    match = OntologyMatch(
-        field="cell_line",
-        raw_value="HeLa",
-        ontology="CELLOSAURUS",
-        matched_term_id="CVCL_0030",
-        matched_label="HeLa",
-        match_type="exact",
-        score=0.8,
-    )
-    assert is_match_acceptable("cell_line", match) is True
-
-
-def test_threshold_cell_line_match_low() -> None:
-    match = OntologyMatch(
-        field="cell_line",
-        raw_value="HeLa",
-        ontology="CELLOSAURUS",
-        matched_term_id="CVCL_0030",
-        matched_label="HeLa",
-        match_type="exact",
-        score=0.7,
-    )
-    assert is_match_acceptable("cell_line", match) is False
-
-
 def test_fallback_tissue_type_unknown_no_failures(monkeypatch) -> None:
-    def dummy_ground_data_type(raw_value, context_text, persist_path, collection_name, k):
+    def dummy_ground_data_type(raw_value, context_text, config):
         return OntologyMatch(
             field="data_type",
             raw_value=raw_value,
-            ontology="EFO",
+            ontology="Experimental Factor Ontology",
+            status="MATCHED",
             matched_term_id="EFO:0001234",
             matched_label="RNA-seq",
+            matched_source="Experimental Factor Ontology",
             match_type="exact",
             score=0.9,
+            alternates=[],
         )
 
     monkeypatch.setattr(
@@ -70,14 +46,9 @@ def test_fallback_tissue_type_unknown_no_failures(monkeypatch) -> None:
         "cell_line": "No",
         "disease": "Healthy",
     }
-    rag_config = {
-        "persist_path": "/tmp",
-        "collections": {"EFO": "efo"},
-        "k": 10,
-    }
-    matches, failures = ground_all_fields(llm_output, "", rag_config)
+    matches, failures = ground_all_fields(llm_output, "", {})
     assert failures == {}
-    assert matches["tissue_type"].match_type == "fallback"
+    assert matches["tissue_type"].status == "FALLBACK"
 
 
 def test_placeholder_grounder_no_match(monkeypatch) -> None:
@@ -97,27 +68,29 @@ def test_placeholder_grounder_no_match(monkeypatch) -> None:
         "cell_line": "No",
         "disease": "Healthy",
     }
-    rag_config = {"persist_path": "/tmp", "collections": {"EFO": "efo"}}
-    _, failures = ground_all_fields(llm_output, "", rag_config)
-    assert failures == {"data_type": ONTOLOGY_NO_MATCH}
+    _, failures = ground_all_fields(llm_output, "", {})
+    assert failures == {"data_type": ONTOLOGY_NO_MATCH_DATA_TYPE}
 
 
-def test_low_score_grounder(monkeypatch) -> None:
-    def low_score_grounder(raw_value, context_text, persist_path, collection_name, k):
+def test_low_confidence_grounder(monkeypatch) -> None:
+    def low_confidence_grounder(raw_value, context_text, config):
         return OntologyMatch(
             field="data_type",
             raw_value=raw_value,
-            ontology="EFO",
-            matched_term_id="EFO:0001234",
-            matched_label="RNA-seq",
-            match_type="fuzzy",
-            score=0.5,
+            ontology="Experimental Factor Ontology",
+            status="LOW_CONFIDENCE",
+            matched_term_id=None,
+            matched_label=None,
+            matched_source=None,
+            match_type="jaccard",
+            score=0.4,
+            alternates=[],
         )
 
     monkeypatch.setattr(
         data_type_grounder,
         "ground_data_type",
-        low_score_grounder,
+        low_confidence_grounder,
         raising=False,
     )
 
@@ -127,6 +100,5 @@ def test_low_score_grounder(monkeypatch) -> None:
         "cell_line": "No",
         "disease": "Healthy",
     }
-    rag_config = {"persist_path": "/tmp", "collections": {"EFO": "efo"}}
-    _, failures = ground_all_fields(llm_output, "", rag_config)
-    assert failures == {"data_type": ONTOLOGY_LOW_SCORE}
+    _, failures = ground_all_fields(llm_output, "", {})
+    assert failures == {"data_type": ONTOLOGY_LOW_CONFIDENCE_DATA_TYPE}

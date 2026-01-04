@@ -1,9 +1,23 @@
 from __future__ import annotations
 
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional
 
+from validator.failure_codes import (
+    ONTOLOGY_AMBIGUOUS_CELL_LINE,
+    ONTOLOGY_AMBIGUOUS_DATA_TYPE,
+    ONTOLOGY_AMBIGUOUS_DISEASE,
+    ONTOLOGY_AMBIGUOUS_TISSUE_TYPE,
+    ONTOLOGY_INDEX_UNAVAILABLE,
+    ONTOLOGY_LOW_CONFIDENCE_CELL_LINE,
+    ONTOLOGY_LOW_CONFIDENCE_DATA_TYPE,
+    ONTOLOGY_LOW_CONFIDENCE_DISEASE,
+    ONTOLOGY_LOW_CONFIDENCE_TISSUE_TYPE,
+    ONTOLOGY_NO_MATCH_CELL_LINE,
+    ONTOLOGY_NO_MATCH_DATA_TYPE,
+    ONTOLOGY_NO_MATCH_DISEASE,
+    ONTOLOGY_NO_MATCH_TISSUE_TYPE,
+)
 from validator.ontology_match import OntologyMatch
-from validator.thresholds import is_match_acceptable
 
 try:
     from validator.grounders import data_type as _data_type_grounder
@@ -25,14 +39,11 @@ try:
 except Exception:
     _disease_grounder = None
 
-ONTOLOGY_NO_MATCH = "ontology_no_match"
-ONTOLOGY_LOW_SCORE = "ontology_low_score"
-
-_FIELD_TO_ONTOLOGY = {
-    "data_type": "EFO",
-    "tissue_type": "UBERON",
-    "cell_line": "CELLOSAURUS",
-    "disease": "DOID",
+_DEFAULT_SOURCES_BY_FIELD = {
+    "data_type": "Experimental Factor Ontology",
+    "tissue_type": "Uberon Ontology",
+    "cell_line": "Cellosaurus",
+    "disease": "Human Disease Ontology",
 }
 
 _FALLBACK_VALUES = {
@@ -40,6 +51,30 @@ _FALLBACK_VALUES = {
     "cell_line": "No",
     "disease": "Healthy",
 }
+
+_FIELD_FAILURE_CODES = {
+    "tissue_type": {
+        "NO_MATCH": ONTOLOGY_NO_MATCH_TISSUE_TYPE,
+        "AMBIGUOUS": ONTOLOGY_AMBIGUOUS_TISSUE_TYPE,
+        "LOW_CONFIDENCE": ONTOLOGY_LOW_CONFIDENCE_TISSUE_TYPE,
+    },
+    "disease": {
+        "NO_MATCH": ONTOLOGY_NO_MATCH_DISEASE,
+        "AMBIGUOUS": ONTOLOGY_AMBIGUOUS_DISEASE,
+        "LOW_CONFIDENCE": ONTOLOGY_LOW_CONFIDENCE_DISEASE,
+    },
+    "cell_line": {
+        "NO_MATCH": ONTOLOGY_NO_MATCH_CELL_LINE,
+        "AMBIGUOUS": ONTOLOGY_AMBIGUOUS_CELL_LINE,
+        "LOW_CONFIDENCE": ONTOLOGY_LOW_CONFIDENCE_CELL_LINE,
+    },
+    "data_type": {
+        "NO_MATCH": ONTOLOGY_NO_MATCH_DATA_TYPE,
+        "AMBIGUOUS": ONTOLOGY_AMBIGUOUS_DATA_TYPE,
+        "LOW_CONFIDENCE": ONTOLOGY_LOW_CONFIDENCE_DATA_TYPE,
+    },
+}
+
 
 def _get_grounder(field: str):
     if field == "data_type" and _data_type_grounder is not None:
@@ -52,27 +87,25 @@ def _get_grounder(field: str):
         return getattr(_disease_grounder, "ground_disease", None)
     return None
 
-def _resolve_ontology_and_collection(field: str, rag_config: Dict) -> Tuple[str, Optional[str]]:
-    ontology = _FIELD_TO_ONTOLOGY.get(field, field)
-    collections = rag_config.get("collections") if isinstance(rag_config, dict) else None
-    collection_name: Optional[str] = None
-    if isinstance(collections, dict):
-        if ontology in collections:
-            collection_name = collections[ontology]
-        elif field in collections:
-            ontology = field
-            collection_name = collections[field]
-    return ontology, collection_name
+def _resolve_ontology_source(field: str, config: Dict) -> str:
+    if isinstance(config, dict):
+        sources = config.get("ontology_sources_by_field")
+        if isinstance(sources, dict) and field in sources:
+            return str(sources[field])
+    return _DEFAULT_SOURCES_BY_FIELD.get(field, field)
 
 def _make_none_match(field: str, raw_value: str, ontology: str) -> OntologyMatch:
     return OntologyMatch(
         field=field,
         raw_value=raw_value,
         ontology=ontology,
+        status="NO_MATCH",
         matched_term_id=None,
         matched_label=None,
+        matched_source=None,
         match_type="none",
         score=None,
+        alternates=[],
     )
 
 def _make_fallback_match(field: str, raw_value: str, ontology: str) -> OntologyMatch:
@@ -80,10 +113,13 @@ def _make_fallback_match(field: str, raw_value: str, ontology: str) -> OntologyM
         field=field,
         raw_value=raw_value,
         ontology=ontology,
+        status="FALLBACK",
         matched_term_id=None,
         matched_label=None,
+        matched_source=None,
         match_type="fallback",
         score=None,
+        alternates=[],
     )
 
 def _is_fallback_value(field: str, raw_value: str) -> bool:
@@ -95,33 +131,32 @@ def _call_grounder(
     grounder_fn,
     raw_value: str,
     context_text: str,
-    persist_path: Optional[str],
-    collection_name: Optional[str],
-    k: int,
+    config: Dict,
 ):
     if grounder_fn is None:
         return None
     try:
-        return grounder_fn(raw_value, context_text, persist_path, collection_name, k)
+        return grounder_fn(raw_value, context_text, config)
     except NotImplementedError:
         return None
+
+def _failure_code_for_match(field: str, match: OntologyMatch) -> Optional[str]:
+    if match.status == "INDEX_UNAVAILABLE":
+        return ONTOLOGY_INDEX_UNAVAILABLE
+    return _FIELD_FAILURE_CODES.get(field, {}).get(match.status)
 
 def ground_all_fields(
     llm_output: Dict[str, str],
     context_text: str,
-    rag_config: Dict,
-) -> Tuple[Dict[str, OntologyMatch], Dict[str, str]]:
+    ontology_config: Dict,
+) -> tuple[Dict[str, OntologyMatch], Dict[str, str]]:
     """Ground ontology-driven fields and return matches with failure codes."""
     matches_by_field: Dict[str, OntologyMatch] = {}
     failures_by_field: Dict[str, str] = {}
 
-    thresholds_cfg = rag_config.get("thresholds") if isinstance(rag_config, dict) else None
-    persist_path = rag_config.get("persist_path") if isinstance(rag_config, dict) else None
-    k = rag_config.get("k", 10) if isinstance(rag_config, dict) else 10
-
     for field in ("data_type", "tissue_type", "cell_line", "disease"):
         raw_value = (llm_output.get(field) or "").strip()
-        ontology, collection_name = _resolve_ontology_and_collection(field, rag_config)
+        ontology = _resolve_ontology_source(field, ontology_config)
 
         if not raw_value:
             match = _make_none_match(field, raw_value, ontology)
@@ -133,9 +168,7 @@ def ground_all_fields(
                 grounder_fn,
                 raw_value,
                 context_text,
-                persist_path,
-                collection_name,
-                k,
+                ontology_config,
             )
             if isinstance(result, OntologyMatch):
                 match = result
@@ -144,10 +177,8 @@ def ground_all_fields(
 
         matches_by_field[field] = match
 
-        if not is_match_acceptable(field, match, thresholds_cfg):
-            if match.match_type == "none" or match.score is None:
-                failures_by_field[field] = ONTOLOGY_NO_MATCH
-            else:
-                failures_by_field[field] = ONTOLOGY_LOW_SCORE
+        failure_code = _failure_code_for_match(field, match)
+        if failure_code:
+            failures_by_field[field] = failure_code
 
     return matches_by_field, failures_by_field

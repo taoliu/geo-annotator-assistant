@@ -126,7 +126,10 @@ def apply_repairs(
 
         if decision.decision_type == "ACCEPT":
             if _has_failures(state):
-                break
+                state.final_decision = "ACCEPT"
+                if decision.failure_code and decision.failure_code not in state.flags:
+                    state.flags.append(decision.failure_code)
+                return state
             state.final_decision = "ACCEPT"
             return state
 

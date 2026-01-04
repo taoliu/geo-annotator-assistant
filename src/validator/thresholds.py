@@ -26,9 +26,9 @@ def is_match_acceptable(
     thresholds_cfg: Optional[Dict[str, float]] = None,
 ) -> bool:
     """Return True if the match is acceptable for the field threshold."""
-    if match.match_type == "fallback":
+    if match.status == "FALLBACK":
         return True
-    if match.match_type == "none":
+    if match.status != "MATCHED":
         return False
     if match.score is None:
         return False

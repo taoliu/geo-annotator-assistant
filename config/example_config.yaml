@@ -21,6 +21,21 @@ llm:
   model_path: "./llama-3.2-1b-it"
   stop: []
 
+ontology_chroma_enabled: true
+ontology_chroma_db_path: "ontology_chroma_db"
+ontology_chroma_collection: "ontology_rag"
+ontology_embedding_model_name: "BAAI/bge-base-en-v1.5"
+ontology_embedding_normalize: true
+ontology_top_k: 20
+ontology_sources_by_field:
+  tissue_type: "Uberon Ontology"
+  disease: "Human Disease Ontology"
+  cell_line: "Cellosaurus"
+  data_type: "Experimental Factor Ontology"
+ontology_thresholds:
+  min_confidence_to_accept: 0.80
+  max_delta_for_ambiguity: 0.05
+
 rag:
   persist_path: "/path/to/chroma_persist"
   collections:

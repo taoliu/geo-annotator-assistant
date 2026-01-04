@@ -40,17 +40,20 @@ def test_pipeline_state_to_dict_serializes_ontology_match() -> None:
         field="tissue_type",
         raw_value="Small intestine",
         ontology="UBERON",
+        status="MATCHED",
         matched_term_id="UBERON:0002106",
         matched_label="small intestine",
+        matched_source="Uberon Ontology",
         match_type="exact",
         score=0.9,
+        alternates=[],
     )
     state = PipelineState(gsm_accession="GSM456", ontology_matches={"tissue_type": match})
     data = state.to_dict()
     serialized = data["ontology_matches"]["tissue_type"]
     assert isinstance(serialized, dict)
     assert serialized["ontology"] == "UBERON"
-    assert serialized["match_type"] == "exact"
+    assert serialized["status"] == "MATCHED"
 
 
 def test_audit_record_json_and_timestamp() -> None:

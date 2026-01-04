@@ -186,10 +186,11 @@ def _update_validation_state(
     state.semantic_errors = semantic_validate(parsed_output, context_text)
     state.consistency_flags = consistency_validate(parsed_output, context_text)
 
+    ontology_cfg = cfg.get("ontology", cfg) if isinstance(cfg, dict) else {}
     matches, ontology_failures = ground_all_fields(
         parsed_output,
         context_text,
-        cfg.get("rag", {}),
+        ontology_cfg,
     )
     state.ontology_matches = {
         field: match.to_dict() if hasattr(match, "to_dict") else match
@@ -269,10 +270,10 @@ def _run_decision_repairs(
         )
 
         if decision.decision_type == "ACCEPT":
-            if failures_by_field:
-                state.final_decision = "FLAGGED"
-            else:
-                state.final_decision = "ACCEPT"
+            state.final_decision = "ACCEPT"
+            if failures_by_field and decision.failure_code:
+                if decision.failure_code not in state.flags:
+                    state.flags.append(decision.failure_code)
             return state
 
         if decision.decision_type == "ESCALATE":
