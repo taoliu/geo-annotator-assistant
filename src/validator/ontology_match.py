@@ -18,6 +18,11 @@ _ALLOWED_STATUSES = {
 
 _PUNCT_TABLE = str.maketrans({char: " " for char in string.punctuation})
 _WS_RE = re.compile(r"\s+")
+_PREFIX_PATTERNS = [
+    re.compile(r"^\s*[A-Za-z][A-Za-z0-9 _/\-]{0,40}\s*:\s*(.+)$"),
+    re.compile(r"^\s*[A-Za-z][A-Za-z0-9 _/\-]{0,40}\s*=\s*(.+)$"),
+    re.compile(r"^\s*[A-Za-z][A-Za-z0-9 _/\-]{0,40}\s*-\s*(.+)$"),
+]
 _MAX_ALTERNATES = 5
 
 
@@ -93,7 +98,13 @@ class OntologyMatch:
 
 
 def thresholds_from_config(config: Optional[Dict[str, Any]]) -> OntologyThresholds:
-    cfg = config.get("ontology_thresholds") if isinstance(config, dict) else None
+    cfg = None
+    if isinstance(config, dict):
+        ontology_cfg = config.get("ontology") if isinstance(config.get("ontology"), dict) else None
+        if isinstance(ontology_cfg, dict):
+            cfg = ontology_cfg.get("thresholds")
+        if cfg is None:
+            cfg = config.get("ontology_thresholds")
     if not isinstance(cfg, dict):
         return OntologyThresholds()
     try:
@@ -108,6 +119,17 @@ def thresholds_from_config(config: Optional[Dict[str, Any]]) -> OntologyThreshol
         min_confidence_to_accept=min_conf,
         max_delta_for_ambiguity=max_delta,
     )
+
+
+def clean_raw_value_for_ontology(raw_value: str) -> str:
+    cleaned = (raw_value or "").strip()
+    if not cleaned:
+        return ""
+    for pattern in _PREFIX_PATTERNS:
+        match = pattern.match(cleaned)
+        if match:
+            return match.group(1).strip()
+    return cleaned
 
 
 def _normalize_text(text: str) -> str:
@@ -144,7 +166,8 @@ def choose_best_ontology_candidate(
     if not candidates:
         return OntologyMatchResult(status="NO_MATCH")
 
-    normalized_raw = _normalize_text(raw_value)
+    cleaned_raw = clean_raw_value_for_ontology(raw_value)
+    normalized_raw = _normalize_text(cleaned_raw)
     raw_tokens = _tokenize(normalized_raw)
 
     scored: List[tuple[float, int, str, OntologyCandidate]] = []

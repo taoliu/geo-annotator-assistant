@@ -90,20 +90,11 @@ def retrieve_ontology_candidates(
             query_embeddings=[query_embedding],
             n_results=top_k,
             where={"source": source},
-            #include=["metadatas", "documents", "distances", "ids"],
+            # The following line is commented out to be compatible with older chroma versions
+            # include=["metadatas", "documents", "distances", "ids"],
         )
     except Exception as exc:
-        print("[ontology_retrieve] query failed:", repr(exc))
-        print("[ontology_retrieve] source=", repr(source), "type=", type(source))
-        print("[ontology_retrieve] top_k=", top_k, "type=", type(top_k))
-        print("[ontology_retrieve] embedding type=", type(query_embedding))
-        try:
-            print("[ontology_retrieve] embedding len=", len(query_embedding), "first3=", query_embedding[:3])
-        except Exception:
-            print("[ontology_retrieve] embedding is not sliceable")
-        traceback.print_exc()
-        raise
-        # raise OntologyIndexUnavailable("Chroma query failed.") from exc
+        raise OntologyIndexUnavailable("Chroma query failed.") from exc
 
     ids = (res.get("ids") or [[]])[0]
     dists = (res.get("distances") or [[]])[0]

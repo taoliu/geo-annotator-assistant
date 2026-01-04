@@ -19,18 +19,23 @@ from validator.ontology_match import OntologyThresholds, choose_best_ontology_ca
 
 def _config() -> dict:
     return {
-        "ontology_chroma_enabled": True,
-        "ontology_chroma_db_path": "ontology_chroma_db",
-        "ontology_chroma_collection": "ontology_rag",
-        "ontology_embedding_model_name": "BAAI/bge-base-en-v1.5",
-        "ontology_embedding_normalize": True,
-        "ontology_top_k": 5,
-        "ontology_sources_by_field": {
-            "tissue_type": "Uberon Ontology",
-        },
-        "ontology_thresholds": {
-            "min_confidence_to_accept": 0.80,
-            "max_delta_for_ambiguity": 0.05,
+        "persist_path": "ontology_chroma_db",
+        "collection_name": "ontology_rag",
+        "k": 5,
+        "ontology": {
+            "enabled": True,
+            "embedding": {
+                "provider": "langchain_huggingface",
+                "model_name": "BAAI/bge-base-en-v1.5",
+                "normalize_embeddings": True,
+            },
+            "sources_by_field": {
+                "tissue_type": "Uberon Ontology",
+            },
+            "thresholds": {
+                "min_confidence_to_accept": 0.80,
+                "max_delta_for_ambiguity": 0.05,
+            },
         },
     }
 

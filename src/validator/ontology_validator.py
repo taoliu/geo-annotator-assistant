@@ -89,7 +89,12 @@ def _get_grounder(field: str):
 
 def _resolve_ontology_source(field: str, config: Dict) -> str:
     if isinstance(config, dict):
-        sources = config.get("ontology_sources_by_field")
+        ontology_cfg = config.get("ontology") if isinstance(config.get("ontology"), dict) else None
+        sources = None
+        if isinstance(ontology_cfg, dict):
+            sources = ontology_cfg.get("sources_by_field")
+        if sources is None:
+            sources = config.get("ontology_sources_by_field")
         if isinstance(sources, dict) and field in sources:
             return str(sources[field])
     return _DEFAULT_SOURCES_BY_FIELD.get(field, field)

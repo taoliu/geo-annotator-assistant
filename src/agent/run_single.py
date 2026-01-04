@@ -186,11 +186,11 @@ def _update_validation_state(
     state.semantic_errors = semantic_validate(parsed_output, context_text)
     state.consistency_flags = consistency_validate(parsed_output, context_text)
 
-    ontology_cfg = cfg.get("ontology", cfg) if isinstance(cfg, dict) else {}
+    rag_cfg = cfg.get("rag", {}) if isinstance(cfg, dict) else {}
     matches, ontology_failures = ground_all_fields(
         parsed_output,
         context_text,
-        ontology_cfg,
+        rag_cfg,
     )
     state.ontology_matches = {
         field: match.to_dict() if hasattr(match, "to_dict") else match

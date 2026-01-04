@@ -1,185 +1,242 @@
-# GEO GSM Metadata Annotation Agent — Whitepaper
+# GEO GSM Annotator Agent — Whitepaper
 
-## Overview
+## 1. Purpose and Scope
 
-This project implements a modular, auditable system for annotating
-GEO GSM samples with structured biological metadata using
-large language models (LLMs) and controlled vocabularies.
+The GEO GSM Annotator Agent is a semi-automated system for extracting, validating, and standardizing sample-level metadata (GSM) from the GEO database using large language models (LLMs), deterministic validators, and ontology grounding.
 
-The primary goal is to extract concise, standardized labels
-(e.g. assay type, tissue, disease) from heterogeneous GEO metadata
-while preserving reproducibility, transparency, and scientific rigor.
+This document defines the **long-term architectural intent, invariants, and governance rules** of the project.
+It is not an implementation guide, API reference, or configuration manual.
+
+The whitepaper is designed to remain valid across:
+
+* multiple implementation iterations,
+* multiple AI-assisted development sessions,
+* and multiple contributors (human or AI).
 
 ---
 
-## System Design Principles
+## 2. Design Philosophy
 
-The system is designed around the following core principles:
+The system is built around the following principles:
 
-1. **Separation of concerns**
-2. **Strict output contracts**
+1. **LLMs generate, validators decide**
+   LLMs propose annotations. Deterministic logic decides acceptance, repair, or rejection.
+
+2. **Auditability over cleverness**
+   Every decision must be explainable post hoc through structured audit records.
+
 3. **Repair over rejection**
-4. **Audit-first execution**
-5. **Ontology compatibility**
+   When possible, errors should be routed to targeted repair rather than immediate failure.
 
-These principles guide all architectural decisions.
+4. **Separation of time scales**
 
----
-
-## High-Level Architecture
-
-The pipeline is composed of four logically independent stages:
-
-1. **Ingestion**
-2. **LLM-based reasoning**
-3. **Validation and repair**
-4. **Output curation and auditing**
-
-Each stage can evolve independently.
+   * Long-term: architectural invariants (this document)
+   * Medium-term: milestones (what exists and why)
+   * Short-term: tickets (exact changes)
 
 ---
 
-## Ingestion Layer
+## 3. Core Output Contract (Invariant)
 
-The ingestion layer is responsible for:
-- Downloading GEO SOFT files
-- Parsing GSM- and GSE-level metadata
-- Producing a per-GSM textual context
+The agent produces **exactly eight output fields** per GSM record.
 
-The output of ingestion is a JSONL file where each record contains:
-- `context_text` (human-readable evidence)
-- `gsm_accession`
-- `gse_accession`
+This schema is immutable unless explicitly revised by a new major milestone:
 
-Ingestion **does not** define prompts or schemas and does not
-perform reasoning.
+* `gse_accession`
+* `gsm_accession`
+* `data_type`
+* `organism`
+* `tissue_type`
+* `cell_line`
+* `disease`
+* `treatment`
 
----
-
-## LLM-Based Annotation Engine
-
-The annotation engine uses an instruction-tuned LLM to infer
-structured labels from the GSM context text.
-
-Key properties:
-
-- **Local in-process inference**
-  - Models are loaded directly from local weights
-  - No external API or HTTP server is required
-  - Suitable for restricted environments (HPC, secured servers)
-
-- **Chat-template prompting**
-  - Prompts are rendered using the tokenizer’s native chat template
-  - Improves instruction adherence and output consistency
-
-- **Fixed schema contract**
-  - The model must return exactly eight fields:
-    - `gse_accession`
-    - `gsm_accession`
-    - `data_type`
-    - `organism`
-    - `tissue_type`
-    - `cell_line`
-    - `disease`
-    - `treatment`
+Validators, ontology grounding, and repair logic **must not change this schema**.
+Any additional information must be recorded in audit logs, not in the final output.
 
 ---
 
-## Validation Layer
+## 4. End-to-End Data Flow Contract (Invariant)
 
-All model outputs are validated deterministically.
+The canonical processing pipeline is:
 
-Validation includes:
-- JSON parseability
-- Exact key matching
-- Word-length constraints
-- Basic semantic consistency checks
-- Cross-field consistency checks
+1. **Context ingestion**
+   Raw GEO GSM context is ingested as unstructured text.
 
-The system is intentionally strict about schema correctness.
+2. **Prompt construction**
+   Context is embedded into a structured prompt template.
 
----
+3. **LLM generation**
+   The LLM proposes a complete 8-field annotation.
 
-## Robust Output Parsing
+4. **Format validation**
+   Output is checked for schema and syntactic correctness.
 
-LLMs frequently emit:
-- Markdown code fences
-- Explanatory text
-- Mixed formatting
+5. **Semantic validation**
+   Internal consistency and heuristic rules are applied.
 
-The validator therefore extracts the **first valid JSON object**
-from the model output before validation.
+6. **Ontology grounding**
+   Selected fields are grounded against external ontologies.
 
-This improves robustness without weakening schema enforcement.
+7. **Decision routing**
+   Validation results are mapped to actions using a decision table.
 
----
+8. **Repair loop (optional)**
+   Targeted LLM repair is invoked when allowed.
 
-## Repair Loops
+9. **Final decision**
+   Output is accepted, flagged, or rejected.
 
-Rather than rejecting invalid outputs, the system attempts repair.
+10. **Audit emission**
+    All steps, decisions, and alternatives are recorded.
 
-Two repair mechanisms exist:
-
-### Format Repair
-Triggered when schema or formatting rules fail.
-The model is re-prompted to correct formatting errors.
-
-### Decision-Based Repair
-Triggered by semantic or consistency failures.
-A decision table governs:
-- Whether to repair
-- Which field to target
-- How many attempts are allowed
-- When to fall back or escalate
-
-Repairs always return the **full schema**, simplifying validation
-and merge logic.
+Steps must occur **in this order**.
+Reordering steps requires an explicit milestone-level decision.
 
 ---
 
-## Decision Engine
+## 5. Ontology Grounding Model (Invariant)
 
-All non-trivial failures are routed through a decision table.
+Ontology grounding is a **validation and decision-support step**, not a generative step.
 
-Each failure type maps to:
-- an action (REPAIR, FALLBACK, ESCALATE)
-- a target field
-- retry limits
-- severity level
+Key invariants:
 
-This makes system behavior explicit, testable, and extensible.
+* Ontology resources are **read-only** and externally built.
+* The agent does not modify ontology databases.
+* Ontology grounding produces:
 
----
-
-## Audit and Reproducibility
-
-Every GSM annotation produces a complete audit record containing:
-- Prompt and validator versions
-- All raw LLM outputs (initial + repairs)
-- Parsed outputs
-- Validation results
-- Repair history
-- Final decision and output
-
-This enables full reproducibility and post-hoc analysis.
+  * matched term ID and label (when confident),
+  * or structured failure states (no match, ambiguous, low confidence).
+* Grounding results influence decisions via validators and decision tables.
+* Grounding does not directly change the final output schema.
 
 ---
 
-## Controlled Vocabulary Alignment (Planned)
+## 6. Retrieval and RAG Invariants
 
-The system is designed to integrate ontology grounding
-(e.g. EFO, UBERON, DOID, Cellosaurus, NCIT).
+Retrieval-Augmented Generation (RAG) is used only for **candidate retrieval**, never as an authority.
 
-Ontology alignment is treated as a validation and repair stage,
-not as a post-processing step.
+Invariants:
+
+* Retrieval is deterministic and auditable.
+* Vector databases are queried in read-only mode.
+* Query embeddings are computed explicitly by the agent.
+* Retrieval results are inputs to deterministic selection logic.
+* No hidden state or implicit learning occurs at runtime.
 
 ---
 
-## Summary
+## 7. Configuration Governance (Invariant)
 
-This architecture allows the system to leverage LLM reasoning
-while maintaining strong guarantees required for scientific
-metadata curation.
+### Canonical Namespace
 
-The design favors transparency, extensibility, and correctness
-over raw throughput.
+All retrieval- and grounding-related configuration **must** live under:
+
+```
+rag.*
+```
+
+Ontology-specific configuration must live under:
+
+```
+rag.ontology.*
+```
+
+New top-level configuration namespaces for retrieval or grounding are prohibited.
+
+### Stability Rules
+
+* Example configs under `config/` define the canonical schema.
+* Any change to configuration requires updating:
+
+  * the config model code,
+  * all example configs,
+  * at least one config-loading test.
+
+Backward compatibility is allowed only via explicit compatibility shims and warnings.
+
+---
+
+## 8. Ticketing and Development Contract (Invariant)
+
+All development work is tracked via numbered tickets.
+
+Rules:
+
+* Every ticket must be written to a file under:
+
+  ```
+  docs/tickets/ticket-XXX.md
+  ```
+* Tickets must include:
+
+  * context,
+  * goals,
+  * non-goals,
+  * explicit file-level tasks,
+  * acceptance criteria.
+* Code changes without an associated ticket are invalid.
+
+This contract ensures continuity across AI-assisted sessions.
+
+---
+
+## 9. Audit and Explainability (Invariant)
+
+The system must emit structured audit records capturing:
+
+* raw LLM outputs,
+* parsed outputs,
+* validation results,
+* ontology candidates and decisions,
+* repair attempts,
+* final decisions.
+
+Audit records are first-class outputs and must never be skipped or disabled silently.
+
+---
+
+## 10. Explicit Non-Goals
+
+This whitepaper intentionally does **not** define:
+
+* exact thresholds or numeric constants,
+* specific ontology versions,
+* specific LLM models,
+* CLI flags or argument names,
+* file paths or directory layouts,
+* prompt wording.
+
+These details belong to milestones or tickets and may change over time.
+
+---
+
+## 11. Guidance for Future AI-Assisted Sessions
+
+Before proposing changes, future AI agents must:
+
+1. Read this whitepaper.
+2. Inspect current example configs.
+3. Inspect existing tickets and milestones.
+4. Follow established namespaces and contracts.
+
+If a proposal conflicts with an invariant defined here, it must:
+
+* explicitly state the conflict,
+* justify the change,
+* and be introduced via a milestone-level update.
+
+---
+
+## 12. Summary
+
+This document defines what **must remain true** even as the code evolves.
+
+* The whitepaper defines *law*.
+* Milestones define *state*.
+* Tickets define *work*.
+
+This separation is essential for maintaining correctness, auditability, and continuity in a system developed across long time spans and multiple AI-assisted sessions.
+
+---
+

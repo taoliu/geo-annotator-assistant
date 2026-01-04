@@ -18,7 +18,7 @@ llm:
   top_p: 1.0
   device: "auto"         # auto | cpu | mps
   dtype: "auto"          # auto | float16 | bfloat16 | float32
-  model_path: "./llama-3.2-1b-it"
+  model_path: "./gat-llama3-3b-it-old"
   stop: ["\nCONTEXT:", "\nPREVIOUS_OUTPUT:"]
 
 rag:
