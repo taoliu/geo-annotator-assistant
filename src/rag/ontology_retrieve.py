@@ -90,9 +90,17 @@ def retrieve_ontology_candidates(
             query_embeddings=[query_embedding],
             n_results=top_k,
             where={"source": source},
-            # The following line is commented out to be compatible with older chroma versions
-            # include=["metadatas", "documents", "distances", "ids"],
+            include=["metadatas", "documents", "distances"],
         )
+    except TypeError:
+        try:
+            res = collection.query(
+                query_embeddings=[query_embedding],
+                n_results=top_k,
+                where={"source": source},
+            )
+        except Exception as exc:
+            raise OntologyIndexUnavailable("Chroma query failed.") from exc
     except Exception as exc:
         raise OntologyIndexUnavailable("Chroma query failed.") from exc
 

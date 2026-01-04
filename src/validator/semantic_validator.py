@@ -2,13 +2,14 @@ from __future__ import annotations
 from typing import Dict, List
 import re
 
+from validator.failure_codes import (
+    CELL_LINE_INFERRED_WITHOUT_EVIDENCE,
+    CELL_LINE_YES_INVALID,
+    DISEASE_INFERRED_WITHOUT_EVIDENCE,
+    TISSUE_IS_CELL_TYPE,
+    TREATMENT_IDENTITY_LEAKAGE,
+)
 from validator.heuristics import get_heuristics
-
-# Failure codes
-TISSUE_IS_CELL_TYPE = "tissue_is_cell_type"
-TREATMENT_IDENTITY_LEAKAGE = "treatment_identity_leakage"
-CELL_LINE_YES_INVALID = "cell_line_yes_invalid"
-DISEASE_INFERRED_WITHOUT_EVIDENCE = "disease_inferred_without_evidence"
 
 _HEURISTICS = get_heuristics()
 _SEMANTIC = _HEURISTICS["semantic"]
@@ -38,6 +39,28 @@ _GENOTYPE_RE = _compile_word_regex(_GENOTYPE_WORDS)
 _GENOTYPE_SYMBOL_RE = _compile_symbol_regex(_GENOTYPE_SYMBOLS)
 _TREATMENT_TISSUE_WORDS_RE = _compile_word_regex(_SEMANTIC["treatment_tissue_keywords"])
 
+_NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
+
+
+def _normalize_for_evidence(text: str) -> str:
+    return _NON_ALNUM_RE.sub("", text.lower())
+
+
+def _has_explicit_value(value: str, context_text: str) -> bool:
+    if not value or not context_text:
+        return False
+    value = value.strip()
+    if not value:
+        return False
+    if re.search(r"\b%s\b" % re.escape(value), context_text, re.IGNORECASE):
+        return True
+    normalized_value = _normalize_for_evidence(value)
+    if len(normalized_value) < 4:
+        return False
+    normalized_context = _normalize_for_evidence(context_text)
+    return normalized_value in normalized_context
+
+
 def semantic_validate(parsed_output: Dict[str, str], context_text: str) -> Dict[str, List[str]]:
     """Lightweight field-level semantic validation (no ontology calls)."""
     errs: Dict[str, List[str]] = {}
@@ -59,8 +82,13 @@ def semantic_validate(parsed_output: Dict[str, str], context_text: str) -> Dict[
             errs.setdefault("treatment", []).append(TREATMENT_IDENTITY_LEAKAGE)
 
     cell_line = parsed_output.get("cell_line", "")
-    if cell_line and cell_line.strip().lower() == "yes":
+    cell_line_value = cell_line.strip()
+    cell_line_lower = cell_line_value.lower()
+    if cell_line_value and cell_line_lower == "yes":
         errs.setdefault("cell_line", []).append(CELL_LINE_YES_INVALID)
+    elif cell_line_value and cell_line_lower not in {"no", "unknown"}:
+        if not _has_explicit_value(cell_line_value, context_text):
+            errs.setdefault("cell_line", []).append(CELL_LINE_INFERRED_WITHOUT_EVIDENCE)
 
     disease = parsed_output.get("disease", "")
     if disease and disease != "Healthy":

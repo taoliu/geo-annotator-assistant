@@ -169,6 +169,22 @@ healthy_disease_conflict:
   fallback_value: "Unknown"
   severity: high
 
+disease_inferred_without_evidence:
+  action: REPAIR
+  field: disease
+  repair_template: repair_disease_evidence_v1
+  max_attempts: 1
+  fallback_value: null
+  severity: medium
+
+cell_line_inferred_without_evidence:
+  action: REPAIR
+  field: cell_line
+  repair_template: repair_cell_line_evidence_v1
+  max_attempts: 1
+  fallback_value: null
+  severity: medium
+
 single_cell_evidence_missing:
   action: REPAIR
   field: data_type

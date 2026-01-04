@@ -21,7 +21,7 @@ _WS_RE = re.compile(r"\s+")
 _PREFIX_PATTERNS = [
     re.compile(r"^\s*[A-Za-z][A-Za-z0-9 _/\-]{0,40}\s*:\s*(.+)$"),
     re.compile(r"^\s*[A-Za-z][A-Za-z0-9 _/\-]{0,40}\s*=\s*(.+)$"),
-    re.compile(r"^\s*[A-Za-z][A-Za-z0-9 _/\-]{0,40}\s*-\s*(.+)$"),
+    re.compile(r"^\s*[A-Za-z][A-Za-z0-9 _/\-]{0,40}\s+-\s+(.+)$"),
 ]
 _MAX_ALTERNATES = 5
 

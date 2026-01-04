@@ -47,9 +47,9 @@ _DEFAULT_SOURCES_BY_FIELD = {
 }
 
 _FALLBACK_VALUES = {
-    "tissue_type": "Unknown",
-    "cell_line": "No",
-    "disease": "Healthy",
+    "tissue_type": {"Unknown"},
+    "cell_line": {"No"},
+    "disease": {"Healthy", "Unknown"},
 }
 
 _FIELD_FAILURE_CODES = {
@@ -130,7 +130,9 @@ def _make_fallback_match(field: str, raw_value: str, ontology: str) -> OntologyM
 def _is_fallback_value(field: str, raw_value: str) -> bool:
     if field not in _FALLBACK_VALUES:
         return False
-    return raw_value.strip().lower() == _FALLBACK_VALUES[field].lower()
+    return raw_value.strip().lower() in {
+        value.lower() for value in _FALLBACK_VALUES[field]
+    }
 
 def _call_grounder(
     grounder_fn,

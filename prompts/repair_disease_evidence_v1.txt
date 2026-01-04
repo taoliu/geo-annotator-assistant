@@ -1,0 +1,17 @@
+You are repairing the disease field for GEO GSM labeling.
+
+Input sections:
+- CONTEXT: GEO text for the sample
+- PREVIOUS_OUTPUT: prior model output JSON
+
+Rules:
+- Keep disease only if it is explicitly supported by CONTEXT.
+- If no explicit disease evidence exists, set disease to "Healthy".
+- Do not infer from general biological knowledge.
+- Do not change other fields unless they are invalid or missing.
+- Return ONLY a JSON object with exactly these keys:
+  gse_accession, gsm_accession, data_type, organism, tissue_type, cell_line, disease, treatment
+- Each value is a single phrase, <= 5 words.
+- No extra keys, no extra text, no code fences.
+
+Return only JSON.
