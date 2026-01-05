@@ -220,9 +220,6 @@ def choose_best_ontology_candidate(
         ]
     ] = []
     for idx, candidate in enumerate(candidates):
-        if raw_value == "CLL" and candidate.term_id == "DOID:1040":
-            print("[DEBUG synonyms DOID:1040]", candidate.synonyms)
-
         label = candidate.label or ""
         synonyms = candidate.synonyms or []
         matched_via = None
@@ -269,6 +266,32 @@ def choose_best_ontology_candidate(
         )
 
     scored.sort(key=lambda item: (-item[0], item[1], item[2]))
+    exact_tie_resolved = False
+    best_confidence, best_match_rank = scored[0][0], scored[0][1]
+    if (
+        best_confidence == 1.0
+        and scored[0][3] in {"label_exact", "synonym_exact"}
+    ):
+        tied = [
+            item
+            for item in scored
+            if item[0] == 1.0 and item[1] == best_match_rank
+        ]
+        if len(tied) > 1:
+            def _specificity_key(item) -> tuple[int, int, int]:
+                label_text = item[6].label or ""
+                normalized_label = normalize_exact_match_text(label_text)
+                tokens = _tokenize(normalized_label)
+                return (len(tokens), len(normalized_label), -item[2])
+
+            tied_sorted = sorted(
+                tied,
+                key=_specificity_key,
+                reverse=True,
+            )
+            others = [item for item in scored if item not in tied]
+            scored = tied_sorted + others
+            exact_tie_resolved = True
     (
         best_confidence,
         _,
@@ -292,7 +315,7 @@ def choose_best_ontology_candidate(
 
     status = "MATCHED"
     if best_match_type in {"label_exact", "synonym_exact"}:
-        if len(scored) > 1:
+        if len(scored) > 1 and not exact_tie_resolved:
             second_confidence = scored[1][0]
             if (
                 (best_confidence - second_confidence)
