@@ -9,15 +9,24 @@ Ontology-grounded AI agent to annotate GEO **GSM** sample metadata.
 - Deterministic validation + decision engine
 - JSONL outputs: annotations, audit, flagged-for-review
 
+## Project Status
+
+The project is under active development.
+
+- Milestone v0.2 (Ontology grounding and evidence-first repair) is complete.
+- Current focus is shifting toward labeling policy and semantic conventions.
+
+See:
+- `docs/whitepaper.md` for long-term design
+- `docs/milestones/` for development phases
+- `docs/tickets/` for execution-level tasks
+
 ## High-level flow
 1) Fetch+parse GSM (external dependency) -> JSONL context  
 2) Fine-tuned LLM proposes labels  
 3) Validate (format + semantics + ontology grounding + consistency)  
 4) Targeted repair if needed (bounded)  
 5) Write outputs + audit logs; flag ambiguous cases
-
-## Repo status
-This is a skeleton with module boundaries and stable file paths. Implementations are intentionally minimal.
 
 ## Expected external dependencies
 - A parser/downloader package or script that produces the JSONL context given a GSM accession.

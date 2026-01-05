@@ -23,6 +23,9 @@ ONTOLOGY_AMBIGUOUS_DATA_TYPE = "ontology_ambiguous_data_type"
 ONTOLOGY_LOW_CONFIDENCE_DATA_TYPE = "ontology_low_confidence_data_type"
 TISSUE_IS_CELL_TYPE = "tissue_is_cell_type"
 TREATMENT_IDENTITY_LEAKAGE = "treatment_identity_leakage"
+CELL_LINE_YES_INVALID = "cell_line_yes_invalid"
+DISEASE_INFERRED_WITHOUT_EVIDENCE = "disease_inferred_without_evidence"
+CELL_LINE_INFERRED_WITHOUT_EVIDENCE = "cell_line_inferred_without_evidence"
 ASSAY_PLATFORM_CONFLICT = "assay_platform_conflict"
 SINGLE_CELL_EVIDENCE_MISSING = "single_cell_evidence_missing"
 HEALTHY_DISEASE_CONFLICT = "healthy_disease_conflict"
@@ -50,6 +53,9 @@ ALL_FAILURE_CODES = [
     ONTOLOGY_LOW_CONFIDENCE_DATA_TYPE,
     TISSUE_IS_CELL_TYPE,
     TREATMENT_IDENTITY_LEAKAGE,
+    CELL_LINE_YES_INVALID,
+    DISEASE_INFERRED_WITHOUT_EVIDENCE,
+    CELL_LINE_INFERRED_WITHOUT_EVIDENCE,
     ASSAY_PLATFORM_CONFLICT,
     SINGLE_CELL_EVIDENCE_MISSING,
     HEALTHY_DISEASE_CONFLICT,
@@ -78,6 +84,9 @@ FAILURE_SEVERITY: Dict[str, str] = {
     ONTOLOGY_LOW_CONFIDENCE_DATA_TYPE: "medium",
     TISSUE_IS_CELL_TYPE: "medium",
     TREATMENT_IDENTITY_LEAKAGE: "medium",
+    CELL_LINE_YES_INVALID: "medium",
+    DISEASE_INFERRED_WITHOUT_EVIDENCE: "medium",
+    CELL_LINE_INFERRED_WITHOUT_EVIDENCE: "medium",
     ASSAY_PLATFORM_CONFLICT: "high",
     SINGLE_CELL_EVIDENCE_MISSING: "medium",
     HEALTHY_DISEASE_CONFLICT: "high",
@@ -113,6 +122,9 @@ PRIMARY_FAILURE_ORDER: List[str] = [
     WORD_LIMIT_VIOLATION,
     TISSUE_IS_CELL_TYPE,
     TREATMENT_IDENTITY_LEAKAGE,
+    CELL_LINE_YES_INVALID,
+    DISEASE_INFERRED_WITHOUT_EVIDENCE,
+    CELL_LINE_INFERRED_WITHOUT_EVIDENCE,
     DISEASE_UNSUPPORTED,
 ]
 
@@ -122,6 +134,11 @@ PRIMARY_FAILURE_PRIORITY = {
 
 DEFAULT_UNKNOWN_SEVERITY_SCORE = 4
 DEFAULT_UNKNOWN_PRIORITY = len(PRIMARY_FAILURE_ORDER)
+
+EVIDENCE_FIRST_FAILURES = {
+    DISEASE_INFERRED_WITHOUT_EVIDENCE,
+    CELL_LINE_INFERRED_WITHOUT_EVIDENCE,
+}
 
 
 def _failure_sort_key(failure_code: str) -> Tuple[int, int, str]:
@@ -142,6 +159,13 @@ def select_primary_failure_across_fields(
 ) -> Tuple[str, str]:
     if not failures_by_field:
         raise ValueError("failures_by_field must be non-empty")
+    for field in sorted(failures_by_field.keys()):
+        failures = failures_by_field[field]
+        if not failures:
+            continue
+        for failure_code in failures:
+            if failure_code in EVIDENCE_FIRST_FAILURES:
+                return field, failure_code
     candidates = []
     for field, failures in failures_by_field.items():
         if not failures:
