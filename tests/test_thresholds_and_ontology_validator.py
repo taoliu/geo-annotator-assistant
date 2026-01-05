@@ -28,7 +28,7 @@ def test_fallback_tissue_type_unknown_no_failures(monkeypatch) -> None:
             matched_term_id="EFO:0001234",
             matched_label="RNA-seq",
             matched_source="Experimental Factor Ontology",
-            match_type="exact",
+            match_type="label_exact",
             score=0.9,
             alternates=[],
         )

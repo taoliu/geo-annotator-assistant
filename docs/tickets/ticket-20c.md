@@ -1,4 +1,4 @@
-# Ticket #21: AGENT-WS-021 — Enforce synonym_exact to produce MATCHED in ontology grounding (selection override)
+# Ticket #20-c: AGENT-WS-020c — Enforce synonym_exact to produce MATCHED in ontology grounding (selection override)
 
 You are working in repo `geo-gsm-annotator-agent`.
 
