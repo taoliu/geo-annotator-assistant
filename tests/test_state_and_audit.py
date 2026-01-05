@@ -44,7 +44,7 @@ def test_pipeline_state_to_dict_serializes_ontology_match() -> None:
         matched_term_id="UBERON:0002106",
         matched_label="small intestine",
         matched_source="Uberon Ontology",
-        match_type="exact",
+        match_type="label_exact",
         score=0.9,
         alternates=[],
     )
@@ -54,6 +54,8 @@ def test_pipeline_state_to_dict_serializes_ontology_match() -> None:
     assert isinstance(serialized, dict)
     assert serialized["ontology"] == "UBERON"
     assert serialized["status"] == "MATCHED"
+    assert "matched_via" in serialized
+    assert "matched_synonym" in serialized
 
 
 def test_audit_record_json_and_timestamp() -> None:

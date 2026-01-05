@@ -43,6 +43,50 @@ def _load_embedding_function(model_name: str, normalize_embeddings: bool):
         ) from exc
 
 
+def _coerce_synonyms(value) -> List[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if item is not None and str(item).strip()]
+    if isinstance(value, (tuple, set)):
+        return [str(item).strip() for item in value if item is not None and str(item).strip()]
+    if isinstance(value, str):
+        s = value.strip()
+        if not s:
+            return []
+        # Handle the observed "one big comma-separated string" case.
+        if "," in s:
+            parts = [p.strip() for p in s.split(",")]
+            return [p for p in parts if p]
+        return [s]
+    return []
+
+
+
+def _build_candidate(
+    term_id,
+    dist,
+    meta,
+    doc,
+    source: str,
+) -> OntologyCandidate:
+    meta = meta if isinstance(meta, dict) else {}
+    term_id_value = meta.get("term_id") or term_id
+    label = meta.get("label") or ""
+    definition = meta.get("definition") or None
+    synonyms = _coerce_synonyms(meta.get("synonyms", []))
+    ancestors = meta.get("ancestors")
+    source_value = meta.get("source") or source
+    return OntologyCandidate(
+        term_id=str(term_id_value or ""),
+        label=str(label or ""),
+        source=str(source_value or ""),
+        definition=str(definition) if definition else None,
+        synonyms=synonyms,
+        ancestors=ancestors if isinstance(ancestors, list) else [],
+        distance=float(dist) if dist is not None else None,
+        doc_text=str(doc) if doc else None,
+    )
+
+
 def retrieve_ontology_candidates(
     query: str,
     source: str,
@@ -111,25 +155,6 @@ def retrieve_ontology_candidates(
 
     candidates: List[OntologyCandidate] = []
     for term_id, dist, meta, doc in zip(ids, dists, metas, docs):
-        meta = meta if isinstance(meta, dict) else {}
-        term_id_value = meta.get("term_id") or term_id
-        label = meta.get("label") or ""
-        definition = meta.get("definition") or None
-        synonyms = meta.get("synonyms")
-        ancestors = meta.get("ancestors")
-        source_value = meta.get("source") or source
-
-        candidates.append(
-            OntologyCandidate(
-                term_id=str(term_id_value or ""),
-                label=str(label or ""),
-                source=str(source_value or ""),
-                definition=str(definition) if definition else None,
-                synonyms=[str(item) for item in synonyms] if isinstance(synonyms, list) else [],
-                ancestors=ancestors if isinstance(ancestors, list) else [],
-                distance=float(dist) if dist is not None else None,
-                doc_text=str(doc) if doc else None,
-            )
-        )
+        candidates.append(_build_candidate(term_id, dist, meta, doc, source))
 
     return candidates

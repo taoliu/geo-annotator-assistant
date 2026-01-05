@@ -76,7 +76,9 @@ def test_synonym_match(monkeypatch) -> None:
     match = tissue_grounder.ground_tissue_type("Heart", "", _config())
     assert match.status == "MATCHED"
     assert match.matched_term_id == "UBERON:0002"
-    assert match.score == pytest.approx(0.98, rel=1e-3)
+    assert match.score == 1.0
+    assert match.match_type == "synonym_exact"
+    assert match.matched_via == "synonym"
 
 
 def test_close_tie_ambiguous(monkeypatch) -> None:

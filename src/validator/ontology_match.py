@@ -6,7 +6,15 @@ from typing import Any, Dict, List, Optional
 
 from rag.ontology_retrieve import OntologyCandidate
 
-_ALLOWED_MATCH_TYPES = {"exact", "synonym", "jaccard", "none", "fallback"}
+_ALLOWED_MATCH_TYPES = {
+    "exact",
+    "synonym",
+    "label_exact",
+    "synonym_exact",
+    "jaccard",
+    "none",
+    "fallback",
+}
 _ALLOWED_STATUSES = {
     "MATCHED",
     "NO_MATCH",
@@ -18,6 +26,8 @@ _ALLOWED_STATUSES = {
 
 _PUNCT_TABLE = str.maketrans({char: " " for char in string.punctuation})
 _WS_RE = re.compile(r"\s+")
+_EXACT_PUNCT_RE = re.compile(r"[-_/,.:]")
+_NON_ALNUM_RE = re.compile(r"[^a-z0-9 ]+")
 _PREFIX_PATTERNS = [
     re.compile(r"^\s*[A-Za-z][A-Za-z0-9 _/\-]{0,40}\s*:\s*(.+)$"),
     re.compile(r"^\s*[A-Za-z][A-Za-z0-9 _/\-]{0,40}\s*=\s*(.+)$"),
@@ -55,6 +65,8 @@ class OntologyMatchResult:
     alternates: List[OntologyMatchAlternate] = dataclass_field(default_factory=list)
     match_type: Optional[str] = None
     confidence: Optional[float] = None
+    matched_via: Optional[str] = None
+    matched_synonym: Optional[str] = None
 
     def __post_init__(self) -> None:
         if self.status not in _ALLOWED_STATUSES:
@@ -75,6 +87,8 @@ class OntologyMatch:
     match_type: Optional[str]
     score: Optional[float]
     alternates: List[Dict[str, Any]] = dataclass_field(default_factory=list)
+    matched_via: Optional[str] = None
+    matched_synonym: Optional[str] = None
 
     def __post_init__(self) -> None:
         if self.status not in _ALLOWED_STATUSES:
@@ -94,6 +108,8 @@ class OntologyMatch:
             "match_type": self.match_type,
             "score": self.score,
             "alternates": list(self.alternates),
+            "matched_via": self.matched_via,
+            "matched_synonym": self.matched_synonym,
         }
 
 
@@ -140,6 +156,27 @@ def _normalize_text(text: str) -> str:
     return normalized
 
 
+def normalize_exact_match_text(text: str) -> str:
+    if not text:
+        return ""
+    normalized = text.strip().lower()
+    normalized = _EXACT_PUNCT_RE.sub(" ", normalized)
+    normalized = _NON_ALNUM_RE.sub(" ", normalized)
+    normalized = _WS_RE.sub(" ", normalized).strip()
+    return normalized
+
+
+def _find_exact_synonym(normalized_raw: str, synonyms: List[str]) -> Optional[str]:
+    if not normalized_raw:
+        return None
+    for synonym in synonyms:
+        if not isinstance(synonym, str):
+            continue
+        if normalize_exact_match_text(synonym) == normalized_raw:
+            return synonym
+    return None
+
+
 def _tokenize(normalized_text: str) -> List[str]:
     if not normalized_text:
         return []
@@ -167,39 +204,83 @@ def choose_best_ontology_candidate(
         return OntologyMatchResult(status="NO_MATCH")
 
     cleaned_raw = clean_raw_value_for_ontology(raw_value)
+    normalized_raw_exact = normalize_exact_match_text(cleaned_raw)
     normalized_raw = _normalize_text(cleaned_raw)
     raw_tokens = _tokenize(normalized_raw)
 
-    scored: List[tuple[float, int, str, OntologyCandidate]] = []
+    scored: List[
+        tuple[
+            float,
+            int,
+            int,
+            str,
+            Optional[str],
+            Optional[str],
+            OntologyCandidate,
+        ]
+    ] = []
     for idx, candidate in enumerate(candidates):
+        if raw_value == "CLL" and candidate.term_id == "DOID:1040":
+            print("[DEBUG synonyms DOID:1040]", candidate.synonyms)
+
         label = candidate.label or ""
         synonyms = candidate.synonyms or []
-        normalized_label = _normalize_text(label)
-        normalized_synonyms = [
-            _normalize_text(item) for item in synonyms if isinstance(item, str)
-        ]
+        matched_via = None
+        matched_synonym = None
+        normalized_label_exact = normalize_exact_match_text(label)
 
-        if normalized_raw and normalized_label == normalized_raw:
+        if normalized_raw_exact and normalized_label_exact == normalized_raw_exact:
             confidence = 1.0
-            match_type = "exact"
-        elif normalized_raw and normalized_raw in normalized_synonyms:
-            confidence = 0.98
-            match_type = "synonym"
+            match_type = "label_exact"
+            matched_via = "label"
         else:
-            label_score = _jaccard(raw_tokens, _tokenize(normalized_label))
-            syn_score = 0.0
-            for syn in normalized_synonyms:
-                syn_score = max(syn_score, _jaccard(raw_tokens, _tokenize(syn)))
-            confidence = max(label_score, syn_score)
-            match_type = "jaccard"
+            matched_synonym = _find_exact_synonym(normalized_raw_exact, synonyms)
+            if matched_synonym is not None:
+                confidence = 1.0
+                match_type = "synonym_exact"
+                matched_via = "synonym"
+            else:
+                normalized_label = _normalize_text(label)
+                normalized_synonyms = [
+                    _normalize_text(item) for item in synonyms if isinstance(item, str)
+                ]
+                label_score = _jaccard(raw_tokens, _tokenize(normalized_label))
+                syn_score = 0.0
+                for syn in normalized_synonyms:
+                    syn_score = max(syn_score, _jaccard(raw_tokens, _tokenize(syn)))
+                confidence = max(label_score, syn_score)
+                match_type = "jaccard"
 
-        scored.append((confidence, idx, match_type, candidate))
+        match_rank = 2
+        if match_type == "label_exact":
+            match_rank = 0
+        elif match_type == "synonym_exact":
+            match_rank = 1
+        scored.append(
+            (
+                confidence,
+                match_rank,
+                idx,
+                match_type,
+                matched_via,
+                matched_synonym,
+                candidate,
+            )
+        )
 
-    scored.sort(key=lambda item: (-item[0], item[1]))
-    best_confidence, _, best_match_type, best_candidate = scored[0]
+    scored.sort(key=lambda item: (-item[0], item[1], item[2]))
+    (
+        best_confidence,
+        _,
+        _,
+        best_match_type,
+        best_matched_via,
+        best_matched_synonym,
+        best_candidate,
+    ) = scored[0]
 
     alternates: List[OntologyMatchAlternate] = []
-    for confidence, _, _, candidate in scored[:_MAX_ALTERNATES]:
+    for confidence, _, _, _, _, _, candidate in scored[:_MAX_ALTERNATES]:
         alternates.append(
             OntologyMatchAlternate(
                 term_id=candidate.term_id,
@@ -210,20 +291,32 @@ def choose_best_ontology_candidate(
         )
 
     status = "MATCHED"
-    if best_confidence < thresholds.min_confidence_to_accept:
-        status = "LOW_CONFIDENCE"
-    elif len(scored) > 1:
-        second_confidence = scored[1][0]
-        if (
-            (best_confidence - second_confidence)
-            <= thresholds.max_delta_for_ambiguity
-            and second_confidence >= thresholds.min_confidence_to_accept
-        ):
-            status = "AMBIGUOUS"
+    if best_match_type in {"label_exact", "synonym_exact"}:
+        if len(scored) > 1:
+            second_confidence = scored[1][0]
+            if (
+                (best_confidence - second_confidence)
+                <= thresholds.max_delta_for_ambiguity
+                and second_confidence >= thresholds.min_confidence_to_accept
+            ):
+                status = "AMBIGUOUS"
+    else:
+        if best_confidence < thresholds.min_confidence_to_accept:
+            status = "LOW_CONFIDENCE"
+        elif len(scored) > 1:
+            second_confidence = scored[1][0]
+            if (
+                (best_confidence - second_confidence)
+                <= thresholds.max_delta_for_ambiguity
+                and second_confidence >= thresholds.min_confidence_to_accept
+            ):
+                status = "AMBIGUOUS"
 
     best = None
     match_type = None
     confidence = None
+    matched_via = None
+    matched_synonym = None
     if status == "MATCHED":
         best = OntologyMatchAlternate(
             term_id=best_candidate.term_id,
@@ -233,6 +326,8 @@ def choose_best_ontology_candidate(
         )
         match_type = best_match_type
         confidence = best_confidence
+        matched_via = best_matched_via
+        matched_synonym = best_matched_synonym
     else:
         match_type = best_match_type
         confidence = best_confidence
@@ -243,4 +338,6 @@ def choose_best_ontology_candidate(
         alternates=alternates,
         match_type=match_type,
         confidence=confidence,
+        matched_via=matched_via,
+        matched_synonym=matched_synonym,
     )

@@ -74,6 +74,8 @@ def _build_match_from_result(
             match_type=result.match_type,
             score=result.confidence,
             alternates=alternates,
+            matched_via=result.matched_via,
+            matched_synonym=result.matched_synonym,
         )
     return OntologyMatch(
         field=field,
@@ -86,6 +88,8 @@ def _build_match_from_result(
         match_type=result.match_type,
         score=result.confidence,
         alternates=alternates,
+        matched_via=None,
+        matched_synonym=None,
     )
 
 
