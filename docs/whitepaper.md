@@ -107,6 +107,8 @@ At each iteration:
 
 Repair is **field-targeted**, **bounded**, and **auditable**.
 
+Semantic validation may include type guards (for example, treating cell-type values in `cell_line` as no cell line) that trigger deterministic fallback and skip ontology grounding for that field.
+
 ---
 
 ## 6. Evidence-First Semantics (Invariant)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import traceback
-from typing import List, Optional
+from typing import List, Optional, Sequence
 import os
 
 from rag.chroma_client import get_chroma_client
@@ -58,6 +58,32 @@ def _coerce_synonyms(value) -> List[str]:
             return [p for p in parts if p]
         return [s]
     return []
+
+
+def _canonicalize_label_for_lookup(label: str) -> str:
+    cleaned = " ".join((label or "").strip().split())
+    if not cleaned:
+        return ""
+    lowered = cleaned.lower()
+    if lowered in {"atac seq", "atacseq", "atac-seq"}:
+        return "ATAC-seq"
+    return cleaned
+
+
+def _ensure_list(value) -> List:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    return []
+
+
+def _maybe_flatten(value: Sequence) -> List:
+    if not value:
+        return []
+    if isinstance(value, list) and len(value) == 1 and isinstance(value[0], list):
+        return value[0]
+    return list(value)
 
 
 
@@ -156,5 +182,32 @@ def retrieve_ontology_candidates(
     candidates: List[OntologyCandidate] = []
     for term_id, dist, meta, doc in zip(ids, dists, metas, docs):
         candidates.append(_build_candidate(term_id, dist, meta, doc, source))
+
+    canonical_label = _canonicalize_label_for_lookup(query)
+    if canonical_label:
+        try:
+            exact_res = collection.get(
+                where={"source": source, "label": canonical_label},
+                include=["metadatas", "documents"],
+            )
+        except Exception:
+            exact_res = None
+        if exact_res:
+            exact_ids = _maybe_flatten(_ensure_list(exact_res.get("ids")))
+            exact_metas = _maybe_flatten(_ensure_list(exact_res.get("metadatas")))
+            exact_docs = _maybe_flatten(_ensure_list(exact_res.get("documents")))
+            exact_candidates: List[OntologyCandidate] = []
+            for term_id, meta, doc in zip(exact_ids, exact_metas, exact_docs):
+                exact_candidates.append(
+                    _build_candidate(term_id, None, meta, doc, source)
+                )
+            if exact_candidates:
+                seen = {candidate.term_id for candidate in candidates}
+                prepended: List[OntologyCandidate] = []
+                for candidate in exact_candidates:
+                    if candidate.term_id and candidate.term_id not in seen:
+                        prepended.append(candidate)
+                        seen.add(candidate.term_id)
+                candidates = prepended + candidates
 
     return candidates

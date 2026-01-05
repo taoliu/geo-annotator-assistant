@@ -18,6 +18,7 @@ from validator.failure_codes import (
     ONTOLOGY_NO_MATCH_TISSUE_TYPE,
 )
 from validator.ontology_match import OntologyMatch
+from validator.cell_line_rules import is_cell_line_cell_type
 
 try:
     from validator.grounders import data_type as _data_type_grounder
@@ -168,6 +169,8 @@ def ground_all_fields(
         if not raw_value:
             match = _make_none_match(field, raw_value, ontology)
         elif _is_fallback_value(field, raw_value):
+            match = _make_fallback_match(field, raw_value, ontology)
+        elif field == "cell_line" and is_cell_line_cell_type(raw_value):
             match = _make_fallback_match(field, raw_value, ontology)
         else:
             grounder_fn = _get_grounder(field)

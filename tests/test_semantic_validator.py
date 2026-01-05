@@ -10,6 +10,7 @@ if str(SRC) not in sys.path:
 
 from validator.semantic_validator import (
     CELL_LINE_INFERRED_WITHOUT_EVIDENCE,
+    CELL_LINE_IS_CELL_TYPE,
     CELL_LINE_YES_INVALID,
     DISEASE_INFERRED_WITHOUT_EVIDENCE,
     TISSUE_IS_CELL_TYPE,
@@ -41,6 +42,16 @@ def test_treatment_none_ok() -> None:
 def test_cell_line_yes_invalid() -> None:
     errors = semantic_validate({"cell_line": "Yes"}, "")
     assert errors == {"cell_line": [CELL_LINE_YES_INVALID]}
+
+
+def test_cell_line_cell_type_detected() -> None:
+    errors = semantic_validate({"cell_line": "CD8+ T cells"}, "")
+    assert errors == {"cell_line": [CELL_LINE_IS_CELL_TYPE]}
+
+
+def test_cell_line_pbmc_detected() -> None:
+    errors = semantic_validate({"cell_line": "PBMC"}, "")
+    assert errors == {"cell_line": [CELL_LINE_IS_CELL_TYPE]}
 
 
 def test_cell_line_without_context_evidence() -> None:

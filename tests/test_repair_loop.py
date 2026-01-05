@@ -50,6 +50,18 @@ def test_disease_unsupported_fallback_healthy() -> None:
     assert result.repair_history[0]["failure_code"] == "disease_unsupported"
 
 
+def test_cell_line_is_cell_type_fallback_no() -> None:
+    state = PipelineState(
+        gsm_accession="GSM555",
+        semantic_errors={"cell_line": ["cell_line_is_cell_type"]},
+    )
+    result = apply_repairs(state, _decision_table())
+    assert result.final_decision == "ACCEPT"
+    assert result.final_output == {"cell_line": "No"}
+    assert result.attempts_by_field["cell_line"] == 1
+    assert result.repair_history[0]["failure_code"] == "cell_line_is_cell_type"
+
+
 def test_unknown_failure_escalates() -> None:
     state = PipelineState(
         gsm_accession="GSM333",

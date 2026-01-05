@@ -4,11 +4,13 @@ import re
 
 from validator.failure_codes import (
     CELL_LINE_INFERRED_WITHOUT_EVIDENCE,
+    CELL_LINE_IS_CELL_TYPE,
     CELL_LINE_YES_INVALID,
     DISEASE_INFERRED_WITHOUT_EVIDENCE,
     TISSUE_IS_CELL_TYPE,
     TREATMENT_IDENTITY_LEAKAGE,
 )
+from validator.cell_line_rules import is_cell_line_cell_type
 from validator.heuristics import get_heuristics
 
 _HEURISTICS = get_heuristics()
@@ -87,7 +89,9 @@ def semantic_validate(parsed_output: Dict[str, str], context_text: str) -> Dict[
     if cell_line_value and cell_line_lower == "yes":
         errs.setdefault("cell_line", []).append(CELL_LINE_YES_INVALID)
     elif cell_line_value and cell_line_lower not in {"no", "unknown"}:
-        if not _has_explicit_value(cell_line_value, context_text):
+        if is_cell_line_cell_type(cell_line_value):
+            errs.setdefault("cell_line", []).append(CELL_LINE_IS_CELL_TYPE)
+        elif not _has_explicit_value(cell_line_value, context_text):
             errs.setdefault("cell_line", []).append(CELL_LINE_INFERRED_WITHOUT_EVIDENCE)
 
     disease = parsed_output.get("disease", "")

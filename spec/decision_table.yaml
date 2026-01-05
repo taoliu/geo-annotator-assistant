@@ -185,6 +185,14 @@ cell_line_inferred_without_evidence:
   fallback_value: null
   severity: medium
 
+cell_line_is_cell_type:
+  action: FALLBACK
+  field: cell_line
+  repair_template: null
+  max_attempts: 0
+  fallback_value: "No"
+  severity: low
+
 single_cell_evidence_missing:
   action: REPAIR
   field: data_type
