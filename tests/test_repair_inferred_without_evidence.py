@@ -14,6 +14,7 @@ from agent.run_single import run_single_from_context_record
 import agent.run_single as run_single_module
 from validator.failure_codes import (
     CELL_LINE_INFERRED_WITHOUT_EVIDENCE,
+    CELL_LINE_IS_CELL_TYPE,
     DISEASE_INFERRED_WITHOUT_EVIDENCE,
 )
 
@@ -138,6 +139,38 @@ def test_inferred_without_evidence_escalates_after_repair(monkeypatch) -> None:
     assert audit_record["final_decision"] == "FLAGGED"
     assert DISEASE_INFERRED_WITHOUT_EVIDENCE in audit_record["flags"]
     assert audit_record["attempts_by_field"]["disease"] == 1
+
+
+def test_cell_line_cell_type_fallback(monkeypatch) -> None:
+    cfg = _load_stub_config()
+    record = {
+        "gsm_accession": "GSM000555",
+        "gse_accession": "GSE000555",
+        "context_text": "PBMC samples were profiled with RNA-seq.",
+    }
+
+    outputs = [
+        _make_output(cell_line="CD8+ T cells"),
+    ]
+    fake_client = FakeLLMClient(outputs)
+    monkeypatch.setattr(
+        run_single_module,
+        "create_llm_client",
+        lambda _cfg: fake_client,
+    )
+    monkeypatch.setattr(
+        run_single_module,
+        "ground_all_fields",
+        lambda *_args, **_kwargs: ({}, {}),
+    )
+
+    output, audit_record, flagged = run_single_from_context_record(record, cfg)
+
+    assert flagged is False
+    assert audit_record["final_decision"] == "ACCEPT"
+    assert output["cell_line"] == "No"
+    assert audit_record["attempts_by_field"]["cell_line"] == 1
+    assert audit_record["repair_history"][0]["failure_code"] == CELL_LINE_IS_CELL_TYPE
 
 
 def test_audit_records_repair_attempt(monkeypatch) -> None:

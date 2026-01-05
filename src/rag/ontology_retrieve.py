@@ -187,7 +187,12 @@ def retrieve_ontology_candidates(
     if canonical_label:
         try:
             exact_res = collection.get(
-                where={"source": source, "label": canonical_label},
+                where={
+                    "$and": [
+                        {"source": source},
+                        {"label": canonical_label},
+                    ]
+                },
                 include=["metadatas", "documents"],
             )
         except Exception:

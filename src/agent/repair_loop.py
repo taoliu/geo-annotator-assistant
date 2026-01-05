@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from agent.state import PipelineState
 from validator.format_validator import validate_format
@@ -101,6 +101,7 @@ def apply_repairs(
     context_text: Optional[str] = None,
     prompt_loader=None,
     max_total_repairs: Optional[int] = None,
+    validation_callback: Optional[Callable[[PipelineState], None]] = None,
 ) -> PipelineState:
     if not _has_failures(state):
         state.final_decision = "ACCEPT"
@@ -165,6 +166,8 @@ def apply_repairs(
                     for flag in state.consistency_flags
                     if flag != decision.failure_code
                 ]
+            if validation_callback is not None:
+                validation_callback(state)
             continue
 
         if decision.decision_type == "REPAIR":
@@ -210,6 +213,9 @@ def apply_repairs(
             state.final_output = dict(parsed_output)
             if state.repair_history:
                 state.repair_history[-1]["output_updated"] = True
+            if validation_callback is not None:
+                validation_callback(state)
+                continue
             return state
 
         state.final_decision = "FLAGGED"

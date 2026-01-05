@@ -26,6 +26,7 @@ class LocalTransformersClient:
         self._tokenizer = AutoTokenizer.from_pretrained(
             self._model_path,
             use_fast=True,
+            fix_mistral_regex=True,
         )
         if self._tokenizer.pad_token_id is None and self._tokenizer.eos_token_id is not None:
             self._tokenizer.pad_token = self._tokenizer.eos_token
@@ -116,9 +117,10 @@ class LocalTransformersClient:
             output_ids = self._model.generate(
                 input_ids,
                 max_new_tokens=self._max_new_tokens,
-                temperature=self._temperature,
+                # temperature=self._temperature,
                 top_p=self._top_p,
-                do_sample=self._do_sample,
+                # do_sample=self._do_sample,
+                do_sample=False,
                 eos_token_id=self._tokenizer.eos_token_id,
                 pad_token_id=self._tokenizer.pad_token_id,
             )

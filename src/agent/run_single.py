@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Tuple
 
 from agent.audit import build_audit_record
 from agent.prompts import load_prompt
+from agent.repair_loop import apply_repairs
 from agent.state import PipelineState
 from validator.consistency_validator import (
     ASSAY_PLATFORM_CONFLICT,
@@ -391,14 +392,23 @@ def _run_llm_pipeline(state: PipelineState, cfg: dict) -> tuple[dict, dict, bool
     decision_table = load_decision_table(
         str(_repo_root() / "spec" / "decision_table.yaml")
     )
-    _run_decision_repairs(
+    def _refresh_validation(current_state: PipelineState) -> None:
+        current_state.format_errors = []
+        _update_validation_state(
+            current_state,
+            current_state.final_output or {},
+            context_text,
+            cfg,
+        )
+
+    apply_repairs(
         state,
         decision_table,
-        client,
-        cfg,
-        context_text,
-        prompt_loader,
-        cfg.get("limits", {}).get("max_total_repairs"),
+        llm_client=client,
+        context_text=context_text,
+        prompt_loader=prompt_loader,
+        max_total_repairs=cfg.get("limits", {}).get("max_total_repairs"),
+        validation_callback=_refresh_validation,
     )
 
     state.final_output = _normalize_output(
