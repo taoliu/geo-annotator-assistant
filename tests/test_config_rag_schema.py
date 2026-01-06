@@ -23,7 +23,7 @@ def test_example_config_uses_rag_schema() -> None:
     assert rag_cfg.get("k") == 20
     ontology_cfg = rag_cfg.get("ontology")
     assert isinstance(ontology_cfg, dict)
-    assert ontology_cfg.get("enabled") is True
+    assert ontology_cfg.get("enabled") is False
 
 
 def test_legacy_ontology_keys_map_to_rag(tmp_path: Path) -> None:

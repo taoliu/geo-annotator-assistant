@@ -11,15 +11,22 @@ parser:
   command: ""            # used if mode=subprocess
 
 llm:
-  mode: "local_transformers"           # stub | local_transformers
+  mode: "local_transformers"
   apply_chat_template: true
+
+  # generation
   max_new_tokens: 1028
-  temperature: 0.0
-  top_p: 1.0
-  device: "auto"         # auto | cpu | mps
-  dtype: "auto"          # auto | float16 | bfloat16 | float32
-  model_path: "./gat_llama3_3b_it_qlora"  # path to local model directory
-  stop: ["\nCONTEXT:", "\nPREVIOUS_OUTPUT:"]
+  do_sample: false          # <-- add this (explicit)
+  temperature: 0.0          # kept for clarity; ignored when do_sample=false
+  top_p: 1.0                # kept for clarity; ignored when do_sample=false
+
+  # runtime
+  device: "auto"            # auto | cpu | mps
+  dtype: "auto"             # auto | float16 | bfloat16 | float32
+  model_path: "./gat_llama3_3b_it_qlora"
+
+  # stopping
+  stop: ["\nCONTEXT:", "\nPREVIOUS_OUTPUT:", "<|eot_id|>", "<|end_of_text|>", "<end_of_turn>"]
 
 rag:
   persist_path: "ontology_chroma_db"
@@ -48,4 +55,7 @@ thresholds:
 
 limits:
   max_repairs_per_field: 2
+  max_format_repairs: 2
   max_total_repairs: 6
+  field_word_limits:
+    treatment: 0
