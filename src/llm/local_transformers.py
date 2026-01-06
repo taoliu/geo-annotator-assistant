@@ -49,6 +49,19 @@ class LocalTransformersClient:
             self._do_sample = bool(self._cfg["do_sample"])
         else:
             self._do_sample = self._temperature > 0.0
+        
+        # If not sampling, force neutral defaults to avoid HF warning
+        if not self._do_sample:
+            self._temperature = 1.0
+            self._top_p = 1.0
+
+        # Also sync model.generation_config (if present)
+        gen_cfg = getattr(self._model, "generation_config", None)
+        if gen_cfg is not None:
+            gen_cfg.do_sample = self._do_sample
+            gen_cfg.temperature = self._temperature
+            gen_cfg.top_p = self._top_p
+
         stop = self._cfg.get("stop") or []
         if isinstance(stop, str):
             stop = [stop]
@@ -121,12 +134,23 @@ class LocalTransformersClient:
         input_ids = input_ids.to(self._model.device)
         attention_mask = attention_mask.to(self._model.device)
 
+        # Build EOS ids (standard EOS + Llama 3 <|eot_id|> if present)
+        eos_ids = []
+        if self._tokenizer.eos_token_id is not None:
+            eos_ids.append(self._tokenizer.eos_token_id)
+
+        # Llama 3 end-of-turn token
+        eot_id = self._tokenizer.convert_tokens_to_ids("<|eot_id|>")
+        if isinstance(eot_id, int) and eot_id >= 0 and eot_id not in eos_ids:
+            eos_ids.append(eot_id)
+
         generate_kwargs = {
             "max_new_tokens": self._max_new_tokens,
             "do_sample": self._do_sample,
-            "eos_token_id": self._tokenizer.eos_token_id,
+            "eos_token_id": eos_ids[0] if len(eos_ids) == 1 else eos_ids,
             "pad_token_id": self._tokenizer.pad_token_id,
         }
+
         if self._do_sample:
             generate_kwargs["temperature"] = self._temperature
             generate_kwargs["top_p"] = self._top_p
