@@ -143,6 +143,10 @@ class LocalTransformersClient:
         eot_id = self._tokenizer.convert_tokens_to_ids("<|eot_id|>")
         if isinstance(eot_id, int) and eot_id >= 0 and eot_id not in eos_ids:
             eos_ids.append(eot_id)
+        # Gemma end-of-turn token
+        eot_id = self._tokenizer.convert_tokens_to_ids("<end_of_turn>")
+        if isinstance(eot_id, int) and eot_id >= 0 and eot_id not in eos_ids:
+            eos_ids.append(eot_id)
 
         generate_kwargs = {
             "max_new_tokens": self._max_new_tokens,
@@ -163,8 +167,9 @@ class LocalTransformersClient:
             )
 
         generated_ids = output_ids[0][input_ids.shape[-1] :]
-        text = self._tokenizer.decode(generated_ids, skip_special_tokens=True)
+        text = self._tokenizer.decode(generated_ids, skip_special_tokens=False)
 
         if self._stop:
             text = self._apply_stop(text, self._stop)
+        print(text)
         return text
