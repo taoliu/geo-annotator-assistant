@@ -208,12 +208,17 @@ def _generate_with_format_repairs(
     prompt_loader,
 ) -> tuple[Optional[Dict[str, str]], List[str]]:
     last_errors: List[str] = []
+    word_limits = cfg.get("limits", {}).get("field_word_limits")
     label_prompt = _load_label_prompt(cfg)
     final_prompt = f"{label_prompt}\n\n{context_text}"
     raw_output = client.generate(final_prompt)
     state.llm_raw_outputs.append(raw_output)
 
-    parsed_output, format_errors = validate_format(raw_output, REQUIRED_KEYS)
+    parsed_output, format_errors = validate_format(
+        raw_output,
+        REQUIRED_KEYS,
+        word_limits=word_limits,
+    )
     if parsed_output is not None:
         state.llm_parsed_outputs.append(parsed_output)
     if not format_errors:
@@ -229,7 +234,11 @@ def _generate_with_format_repairs(
         )
         raw_output = client.generate(repair_prompt)
         state.llm_raw_outputs.append(raw_output)
-        parsed_output, format_errors = validate_format(raw_output, REQUIRED_KEYS)
+        parsed_output, format_errors = validate_format(
+            raw_output,
+            REQUIRED_KEYS,
+            word_limits=word_limits,
+        )
         if parsed_output is not None:
             state.llm_parsed_outputs.append(parsed_output)
         if not format_errors:

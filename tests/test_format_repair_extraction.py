@@ -72,7 +72,7 @@ def test_validator_extracts_balanced_object() -> None:
     assert ERROR_INVALID_JSON not in errors
 
 
-def test_run_single_stops_at_first_successful_repair(monkeypatch) -> None:
+def test_run_single_accepts_long_treatment_without_repair(monkeypatch) -> None:
     cfg = load_config(str(ROOT / "config" / "example_config.yaml"))
     cfg.setdefault("llm", {})["mode"] = "stub"
     cfg.setdefault("limits", {})["max_format_repairs"] = 2
@@ -101,4 +101,4 @@ def test_run_single_stops_at_first_successful_repair(monkeypatch) -> None:
 
     assert flagged is False
     assert audit_record["validation"]["format_errors"] == []
-    assert len(audit_record["llm_raw_outputs"]) == 2
+    assert len(audit_record["llm_raw_outputs"]) == 1

@@ -66,6 +66,9 @@ class FakeTokenizer:
     def decode(self, ids, skip_special_tokens: bool = True) -> str:
         return "decoded text"
 
+    def convert_tokens_to_ids(self, token: str) -> int:
+        return -1
+
 
 class FakeModel:
     last_instance = None

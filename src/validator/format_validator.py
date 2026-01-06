@@ -80,6 +80,8 @@ def _ordered_errors(seen: set[str]) -> List[str]:
 def validate_format(
     raw_output: str,
     expected_keys: List[str],
+    *,
+    word_limits: Optional[Dict[str, int]] = None,
 ) -> Tuple[Optional[Dict[str, str]], List[str]]:
     """Validate raw LLM output format; returns (parsed_output, errors)."""
     errors: set[str] = set()
@@ -117,7 +119,10 @@ def validate_format(
         if not v2:
             errors.add(ERROR_EMPTY_VALUE)
             continue
-        if _word_count(v2) > 5:
+        limit = 5
+        if word_limits is not None:
+            limit = word_limits.get(k, 5)
+        if limit > 0 and _word_count(v2) > limit:
             errors.add(ERROR_WORD_LIMIT)
         parsed[k] = v2
 

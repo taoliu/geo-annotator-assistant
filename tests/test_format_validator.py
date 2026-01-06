@@ -62,6 +62,26 @@ def test_word_limit_violation() -> None:
     assert errors == [ERROR_WORD_LIMIT]
 
 
+def test_word_limit_disabled_for_field() -> None:
+    parsed, errors = validate_format(
+        '{"treatment": "one two three four five six"}',
+        ["treatment"],
+        word_limits={"treatment": 0},
+    )
+    assert parsed == {"treatment": "one two three four five six"}
+    assert errors == []
+
+
+def test_word_limit_custom_limit() -> None:
+    parsed, errors = validate_format(
+        '{"treatment": "one two three four five six seven eight nine ten eleven"}',
+        ["treatment"],
+        word_limits={"treatment": 10},
+    )
+    assert parsed == {"treatment": "one two three four five six seven eight nine ten eleven"}
+    assert errors == [ERROR_WORD_LIMIT]
+
+
 def test_happy_path() -> None:
     parsed, errors = validate_format('{"a": " ok ", "b": "two words"}', ["a", "b"])
     assert parsed == {"a": "ok", "b": "two words"}

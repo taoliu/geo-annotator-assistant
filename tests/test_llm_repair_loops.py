@@ -50,6 +50,7 @@ def _make_output(**overrides: str) -> str:
 
 def test_format_repair_pre_loop_fixes_word_limit(monkeypatch) -> None:
     cfg = _load_stub_config()
+    cfg.setdefault("limits", {})["field_word_limits"] = {"treatment": 5}
     record = {
         "gsm_accession": "GSM000222",
         "gse_accession": "GSE000111",

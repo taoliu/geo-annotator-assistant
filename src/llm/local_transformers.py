@@ -171,5 +171,4 @@ class LocalTransformersClient:
 
         if self._stop:
             text = self._apply_stop(text, self._stop)
-        print(text)
         return text
