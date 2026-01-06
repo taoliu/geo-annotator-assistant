@@ -13,7 +13,7 @@ from validator.semantic_validator import (
     CELL_LINE_IS_CELL_TYPE,
     CELL_LINE_YES_INVALID,
     DISEASE_INFERRED_WITHOUT_EVIDENCE,
-    TISSUE_IS_CELL_TYPE,
+    TISSUE_TYPE_IS_CELL_TYPE,
     TREATMENT_IDENTITY_LEAKAGE,
     semantic_validate,
 )
@@ -21,7 +21,7 @@ from validator.semantic_validator import (
 
 def test_tissue_type_cell_type_flagged() -> None:
     errors = semantic_validate({"tissue_type": "intestinal epithelial cells"}, "")
-    assert errors == {"tissue_type": [TISSUE_IS_CELL_TYPE]}
+    assert errors == {"tissue_type": [TISSUE_TYPE_IS_CELL_TYPE]}
 
 
 def test_tissue_type_tissue_ok() -> None:

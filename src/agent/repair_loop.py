@@ -150,8 +150,33 @@ def apply_repairs(
         if decision.decision_type == "FALLBACK":
             if state.final_output is None:
                 state.final_output = {}
-            state.final_output[field] = decision.fallback_value
+
+            val = decision.fallback_value
+            if isinstance(val, str):
+                val = val.strip()
+
+            old = state.final_output.get(field)
+
+            # 🔴 TERMINAL FALLBACK GUARD
+            if old == val:
+                # Already at fallback value → do NOT count another attempt
+                _clear_failures_for_field(state, field)
+
+                if decision.failure_code in state.consistency_flags:
+                    state.consistency_flags = [
+                        flag for flag in state.consistency_flags
+                        if flag != decision.failure_code
+                    ]
+
+                if validation_callback is not None:
+                    validation_callback(state)
+
+                continue
+
+            # Normal fallback (first time)
+            state.final_output[field] = val
             _increment_attempts(state, field)
+
             state.repair_history.append(
                 {
                     "failure_code": decision.failure_code,
@@ -159,15 +184,18 @@ def apply_repairs(
                     "fallback_value": decision.fallback_value,
                 }
             )
+
             _clear_failures_for_field(state, field)
+
             if decision.failure_code in state.consistency_flags:
                 state.consistency_flags = [
-                    flag
-                    for flag in state.consistency_flags
+                    flag for flag in state.consistency_flags
                     if flag != decision.failure_code
                 ]
+
             if validation_callback is not None:
                 validation_callback(state)
+
             continue
 
         if decision.decision_type == "REPAIR":
@@ -210,7 +238,21 @@ def apply_repairs(
             if parsed_output is None or format_errors:
                 continue
 
-            state.final_output = dict(parsed_output)
+            #state.final_output = dict(parsed_output)
+            if state.final_output is None:
+                state.final_output = {}
+
+            # Only update the field we are repairing.
+            if field in parsed_output:
+                state.final_output[field] = parsed_output[field]
+
+            # Optionally, always enforce accessions to remain correct (recommended):
+            if "gse_accession" in parsed_output:
+                state.final_output["gse_accession"] = state.final_output.get("gse_accession", parsed_output["gse_accession"])
+            if "gsm_accession" in parsed_output:
+                state.final_output["gsm_accession"] = state.final_output.get("gsm_accession", parsed_output["gsm_accession"])
+
+
             if state.repair_history:
                 state.repair_history[-1]["output_updated"] = True
             if validation_callback is not None:

@@ -44,3 +44,16 @@ def test_no_evidence_failures_uses_existing_ranking() -> None:
         "disease",
         "ontology_low_confidence_disease",
     )
+
+
+def test_tissue_cell_type_beats_ontology_low_confidence() -> None:
+    failures_by_field = {
+        "tissue_type": [
+            "ontology_low_confidence_tissue_type",
+            "tissue_type_is_cell_type",
+        ],
+    }
+    assert select_primary_failure_across_fields(failures_by_field) == (
+        "tissue_type",
+        "tissue_type_is_cell_type",
+    )

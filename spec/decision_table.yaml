@@ -137,11 +137,11 @@ ontology_low_confidence_data_type:
   fallback_value: null
   severity: medium
 
-tissue_is_cell_type:
+tissue_type_is_cell_type:
   action: REPAIR
   field: tissue_type
-  repair_template: repair_tissue_v1
-  max_attempts: 2
+  repair_template: repair_tissue_anatomy_v1
+  max_attempts: 1
   fallback_value: "Unknown"
   severity: medium
 

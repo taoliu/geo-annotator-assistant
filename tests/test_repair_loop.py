@@ -26,15 +26,14 @@ def test_no_failures_accept() -> None:
 def test_tissue_repair_then_fallback_unknown() -> None:
     state = PipelineState(
         gsm_accession="GSM111",
-        semantic_errors={"tissue_type": ["tissue_is_cell_type"]},
+        semantic_errors={"tissue_type": ["tissue_type_is_cell_type"]},
     )
     result = apply_repairs(state, _decision_table())
     assert result.final_decision == "ACCEPT"
     assert result.final_output == {"tissue_type": "Unknown"}
-    assert result.attempts_by_field["tissue_type"] == 3
-    assert len(result.repair_history) == 3
-    assert result.repair_history[0]["repair_template"] == "repair_tissue_v1"
-    assert result.repair_history[1]["repair_template"] == "repair_tissue_v1"
+    assert result.attempts_by_field["tissue_type"] == 2
+    assert len(result.repair_history) == 2
+    assert result.repair_history[0]["repair_template"] == "repair_tissue_anatomy_v1"
 
 
 def test_disease_unsupported_fallback_healthy() -> None:
@@ -77,7 +76,7 @@ def test_unknown_failure_escalates() -> None:
 def test_max_total_repairs_enforced() -> None:
     state = PipelineState(
         gsm_accession="GSM444",
-        semantic_errors={"tissue_type": ["tissue_is_cell_type"]},
+        semantic_errors={"tissue_type": ["tissue_type_is_cell_type"]},
     )
     result = apply_repairs(state, _decision_table(), max_total_repairs=1)
     assert result.final_decision == "FLAGGED"

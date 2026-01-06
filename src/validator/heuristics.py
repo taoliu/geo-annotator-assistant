@@ -7,8 +7,27 @@ import yaml
 
 DEFAULT_HEURISTICS: Dict[str, Dict[str, Any]] = {
     "semantic": {
-        "tissue_cell_keywords": ["cell", "cells"],
-        "tissue_cell_suffixes": ["cells", "cell", "lymphocyte", "neuron", "macrophage"],
+        "tissue_cell_keywords": [
+            "cell",
+            "cells",
+            "fibroblast",
+            "fibroblasts",
+            "macrophage",
+            "epithelial",
+            "lymphocyte",
+            "t cell",
+            "b cell",
+        ],
+        "tissue_cell_suffixes": [
+            "cells",
+            "cell",
+            "fibroblast",
+            "fibroblasts",
+            "macrophage",
+            "epithelial",
+            "lymphocyte",
+            "neuron",
+        ],
         "treatment_identity_keywords": ["cell", "cells"],
         "treatment_genotype_keywords": [
             "ko",

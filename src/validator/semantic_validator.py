@@ -7,10 +7,10 @@ from validator.failure_codes import (
     CELL_LINE_IS_CELL_TYPE,
     CELL_LINE_YES_INVALID,
     DISEASE_INFERRED_WITHOUT_EVIDENCE,
-    TISSUE_IS_CELL_TYPE,
+    TISSUE_TYPE_IS_CELL_TYPE,
     TREATMENT_IDENTITY_LEAKAGE,
 )
-from validator.cell_line_rules import is_cell_line_cell_type
+from validator.cell_line_rules import is_cell_line_cell_type, is_cell_type_like
 from validator.heuristics import get_heuristics
 
 _HEURISTICS = get_heuristics()
@@ -67,11 +67,15 @@ def semantic_validate(parsed_output: Dict[str, str], context_text: str) -> Dict[
     """Lightweight field-level semantic validation (no ontology calls)."""
     errs: Dict[str, List[str]] = {}
 
-    tissue = parsed_output.get("tissue_type", "")
-    if tissue and tissue != "Unknown":
-        tissue_lower = tissue.strip().lower()
-        if _TISSUE_CELL_WORD_RE.search(tissue) or tissue_lower.endswith(_TISSUE_CELL_SUFFIXES):
-            errs.setdefault("tissue_type", []).append(TISSUE_IS_CELL_TYPE)
+    tissue_value = (parsed_output.get("tissue_type") or "").strip()
+    if tissue_value and tissue_value.lower() not in {"unknown", "no"}:
+        tissue_lower = tissue_value.lower()
+        if (
+            _TISSUE_CELL_WORD_RE.search(tissue_value)
+            or tissue_lower.endswith(_TISSUE_CELL_SUFFIXES)
+            or is_cell_type_like(tissue_value)
+        ):
+            errs.setdefault("tissue_type", []).append(TISSUE_TYPE_IS_CELL_TYPE)
 
     treatment = parsed_output.get("treatment", "")
     if treatment and treatment != "None":

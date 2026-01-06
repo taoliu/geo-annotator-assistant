@@ -11,7 +11,7 @@ _CELL_TYPE_RE = re.compile(r"\bpbmc\b|\bsplenocyte\b|\bthymocyte\b", re.IGNORECA
 _CELL_QUALIFIER_RE = re.compile(r"\bprimary\b|\bsorted\b|\bfresh\b|ex vivo", re.IGNORECASE)
 
 
-def is_cell_line_cell_type(value: str) -> bool:
+def _is_cell_type_like(value: str, include_qualifier: bool = True) -> bool:
     cleaned = (value or "").strip()
     if not cleaned:
         return False
@@ -24,8 +24,16 @@ def is_cell_line_cell_type(value: str) -> bool:
         return True
     if _CELL_TYPE_RE.search(cleaned):
         return True
-    if _CELL_QUALIFIER_RE.search(cleaned):
+    if include_qualifier and _CELL_QUALIFIER_RE.search(cleaned):
         return True
     if "+" in cleaned and "cell" in lowered:
         return True
     return False
+
+
+def is_cell_line_cell_type(value: str) -> bool:
+    return _is_cell_type_like(value, include_qualifier=True)
+
+
+def is_cell_type_like(value: str) -> bool:
+    return _is_cell_type_like(value, include_qualifier=False)

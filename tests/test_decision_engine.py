@@ -13,11 +13,11 @@ from validator.decision_engine import decide_next_action
 
 def _decision_table() -> dict:
     return {
-        "tissue_is_cell_type": {
+        "tissue_type_is_cell_type": {
             "action": "REPAIR",
             "field": "tissue_type",
-            "repair_template": "repair_tissue_v1",
-            "max_attempts": 2,
+            "repair_template": "repair_tissue_anatomy_v1",
+            "max_attempts": 1,
             "fallback_value": "Unknown",
             "severity": "medium",
         },
@@ -40,18 +40,18 @@ def test_empty_failures_accept() -> None:
 
 
 def test_tissue_repair_before_max_attempts() -> None:
-    failures = {"tissue_type": ["tissue_is_cell_type"]}
-    attempts = {"tissue_type": 1}
+    failures = {"tissue_type": ["tissue_type_is_cell_type"]}
+    attempts = {"tissue_type": 0}
     decision = decide_next_action(failures, attempts, _decision_table())
     assert decision.decision_type == "REPAIR"
     assert decision.field == "tissue_type"
-    assert decision.failure_code == "tissue_is_cell_type"
-    assert decision.repair_template == "repair_tissue_v1"
+    assert decision.failure_code == "tissue_type_is_cell_type"
+    assert decision.repair_template == "repair_tissue_anatomy_v1"
 
 
 def test_tissue_fallback_after_max_attempts() -> None:
-    failures = {"tissue_type": ["tissue_is_cell_type"]}
-    attempts = {"tissue_type": 2}
+    failures = {"tissue_type": ["tissue_type_is_cell_type"]}
+    attempts = {"tissue_type": 1}
     decision = decide_next_action(failures, attempts, _decision_table())
     assert decision.decision_type == "FALLBACK"
     assert decision.field == "tissue_type"
