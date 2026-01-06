@@ -84,19 +84,26 @@ class LocalTransformersClient:
             raise ValueError(f"Unsupported dtype: {dtype}")
         return mapping[dtype]
 
-    def _build_input_ids(self, prompt: str):
+    def _build_inputs(self, prompt: str):
         if self._apply_chat_template and getattr(self._tokenizer, "chat_template", None):
             messages = []
             if self._system_prompt:
                 messages.append({"role": "system", "content": self._system_prompt})
             messages.append({"role": "user", "content": prompt})
-            return self._tokenizer.apply_chat_template(
+            rendered = self._tokenizer.apply_chat_template(
                 messages,
-                tokenize=True,
+                tokenize=False,
                 add_generation_prompt=True,
-                return_tensors="pt",
             )
-        return self._tokenizer(prompt, return_tensors="pt").input_ids
+            encoded = self._tokenizer(rendered, return_tensors="pt")
+        else:
+            encoded = self._tokenizer(prompt, return_tensors="pt")
+
+        input_ids = encoded["input_ids"]
+        attention_mask = encoded.get("attention_mask")
+        if attention_mask is None:
+            attention_mask = self._torch.ones_like(input_ids)
+        return input_ids, attention_mask
 
     @staticmethod
     def _apply_stop(text: str, stop_list: list[str]) -> str:
@@ -110,19 +117,25 @@ class LocalTransformersClient:
         return text[:earliest]
 
     def generate(self, prompt: str) -> str:
-        input_ids = self._build_input_ids(prompt)
+        input_ids, attention_mask = self._build_inputs(prompt)
         input_ids = input_ids.to(self._model.device)
+        attention_mask = attention_mask.to(self._model.device)
+
+        generate_kwargs = {
+            "max_new_tokens": self._max_new_tokens,
+            "do_sample": self._do_sample,
+            "eos_token_id": self._tokenizer.eos_token_id,
+            "pad_token_id": self._tokenizer.pad_token_id,
+        }
+        if self._do_sample:
+            generate_kwargs["temperature"] = self._temperature
+            generate_kwargs["top_p"] = self._top_p
 
         with self._torch.no_grad():
             output_ids = self._model.generate(
                 input_ids,
-                max_new_tokens=self._max_new_tokens,
-                # temperature=self._temperature,
-                top_p=self._top_p,
-                # do_sample=self._do_sample,
-                do_sample=False,
-                eos_token_id=self._tokenizer.eos_token_id,
-                pad_token_id=self._tokenizer.pad_token_id,
+                attention_mask=attention_mask,
+                **generate_kwargs,
             )
 
         generated_ids = output_ids[0][input_ids.shape[-1] :]

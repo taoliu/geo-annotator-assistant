@@ -18,7 +18,7 @@ llm:
   top_p: 1.0
   device: "auto"         # auto | cpu | mps
   dtype: "auto"          # auto | float16 | bfloat16 | float32
-  model_path: "./gat_llama3_3b_it_qlora_r4"
+  model_path: "./gat_llama3_3b_it_qlora"  # path to local model directory
   stop: ["\nCONTEXT:", "\nPREVIOUS_OUTPUT:"]
 
 rag:
@@ -37,14 +37,14 @@ rag:
       cell_line: "Cellosaurus"
       data_type: "Experimental Factor Ontology"
     thresholds:
-      min_confidence_to_accept: 0.80
+      min_confidence_to_accept: 0.70
       max_delta_for_ambiguity: 0.05
 
 thresholds:
-  data_type: 0.75
-  tissue_type: 0.75
-  cell_line: 0.80
-  disease: 0.75
+  data_type: 0.70
+  tissue_type: 0.70
+  cell_line: 0.70
+  disease: 0.70
 
 limits:
   max_repairs_per_field: 2
