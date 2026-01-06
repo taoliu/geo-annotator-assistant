@@ -185,18 +185,26 @@ def retrieve_ontology_candidates(
 
     canonical_label = _canonicalize_label_for_lookup(query)
     if canonical_label:
+        exact_res = None
+
+        # 1) Try simple where (matches your test)
         try:
             exact_res = collection.get(
-                where={
-                    "$and": [
-                        {"source": source},
-                        {"label": canonical_label},
-                    ]
-                },
+                where={"source": source, "label": canonical_label},
                 include=["metadatas", "documents"],
             )
         except Exception:
             exact_res = None
+        # 2) If needed, try $and form (keeps your previous compatibility)
+        if not exact_res:
+            try:
+                exact_res = collection.get(
+                    where={"$and": [{"source": source}, {"label": canonical_label}]},
+                    include=["metadatas", "documents"],
+                )
+            except Exception:
+                exact_res = None
+
         if exact_res:
             exact_ids = _maybe_flatten(_ensure_list(exact_res.get("ids")))
             exact_metas = _maybe_flatten(_ensure_list(exact_res.get("metadatas")))
