@@ -8,7 +8,11 @@ from pathlib import Path
 
 from agent.config import load_config
 from agent.run_batch import run_batch
-from agent.run_gse import run_gse_from_jsonl
+from agent.run_gse import (
+    run_gse_from_accession,
+    run_gse_from_jsonl,
+    run_gse_from_soft_file,
+)
 from agent.run_single import run_single_gsm
 from agent.writer import write_run_outputs
 
@@ -79,6 +83,10 @@ def _build_parser() -> argparse.ArgumentParser:
     group.add_argument("--gsm-file", help="Path to a file containing GSM identifiers.")
     group.add_argument("--jsonl", help="Path to JSONL context records.")
     group.add_argument("--gse", help="GSE accession to process.")
+    group.add_argument(
+        "--gse-soft",
+        help="Path to a local GSE SOFT file (.soft or .soft.gz).",
+    )
     parser.add_argument("--output-dir", default="outputs", help="Directory for outputs.")
     parser.add_argument("--config", required=True, help="Path to YAML config file.")
     parser.add_argument(
@@ -113,13 +121,21 @@ def main(argv: list[str] | None = None) -> None:
             annotations, audits, flagged, summary = run_gse_from_jsonl(
                 args.jsonl, config
             )
-        else:
-            raise ValueError(
-                "GSE mode not implemented yet. Please use --jsonl instead."
+        elif args.gse:
+            annotations, audits, flagged, summary = run_gse_from_accession(
+                args.gse, config, args.output_dir
             )
+        elif args.gse_soft:
+            annotations, audits, flagged, summary = run_gse_from_soft_file(
+                args.gse_soft, config, args.output_dir
+            )
+        else:
+            raise ValueError("No input mode selected.")
 
         output_dir = _resolve_output_dir(
-            args.output_dir, annotations, bool(args.jsonl or args.gse)
+            args.output_dir,
+            annotations,
+            bool(args.jsonl or args.gse or args.gse_soft),
         )
         output_paths = None
         if not args.dry_run:

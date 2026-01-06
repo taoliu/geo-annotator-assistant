@@ -69,7 +69,7 @@ Do not introduce new top-level config blocks for retrieval or grounding.
 If a config schema change is required, update all of:
 - `src/agent/config.py`
 - `config/example_config.yaml`
-- `config/llama3-1b_config.yaml`
+- `config/gat-llama3-3b-it_config.yaml`
 - a config-loading unit test
 
 ---

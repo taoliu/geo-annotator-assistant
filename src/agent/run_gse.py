@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 
 from agent.run_single import run_single_from_context_record
 from ingest.read_context_jsonl import iter_gsm_contexts
+from ingest.soft_to_context_jsonl import soft_to_context_jsonl
 
 _REQUIRED_KEYS: List[str] = [
     "gse_accession",
@@ -77,3 +78,29 @@ def run_gse_from_jsonl(
         "n_flagged": n_flagged,
     }
     return annotations, audits, flagged, summary
+
+
+def run_gse_from_accession(
+    gse_accession: str,
+    cfg: dict,
+    work_dir: str,
+) -> tuple[list[dict], list[dict], list[dict], dict]:
+    paths_cfg = cfg.get("paths") if isinstance(cfg.get("paths"), dict) else {}
+    jsonl_path = soft_to_context_jsonl(
+        gse_accession=gse_accession,
+        work_dir=work_dir,
+        soft_cache_dir=paths_cfg.get("soft_cache_dir"),
+    )
+    return run_gse_from_jsonl(jsonl_path, cfg)
+
+
+def run_gse_from_soft_file(
+    soft_path: str,
+    cfg: dict,
+    work_dir: str,
+) -> tuple[list[dict], list[dict], list[dict], dict]:
+    jsonl_path = soft_to_context_jsonl(
+        soft_path=soft_path,
+        work_dir=work_dir,
+    )
+    return run_gse_from_jsonl(jsonl_path, cfg)

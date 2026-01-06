@@ -47,6 +47,9 @@ rag:
       min_confidence_to_accept: 0.70
       max_delta_for_ambiguity: 0.05
 
+paths:
+  soft_cache_dir: null
+
 thresholds:
   data_type: 0.70
   tissue_type: 0.70

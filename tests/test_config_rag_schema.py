@@ -24,6 +24,9 @@ def test_example_config_uses_rag_schema() -> None:
     ontology_cfg = rag_cfg.get("ontology")
     assert isinstance(ontology_cfg, dict)
     assert ontology_cfg.get("enabled") is False
+    paths_cfg = cfg.get("paths")
+    assert isinstance(paths_cfg, dict)
+    assert paths_cfg.get("soft_cache_dir") is None
 
 
 def test_legacy_ontology_keys_map_to_rag(tmp_path: Path) -> None:

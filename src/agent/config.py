@@ -30,7 +30,7 @@ def load_config(path: str) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError(f"Config file must contain a top-level mapping: {path}")
 
-    return _apply_rag_defaults(data)
+    return _apply_paths_defaults(_apply_rag_defaults(data))
 
 
 @dataclass(frozen=True)
@@ -105,6 +105,7 @@ class RagConfig:
 
 
 _DEFAULT_RAG_CONFIG = RagConfig().to_dict()
+_DEFAULT_PATHS_CONFIG = {"soft_cache_dir": None}
 _LEGACY_KEYS = {
     "ontology_chroma_enabled",
     "ontology_chroma_db_path",
@@ -175,4 +176,16 @@ def _apply_rag_defaults(config: dict[str, Any]) -> dict[str, Any]:
                 rag_cfg["ontology"] = ontology_mapping
 
     merged["rag"] = _deep_merge(_DEFAULT_RAG_CONFIG, rag_cfg)
+    return merged
+
+
+def _apply_paths_defaults(config: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(config, dict):
+        return config
+    merged = dict(config)
+    paths_cfg = merged.get("paths")
+    if paths_cfg is None:
+        merged["paths"] = dict(_DEFAULT_PATHS_CONFIG)
+    elif isinstance(paths_cfg, dict):
+        merged["paths"] = _deep_merge(_DEFAULT_PATHS_CONFIG, paths_cfg)
     return merged

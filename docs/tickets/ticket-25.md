@@ -1,4 +1,4 @@
-**Ticket #25: AGENT-WS-025 — Field-specific word limits in format validation (disable for treatment)**
+# Ticket #25: AGENT-WS-025 — Field-specific word limits in format validation (disable for treatment)
 
 ### Background
 
