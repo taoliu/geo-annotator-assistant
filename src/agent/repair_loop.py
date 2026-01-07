@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
+from agent.accession import override_accessions
 from agent.state import PipelineState
 from validator.format_validator import validate_format
 from validator.decision_engine import decide_next_action
@@ -267,11 +268,15 @@ def apply_repairs(
             )
             state.format_errors = format_errors
             if parsed_output is not None:
+                parsed_output = override_accessions(
+                    parsed_output,
+                    state.gse_accession,
+                    state.gsm_accession,
+                )
                 state.llm_parsed_outputs.append(parsed_output)
             if parsed_output is None or format_errors:
                 continue
 
-            #state.final_output = dict(parsed_output)
             if state.final_output is None:
                 state.final_output = {}
 
@@ -279,11 +284,11 @@ def apply_repairs(
             if field in parsed_output:
                 state.final_output[field] = parsed_output[field]
 
-            # Optionally, always enforce accessions to remain correct (recommended):
-            if "gse_accession" in parsed_output:
-                state.final_output["gse_accession"] = state.final_output.get("gse_accession", parsed_output["gse_accession"])
-            if "gsm_accession" in parsed_output:
-                state.final_output["gsm_accession"] = state.final_output.get("gsm_accession", parsed_output["gsm_accession"])
+            override_accessions(
+                state.final_output,
+                state.gse_accession,
+                state.gsm_accession,
+            )
 
 
             if state.repair_history:

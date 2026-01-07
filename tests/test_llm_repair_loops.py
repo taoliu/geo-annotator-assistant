@@ -76,6 +76,36 @@ def test_format_repair_pre_loop_fixes_word_limit(monkeypatch) -> None:
     assert audit_record["validation"]["format_errors"] == []
 
 
+def test_accession_override_from_context_record(monkeypatch) -> None:
+    cfg = _load_stub_config()
+    record = {
+        "gsm_accession": "GSM1791882",
+        "gse_accession": "GSE229352",
+        "context_text": "Series Accession: GSE229352\nSample ID: GSM1791882\n",
+    }
+
+    outputs = [
+        _make_output(
+            gse_accession="GSE2-9-2352",
+            gsm_accession="GSM1-7-9182",
+        )
+    ]
+    fake_client = FakeLLMClient(outputs)
+    monkeypatch.setattr(
+        run_single_module,
+        "create_llm_client",
+        lambda _cfg: fake_client,
+    )
+
+    output, audit_record, flagged = run_single_from_context_record(record, cfg)
+
+    assert flagged is False
+    assert output["gse_accession"] == "GSE229352"
+    assert output["gsm_accession"] == "GSM1791882"
+    assert audit_record["final_output"]["gse_accession"] == "GSE229352"
+    assert audit_record["final_output"]["gsm_accession"] == "GSM1791882"
+
+
 def test_decision_repair_updates_disease(monkeypatch) -> None:
     cfg = _load_stub_config()
     record = {

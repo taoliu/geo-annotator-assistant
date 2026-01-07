@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from agent.accession import override_accessions
 from agent.audit import build_audit_record
 from agent.prompts import load_prompt
 from agent.repair_loop import apply_repairs
@@ -220,6 +221,11 @@ def _generate_with_format_repairs(
         word_limits=word_limits,
     )
     if parsed_output is not None:
+        parsed_output = override_accessions(
+            parsed_output,
+            state.gse_accession,
+            state.gsm_accession,
+        )
         state.llm_parsed_outputs.append(parsed_output)
     if not format_errors:
         return parsed_output, []
@@ -240,6 +246,11 @@ def _generate_with_format_repairs(
             word_limits=word_limits,
         )
         if parsed_output is not None:
+            parsed_output = override_accessions(
+                parsed_output,
+                state.gse_accession,
+                state.gsm_accession,
+            )
             state.llm_parsed_outputs.append(parsed_output)
         if not format_errors:
             return parsed_output, []
@@ -350,6 +361,11 @@ def _run_decision_repairs(
             parsed_output, format_errors = validate_format(raw_output, REQUIRED_KEYS)
             state.format_errors = format_errors
             if parsed_output is not None:
+                parsed_output = override_accessions(
+                    parsed_output,
+                    state.gse_accession,
+                    state.gsm_accession,
+                )
                 state.llm_parsed_outputs.append(parsed_output)
             if parsed_output is None or format_errors:
                 continue
