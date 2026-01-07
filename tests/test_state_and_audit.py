@@ -29,6 +29,7 @@ def test_pipeline_state_defaults() -> None:
     assert state.ontology_failures == {}
     assert state.attempts_by_field == {}
     assert state.repair_history == []
+    assert state.terminal_fallback_fields == set()
     assert state.final_output is None
     assert state.final_decision is None
     assert state.flags == []

@@ -35,6 +35,7 @@ class PipelineState:
 
     attempts_by_field: Dict[str, int] = field(default_factory=dict)
     repair_history: List[Dict[str, Any]] = field(default_factory=list)
+    terminal_fallback_fields: set[str] = field(default_factory=set)
 
     final_output: Optional[Dict[str, str]] = None
     final_decision: Optional[str] = None
@@ -61,6 +62,7 @@ class PipelineState:
             "ontology_failures": dict(self.ontology_failures),
             "attempts_by_field": dict(self.attempts_by_field),
             "repair_history": list(self.repair_history),
+            "terminal_fallback_fields": sorted(self.terminal_fallback_fields),
             "final_output": (
                 dict(self.final_output) if self.final_output is not None else None
             ),

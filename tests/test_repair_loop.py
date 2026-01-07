@@ -61,6 +61,37 @@ def test_cell_line_is_cell_type_fallback_no() -> None:
     assert result.repair_history[0]["failure_code"] == "cell_line_is_cell_type"
 
 
+def test_terminal_fallback_blocks_repair() -> None:
+    state = PipelineState(
+        gsm_accession="GSM556",
+        semantic_errors={"cell_line": ["cell_line_is_cell_type"]},
+    )
+    injected = {"done": False}
+
+    def _reintroduce_failure(current_state: PipelineState) -> None:
+        if not injected["done"]:
+            current_state.semantic_errors = {}
+            current_state.ontology_failures = {
+                "cell_line": "ontology_no_match_cell_line"
+            }
+            injected["done"] = True
+        else:
+            current_state.semantic_errors = {}
+            current_state.ontology_failures = {}
+
+    result = apply_repairs(
+        state,
+        _decision_table(),
+        validation_callback=_reintroduce_failure,
+    )
+    assert result.final_decision == "ACCEPT"
+    assert result.final_output == {"cell_line": "No"}
+    assert result.attempts_by_field["cell_line"] == 1
+    assert result.terminal_fallback_fields == {"cell_line"}
+    assert len(result.repair_history) == 1
+    assert result.repair_history[0]["failure_code"] == "cell_line_is_cell_type"
+
+
 def test_unknown_failure_escalates() -> None:
     state = PipelineState(
         gsm_accession="GSM333",

@@ -22,6 +22,14 @@ _REQUIRED_KEYS: List[str] = [
     "disease",
     "treatment",
 ]
+_TERMINAL_FALLBACK_VALUES: Dict[str, set[str]] = {
+    "disease": {"Unknown"},
+    "tissue_type": {"Unknown"},
+    "cell_line": {"No", "Unknown"},
+    "organism": {"Unknown"},
+    "data_type": {"Unknown"},
+    "treatment": {"None"},
+}
 
 
 def _has_failures(state: PipelineState) -> bool:
@@ -66,6 +74,12 @@ def _increment_attempts(state: PipelineState, field: str) -> None:
 
 def _total_attempts(state: PipelineState) -> int:
     return sum(state.attempts_by_field.values())
+
+
+def _is_terminal_fallback(field: str, value: Optional[str]) -> bool:
+    if value is None:
+        return False
+    return value in _TERMINAL_FALLBACK_VALUES.get(field, set())
 
 
 def _repo_root() -> Path:
@@ -147,6 +161,20 @@ def apply_repairs(
                 state.flags.append(decision.failure_code)
             return state
 
+        if (
+            decision.decision_type in {"FALLBACK", "REPAIR"}
+            and field in state.terminal_fallback_fields
+        ):
+            _clear_failures_for_field(state, field)
+            if decision.failure_code and decision.failure_code in state.consistency_flags:
+                state.consistency_flags = [
+                    flag for flag in state.consistency_flags
+                    if flag != decision.failure_code
+                ]
+            if validation_callback is not None:
+                validation_callback(state)
+            continue
+
         if decision.decision_type == "FALLBACK":
             if state.final_output is None:
                 state.final_output = {}
@@ -156,10 +184,13 @@ def apply_repairs(
                 val = val.strip()
 
             old = state.final_output.get(field)
+            is_terminal = _is_terminal_fallback(field, val)
 
             # 🔴 TERMINAL FALLBACK GUARD
             if old == val:
                 # Already at fallback value → do NOT count another attempt
+                if is_terminal:
+                    state.terminal_fallback_fields.add(field)
                 _clear_failures_for_field(state, field)
 
                 if decision.failure_code in state.consistency_flags:
@@ -176,6 +207,8 @@ def apply_repairs(
             # Normal fallback (first time)
             state.final_output[field] = val
             _increment_attempts(state, field)
+            if is_terminal:
+                state.terminal_fallback_fields.add(field)
 
             state.repair_history.append(
                 {
