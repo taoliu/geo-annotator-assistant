@@ -1,43 +1,137 @@
-# geo-gsm-annotator-agent
+Below are **clean, ready-to-commit updates** for **README.md** and **docs/RESUME.md**, aligned with the v0.3 whitepaper and milestones you just finalized.
 
-Ontology-grounded AI agent to annotate GEO **GSM** sample metadata.
+I kept them:
 
-## What this repo contains
-- Agent orchestration (single GSM and batch)
-- Prompt template management
-- Ontology grounding via local ChromaDB (read-only retrieval)
-- Deterministic validation + decision engine
-- JSONL outputs: annotations, audit, flagged-for-review
+* concise,
+* factual,
+* architecture-consistent,
+* curator-facing (README),
+* contributor- and AI-session-facing (RESUME).
 
-## Project Status
+No speculative v0.4 claims are included.
 
-The project is under active development.
+---
 
-- Milestone v0.2 (Ontology grounding and evidence-first repair) is complete.
-- Current focus is shifting toward labeling policy and semantic conventions.
+## README.md (v0.3)
 
-See:
-- `docs/whitepaper.md` for long-term design
-- `docs/milestones/` for development phases
-- `docs/tickets/` for execution-level tasks
+````markdown
+# GEO GSM Annotator Agent
 
-## High-level flow
-1) Fetch+parse GSM (external dependency) -> JSONL context  
-2) Fine-tuned LLM proposes labels  
-3) Validate (format + semantics + ontology grounding + consistency)  
-4) Targeted repair if needed (bounded)  
-5) Write outputs + audit logs; flag ambiguous cases
+A deterministic, ontology-aware annotation pipeline for GEO GSM metadata, combining large language models with rule-based validation and bounded repair loops.
 
-## Expected external dependencies
-- A parser/downloader package or script that produces the JSONL context given a GSM accession.
-- A fine-tuned LLM caller (API client or local runner).
-- A local ChromaDB persist directory for ontologies.
+---
 
-## Quick start (after implementations are filled)
+## Overview
+
+The GEO GSM Annotator Agent extracts and standardizes sample-level (GSM) metadata from GEO using:
+
+- LLM-based candidate generation
+- Deterministic validators
+- Ontology grounding (EFO, Uberon, Cellosaurus, DO)
+- Field-scoped repair and fallback policies
+- Fully auditable decision logs
+
+The system is designed for **semi-automated curation**, not blind automation.
+
+---
+
+## Output Schema (Stable)
+
+Each GSM record produces exactly eight fields:
+
+- `gse_accession`
+- `gsm_accession`
+- `data_type`
+- `organism`
+- `tissue_type`
+- `cell_line`
+- `disease`
+- `treatment`
+
+This schema is invariant across v0.x.
+
+---
+
+## Key Features (v0.3)
+
+- Fully wired deterministic repair loop
+- Ontology grounding via ChromaDB
+- Synonym-aware matching for disease and data_type
+- Field-scoped repair and fallback logic
+- Terminal fallback values (`Unknown`, `No`) with anti-cycling guarantees
+- GSE-level batch execution with per-GSM independence
+- Curator-ready outputs:
+  - annotations
+  - flagged samples
+  - structured audit logs
+
+---
+
+## What This Tool Does *Not* Do
+
+- No automatic learning from curator feedback
+- No UI or interactive curation interface (planned for v0.4)
+- No blind propagation of labels across GSMs
+- No ontology mutation or online training
+
+---
+
+## Usage
+
+### Run on a single GSM
+
 ```bash
-python -m agent.cli --gsm GSM123 --output-dir outputs --config config/example_config.yaml
-```
-If you run from the repo without installing, use:
+uv run python -m agent.cli \
+  --gsm GSM123456 \
+  --config config/example_config.yaml
+````
+
+### Run on a GSE accession
+
 ```bash
-PYTHONPATH=src python -m agent.cli --gsm GSM123 --output-dir outputs --config config/example_config.yaml
+uv run python -m agent.cli \
+  --gse GSE123456 \
+  --output-dir outputs/GSE123456 \
+  --config config/example_config.yaml
 ```
+
+### Run on pre-built JSONL contexts
+
+```bash
+uv run python -m agent.cli \
+  --jsonl contexts.jsonl \
+  --config config/example_config.yaml
+```
+
+---
+
+## Outputs
+
+Unless `--dry-run` is used, the pipeline writes:
+
+* `annotations.jsonl`
+* `audit.jsonl`
+* `flagged.jsonl`
+
+All decisions are reproducible and explainable from audit logs.
+
+---
+
+## Development Model
+
+* Architecture decisions live in `docs/whitepaper.md`
+* Milestones live in `docs/milestones/`
+* All changes are tracked via tickets in `docs/tickets/`
+* Tests must pass under `uv run pytest`
+
+---
+
+## License and Status
+
+Research and curation support tool.
+Not intended for clinical or diagnostic use.
+
+````
+
+---
+

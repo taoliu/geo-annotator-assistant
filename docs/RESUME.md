@@ -1,136 +1,116 @@
-# How to Resume This Project
+# GEO GSM Annotator Agent — Project Resume
 
-This document explains how to correctly resume work on the **geo-gsm-annotator-agent** project in a new session (human or AI-assisted).
-
-Follow these steps **in order**.
-
----
-
-## 1. Read the architectural contract (MANDATORY)
-
-Start with:
-
-- `docs/whitepaper.md`
-
-This document defines:
-- architectural invariants,
-- validation and repair philosophy,
-- evidence-first rules,
-- configuration governance.
-
-Do **not** propose changes that violate the whitepaper without opening a new milestone.
+This document summarizes the current state, guarantees, and operating assumptions of the project.  
+It is intended to help **new contributors and new AI coding sessions** resume work safely.
 
 ---
 
-## 2. Identify the current development phase
+## Project Status
 
-Read, in order:
-
-1. The latest file in `docs/milestones/`
-2. The latest file in `docs/checkpoints/`
-
-As of **2026-01-04**:
-- Milestone **v0.2 (Ontology grounding and evidence-first repair)** is complete.
-- The system is mechanically correct and stable.
-- The next planned work is semantic/policy refinement (v0.3).
+- Current milestone: **v0.3**
+- Stability level: **backend-stable**
+- Intended users: computational biologists and human curators
+- Intended use: GSM-level metadata normalization and review
 
 ---
 
-## 3. Check repository state
+## What Exists and Works (v0.3)
 
-- Inspect the latest git tag.
-- Confirm no uncommitted changes affect core logic.
-- Review `docs/tickets/` to see recently completed tickets.
+### Core Pipeline
 
-Active development must always be ticket-driven.
+- Deterministic end-to-end pipeline:
+  - LLM generation
+  - format validation
+  - semantic validation
+  - ontology grounding
+  - decision routing
+  - bounded repair loop
+- Fully wired across CLI, GSM, and GSE modes
 
----
+### Repair and Validation
 
-## 4. Ontology grounding setup (REQUIRED FOR RUNNING)
+- Field-scoped repairs
+- Per-field attempt limits
+- Global repair limit
+- Terminal fallback values
+- Anti-cycling repair constraint
+- Evidence-first semantics
 
-Ontology grounding depends on a prebuilt, external ChromaDB.
+### Ontology Integration
 
-To enable it:
+- ChromaDB-backed grounding
+- Read-only ontology usage
+- Deterministic thresholds
+- Clear separation from semantic validation
 
-1. Place the directory `ontology_chroma_db/` next to the repository root.
+### GSE Support
 
-2. The directory **must** contain: `chroma.sqlite3`
-
-3. In your config file, ensure ontology grounding is enabled under the canonical namespace: `rag.ontology.*`
-
----
-
-## 5. Ontology retrieval invariants (IMPORTANT)
-
-Ontology retrieval follows strict rules:
-
-- Query embeddings are computed explicitly via `embed_query`.
-- Use:
-```python
-get_collection(name=...)
-```
-
-**without** passing an embedding function.
-
-* This avoids conflicts with persisted embeddings in ChromaDB.
-
-This behavior intentionally mirrors the external `rag_ontologies` pipeline.
-
-Embedding model requirements:
-
-* Model: `BAAI/bge-base-en-v1.5`
-* Embeddings must be normalized.
+- GSE accession ingestion
+- SOFT or prebuilt JSONL support
+- Independent GSM decisions
+- GSE-level summary reporting
+- No forced label propagation
 
 ---
 
-## 6. Testing environment (MANDATORY)
+## What Is Explicitly Deferred
 
-All tests must be run using the project’s `uv` environment:
+These are **intentional**, not missing:
 
-```bash
-uv run pytest -q
-```
+- Interactive curator UI
+- Manual override workflows
+- Cross-GSM consensus voting
+- Active learning or feedback loops
 
-Do not run `pytest` directly.
-
-If configuration, validation, or decision routing logic is modified:
-
-* add or update tests accordingly.
+These are planned for **v0.4**.
 
 ---
 
-## 7. Development workflow summary
+## Invariants (Do Not Break)
 
-To resume development safely:
+- Output schema: exactly 8 fields
+- Deterministic decision engine
+- Audit logs are mandatory
+- Ontology grounding is read-only
+- No silent repair loops
+- No hidden state between runs
 
-1. Understand the **architecture** (whitepaper).
-2. Confirm the **current milestone scope**.
-3. Write or pick a **ticket** under `docs/tickets/`.
-4. Implement **only what the ticket specifies**.
-5. Run tests under `uv`.
-6. Update checkpoints or milestones if scope is completed.
-
----
-
-## 8. Current recommended next step
-
-The next milestone (v0.3) should focus on:
-
-* Canonical handling of missing or absent information (`Unknown` vs explicit values).
-* Field-specific evidence policies.
-* Consistent skip/fallback semantics for ontology grounding.
-
-This work is **policy-level**, not mechanical.
+If a change violates any of the above, it requires:
+- a design discussion,
+- a milestone update,
+- and explicit documentation.
 
 ---
 
-## Final note
+## How Work Is Organized
 
-If you are an AI coding agent or chatbot:
+- **Whitepaper**: long-term architecture (`docs/whitepaper.md`)
+- **Milestones**: state snapshots (`docs/milestones/`)
+- **Checkpoints**: operational memory (`docs/checkpoints/`)
+- **Tickets**: executable tasks (`docs/tickets/`)
 
-* Read `AGENTS.md` before touching code.
-* Follow ticket instructions exactly.
-* Prefer deterministic, minimal changes over “helpful” refactors.
+All code changes must correspond to a ticket.
 
-This project prioritizes correctness, auditability, and long-term consistency.
+---
 
+## Guidance for New AI / Codex Sessions
+
+Before coding:
+
+1. Read:
+   - `docs/whitepaper.md`
+   - latest milestone doc
+   - latest checkpoint doc
+2. Identify the active ticket number.
+3. Do not redesign architecture unless explicitly instructed.
+4. Prefer incremental, testable changes.
+
+---
+
+## Current Next Direction
+
+- Close v0.3 with documentation alignment
+- Begin v0.4 planning:
+  - curator UI
+  - human-in-the-loop workflows
+  - review and override interfaces

@@ -1,12 +1,17 @@
-# GEO GSM Annotator Agent — Whitepaper
+# GEO GSM Annotator Agent — Whitepaper (v0.3)
 
 ## 1. Purpose and Scope
 
-The GEO GSM Annotator Agent is a semi-automated system for extracting, validating, repairing, and standardizing sample-level metadata (GSM) from the GEO database using large language models (LLMs), deterministic validators, and ontology grounding.
+The GEO GSM Annotator Agent is a semi-automated system for extracting, validating, repairing, and standardizing **sample-level (GSM)** metadata from the GEO database using:
 
-This document defines the **long-term architectural intent, invariants, and governance rules** of the project.
+* large language models (LLMs),
+* deterministic validators,
+* ontology grounding,
+* and bounded repair loops.
 
-It is intentionally **not**:
+This document defines the **long-term architectural intent, invariants, and governance rules** of the project, updated to reflect the **v0.3 milestone**.
+
+This document is **not**:
 
 * an implementation guide,
 * an API reference,
@@ -25,16 +30,18 @@ The whitepaper is designed to remain valid across:
 The system is built around the following principles:
 
 1. **LLMs propose; deterministic logic decides**
-   LLMs generate candidate annotations. All acceptance, rejection, repair, or escalation decisions are made by deterministic code.
+   LLMs generate candidate annotations only.
+   All acceptance, repair, fallback, and escalation decisions are deterministic.
 
 2. **Evidence over fluency**
-   A fluent answer without textual support is worse than an incomplete answer. Unsupported inferences must be detected and corrected.
+   A fluent answer without textual support is worse than an incomplete answer.
+   Unsupported inferences must be detected and corrected.
 
 3. **Repair over rejection**
-   When possible, errors are routed to targeted repair rather than immediate failure.
+   Errors are routed to targeted, field-scoped repair whenever possible.
 
 4. **Auditability over optimization**
-   Every decision must be explainable post hoc through structured audit records.
+   Every decision must be explainable post hoc through structured audit logs.
 
 5. **Separation of time scales**
 
@@ -46,9 +53,7 @@ The system is built around the following principles:
 
 ## 3. Core Output Contract (Invariant)
 
-The agent produces **exactly eight output fields** per GSM record.
-
-This schema is immutable unless explicitly revised by a new major milestone:
+The agent produces **exactly eight output fields** per GSM record:
 
 * `gse_accession`
 * `gsm_accession`
@@ -59,9 +64,11 @@ This schema is immutable unless explicitly revised by a new major milestone:
 * `disease`
 * `treatment`
 
+This schema is **immutable** within v0.x.
+
 Validators, ontology grounding, and repair logic **must not change this schema**.
 
-Any additional information must be recorded in audit logs, not in the final output.
+Any additional information must be recorded in **audit logs**, never in the final output.
 
 ---
 
@@ -82,32 +89,37 @@ The canonical processing pipeline is:
 
 Steps must occur **in this order**.
 
-Reordering steps requires an explicit milestone-level decision.
+v0.3 explicitly wires and enforces this ordering in production code.
 
 ---
 
 ## 5. Validation and Repair Model (Invariant)
 
-Validation failures are categorized into distinct classes, including:
+Validation failures are categorized into distinct classes:
 
 * format violations,
 * semantic inconsistencies,
 * unsupported inferences,
-* ontology grounding failures.
+* ontology grounding failures,
+* cross-field consistency violations.
 
 At each iteration:
 
-* Exactly **one primary failure** is selected deterministically.
-* A decision table maps the failure to one of:
+* **Exactly one primary failure** is selected deterministically.
+* A decision table maps that failure to one of:
 
-  * ACCEPT
-  * REPAIR
-  * FALLBACK
-  * ESCALATE
+  * `ACCEPT`
+  * `REPAIR`
+  * `FALLBACK`
+  * `ESCALATE`
 
-Repair is **field-targeted**, **bounded**, and **auditable**.
+### v0.3 Guarantees
 
-Semantic validation may include type guards (for example, treating cell-type values in `cell_line` as no cell line) that trigger deterministic fallback and skip ontology grounding for that field.
+* Repairs are **field-scoped**, never global.
+* Repairs are **attempt-bounded** per field.
+* Repair loops are **globally bounded**.
+* **Terminal fallback values** (for example `Unknown`, `No`) are respected.
+* **Anti-cycling constraint**: once a field reaches a terminal fallback, it must not be repaired again in the same run.
 
 ---
 
@@ -115,15 +127,15 @@ Semantic validation may include type guards (for example, treating cell-type val
 
 The system enforces an **evidence-first rule**:
 
-> If a field value is inferred without explicit support in the GEO context, this failure must be addressed **before** any ontology confidence issues.
+> If a field value is inferred without explicit support in the GEO context, this failure must be resolved **before** ontology confidence is considered.
 
 Implications:
 
-* Unsupported inferences take precedence over ontology ambiguity or low confidence.
+* Unsupported inference dominates ontology ambiguity.
 * Ontology grounding must never legitimize hallucinated values.
-* Evidence-based repair may remove or neutralize values before ontology validation runs.
+* Repair may neutralize values (for example fallback to `Unknown`) before ontology runs.
 
-This rule is enforced at the failure-selection level, not via ad hoc prompt logic.
+This rule is enforced by **deterministic failure prioritization**, not prompt wording.
 
 ---
 
@@ -133,35 +145,57 @@ Ontology grounding is a **validation and normalization step**, not a generative 
 
 Invariants:
 
-* Ontologies are externally built, read-only resources.
-* The agent does not modify ontology databases.
+* Ontologies are externally built and read-only.
+
+* The agent never mutates ontology databases.
+
 * Grounding yields:
 
   * confident matches,
-  * or structured failure states (no match, ambiguous, low confidence, skipped).
-* Grounding influences decisions but does not directly mutate output fields.
+  * or structured failure states (no match, low confidence, ambiguous, skipped).
 
-Ontology confidence must never override evidence constraints.
+* Ontology results influence decisions but **do not directly mutate output fields**.
+
+v0.3 uses Chroma-backed vector search with deterministic thresholds.
 
 ---
 
 ## 8. Retrieval and RAG Invariants
 
-Retrieval-Augmented Generation (RAG) is used **only for candidate retrieval**.
+Retrieval-Augmented Generation (RAG) is used **only for candidate retrieval**, never for decision making.
 
 Invariants:
 
 * Retrieval is deterministic and auditable.
-* Vector databases are queried in read-only mode.
-* Query embeddings are computed explicitly by the agent.
-* Retrieved candidates are inputs to deterministic selection logic.
-* No implicit learning or state mutation occurs at runtime.
+* Vector databases are queried read-only.
+* Retrieved candidates are inputs to deterministic logic.
+* No runtime learning or state mutation occurs.
 
 ---
 
-## 9. Missing and Unknown Information (Policy Boundary)
+## 9. GSE-Level Processing and Consistency (v0.3)
 
-This system distinguishes **architecture** from **labeling policy**.
+v0.3 introduces **GSE-aware execution**, including:
+
+* GSE → GSM expansion via SOFT or JSONL ingestion,
+* per-GSM independent labeling,
+* GSE-level summary reporting.
+
+Important constraint:
+
+> **Labels are never blindly propagated across GSMs.**
+
+Even within the same GSE:
+
+* `data_type` may differ,
+* `organism` may differ in rare or legacy datasets,
+* tissue and disease annotations remain GSM-specific.
+
+Only **diagnostic reporting** is shared at the GSE level, not labels.
+
+---
+
+## 10. Missing and Unknown Information (Policy Boundary)
 
 Architecture guarantees:
 
@@ -170,17 +204,17 @@ Architecture guarantees:
 
 Policy decisions such as:
 
-* whether to represent absence as `Unknown`, `No`, or `Healthy`,
-* when a value may be inferred from context,
+* when to use `Unknown` vs `No`,
+* whether `Healthy` is allowed without evidence,
 * which fields allow explicit negatives,
 
-are **milestone-scoped**, not hard-coded as architectural invariants.
+are **milestone-scoped**, not architectural invariants.
 
-This prevents premature semantic lock-in.
+v0.3 intentionally keeps these policies conservative.
 
 ---
 
-## 10. Configuration Governance (Invariant)
+## 11. Configuration Governance (Invariant)
 
 ### Canonical Namespace
 
@@ -195,15 +229,15 @@ New top-level namespaces for retrieval or grounding are prohibited.
 
 ### Stability Rules
 
-Any configuration change requires updating:
+Any configuration change requires:
 
-* config models,
-* example configs,
+* updating example configs,
+* updating config loaders,
 * and at least one config-loading test.
 
 ---
 
-## 11. Ticketing and Development Contract (Invariant)
+## 12. Ticketing and Development Contract (Invariant)
 
 All development work is tracked via numbered tickets.
 
@@ -214,18 +248,20 @@ Rules:
   ```
   docs/tickets/ticket-XXX.md
   ```
+
 * Tickets must include:
 
   * context,
   * goals,
   * non-goals,
-  * explicit file-level tasks,
+  * file-level tasks,
   * acceptance criteria.
-* Code changes without an associated ticket are invalid.
+
+Code changes without a ticket are invalid.
 
 ---
 
-## 12. Audit and Explainability (Invariant)
+## 13. Audit and Explainability (Invariant)
 
 The system must emit structured audit records capturing:
 
@@ -234,30 +270,27 @@ The system must emit structured audit records capturing:
 * validation results,
 * ontology candidates,
 * repair attempts,
+* terminal fallbacks,
 * final decisions.
 
-Audit records are first-class outputs and must never be silently disabled.
+Audit output is a **first-class artifact** and must never be disabled.
 
 ---
 
-## 13. Guidance for Future AI-Assisted Sessions
+## 14. Known Limitations Deferred to v0.4
 
-Before proposing changes, AI agents must:
+The following are **explicitly deferred**, not missing:
 
-1. Read this whitepaper.
-2. Inspect current example configs.
-3. Inspect existing milestones and tickets.
-4. Follow established namespaces and contracts.
+* interactive curator UI,
+* human-in-the-loop correction workflows,
+* cross-GSM consensus voting,
+* curator feedback learning.
 
-If a proposal conflicts with an invariant defined here, it must:
-
-* explicitly state the conflict,
-* justify the change,
-* and be introduced via a milestone-level update.
+These require a different design surface and are out of scope for v0.3.
 
 ---
 
-## 14. Summary
+## 15. Summary
 
 This document defines what **must remain true** even as the system evolves.
 
@@ -265,6 +298,6 @@ This document defines what **must remain true** even as the system evolves.
 * Milestones define **state**.
 * Tickets define **work**.
 
-This separation is essential for correctness, auditability, and continuity in a system developed across long time spans and multiple AI-assisted sessions.
+v0.3 establishes a stable, auditable, and curator-ready backend suitable for real GEO datasets, while intentionally deferring UI-level concerns to v0.4.
 
 ---
