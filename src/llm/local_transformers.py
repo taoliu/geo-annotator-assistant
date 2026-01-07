@@ -37,6 +37,7 @@ class LocalTransformersClient:
         self._model = AutoModelForCausalLM.from_pretrained(
             self._model_path,
             torch_dtype=torch_dtype,
+            local_files_only=True,
         ).to(self._device)
         self._model.eval()
 

@@ -42,7 +42,7 @@ def test_run_batch_handles_failure(monkeypatch) -> None:
 
     original_run_single = run_batch_module.run_single_gsm
 
-    def _fake_run_single(gsm_accession: str, cfg: dict):
+    def _fake_run_single(gsm_accession: str, cfg: dict, llm_client=None):
         if gsm_accession == "GSMFAIL":
             raise RuntimeError("boom")
         return original_run_single(gsm_accession, cfg)

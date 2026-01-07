@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from agent.accession import override_accessions
 from agent.audit import build_audit_record
@@ -381,14 +381,21 @@ def _run_decision_repairs(
         return state
 
 
-def _run_llm_pipeline(state: PipelineState, cfg: dict) -> tuple[dict, dict, bool]:
+def _run_llm_pipeline(
+    state: PipelineState,
+    cfg: dict,
+    llm_client: Optional[Any] = None,
+) -> tuple[dict, dict, bool]:
     context_text = state.context_text
     if not context_text:
         raise ValueError("context_text is required for LLM labeling.")
 
     prompt_loader = _make_prompt_loader(cfg)
     llm_cfg = cfg.get("llm", {})
-    client = create_llm_client(llm_cfg)
+    if llm_client is None:
+        client = create_llm_client(llm_cfg)
+    else:
+        client = llm_client
 
     parsed_output, format_errors = _generate_with_format_repairs(
         state,
@@ -452,7 +459,11 @@ def _run_llm_pipeline(state: PipelineState, cfg: dict) -> tuple[dict, dict, bool
     return state.final_output, audit_record, flagged
 
 
-def run_single_gsm(gsm_accession: str, cfg: dict) -> tuple[dict, dict, bool]:
+def run_single_gsm(
+    gsm_accession: str,
+    cfg: dict,
+    llm_client: Optional[Any] = None,
+) -> tuple[dict, dict, bool]:
     state = PipelineState(
         gsm_accession=gsm_accession,
         versions=dict(cfg.get("versions", {})),
@@ -467,12 +478,13 @@ def run_single_gsm(gsm_accession: str, cfg: dict) -> tuple[dict, dict, bool]:
     state.context_text = context_text
     state.parsed_jsonl = parsed_jsonl
     state.gse_accession = gse_accession
-    return _run_llm_pipeline(state, cfg)
+    return _run_llm_pipeline(state, cfg, llm_client=llm_client)
 
 
 def run_single_from_context_record(
     record: dict,
     cfg: dict,
+    llm_client: Optional[Any] = None,
 ) -> tuple[dict, dict, bool]:
     gsm_accession = record["gsm_accession"]
     gse_accession = record["gse_accession"]
@@ -484,4 +496,4 @@ def run_single_from_context_record(
         versions=dict(cfg.get("versions", {})),
     )
     state.context_text = context_text
-    return _run_llm_pipeline(state, cfg)
+    return _run_llm_pipeline(state, cfg, llm_client=llm_client)

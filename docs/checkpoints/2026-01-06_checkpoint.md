@@ -25,6 +25,14 @@ No new features are expected for v0.3 beyond documentation and cleanup.
 
 ---
 
+### LLM Model Reuse (Performance)
+
+* Local Transformers models are initialized once per run and reused across GSMs.
+* Initialization logs confirm a single model load followed by reuse in the same run.
+* Qualitative speedup: multi-GSM runs avoid repeated model loading, reducing per-GSM overhead noticeably.
+
+---
+
 ### Deterministic Repair Loop
 
 * Validation failures are handled via a deterministic decision table.

@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 
 from agent.gse_postpass import apply_gse_consistency_postpass
 from agent.run_single import run_single_from_context_record
+from llm.factory import create_llm_client
 from ingest.read_context_jsonl import iter_gsm_contexts
 from ingest.soft_to_context_jsonl import soft_to_context_jsonl
 
@@ -65,11 +66,23 @@ def run_gse_from_jsonl(
     audits: List[Dict[str, Any]] = []
     flagged: List[Dict[str, Any]] = []
     n_flagged = 0
+    llm_client = None
+    reuse_logged = False
+    llm_cfg = cfg.get("llm", {}) if isinstance(cfg.get("llm"), dict) else {}
+    llm_mode = llm_cfg.get("mode", "stub")
 
     for record in iter_gsm_contexts(jsonl_path):
         try:
+            if llm_client is None:
+                llm_client = create_llm_client(llm_cfg)
+            elif not reuse_logged and llm_mode in {"local_transformers", "transformers"}:
+                print("[LLM] Reusing existing model instance")
+                reuse_logged = True
+
             annotation, audit, is_flagged = run_single_from_context_record(
-                record, cfg
+                record,
+                cfg,
+                llm_client=llm_client,
             )
         except Exception as exc:
             annotation = _build_failure_annotation(record)

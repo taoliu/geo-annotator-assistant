@@ -57,5 +57,9 @@ def create_llm_client(cfg: Optional[Dict[str, Any]] = None) -> LLMClient:
     if mode in {"local_transformers", "transformers"}:
         from llm.local_transformers import LocalTransformersClient
 
-        return LocalTransformersClient(cfg)
+        client = LocalTransformersClient(cfg)
+        model_id = cfg.get("model_id") or cfg.get("model_path") or "Unknown"
+        device = getattr(client, "_device", cfg.get("device", "auto"))
+        print(f"[LLM] Initializing model: {model_id} on {device}")
+        return client
     raise ValueError(f"Unsupported LLM mode: {mode}")

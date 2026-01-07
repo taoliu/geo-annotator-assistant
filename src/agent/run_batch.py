@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Tuple
 
 from agent.run_single import run_single_gsm
+from llm.factory import create_llm_client
 
 _REQUIRED_KEYS: List[str] = [
     "gse_accession",
@@ -61,9 +62,24 @@ def run_batch(
     flagged: List[Dict[str, Any]] = []
     n_flagged = 0
 
+    llm_client = None
+    reuse_logged = False
+    llm_cfg = cfg.get("llm", {}) if isinstance(cfg.get("llm"), dict) else {}
+    llm_mode = llm_cfg.get("mode", "stub")
+
     for gsm_accession in gsms:
         try:
-            annotation, audit, is_flagged = run_single_gsm(gsm_accession, cfg)
+            if llm_client is None:
+                llm_client = create_llm_client(llm_cfg)
+            elif not reuse_logged and llm_mode in {"local_transformers", "transformers"}:
+                print("[LLM] Reusing existing model instance")
+                reuse_logged = True
+
+            annotation, audit, is_flagged = run_single_gsm(
+                gsm_accession,
+                cfg,
+                llm_client=llm_client,
+            )
         except Exception as exc:
             annotation = _build_failure_annotation(gsm_accession)
             audit = _build_failure_audit(gsm_accession, str(exc))
