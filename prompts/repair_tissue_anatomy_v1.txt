@@ -1,0 +1,15 @@
+You must fix ONLY the field(s) listed under FAILING FIELDS using the GEO TEXT and the CANDIDATES.
+Return an anatomical tissue term, not a cell type.
+Choose the best candidate label (preferred_label) when appropriate, otherwise use the allowed fallback.
+
+FAILING FIELDS:
+{{FAILING_FIELDS}}
+
+CANDIDATES (by field):
+{{CANDIDATES}}
+
+GEO TEXT:
+{{CONTEXT}}
+
+Return JSON ONLY with exactly these keys:
+gse_accession, gsm_accession, data_type, organism, tissue_type, cell_line, disease, treatment

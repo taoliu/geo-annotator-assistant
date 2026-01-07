@@ -212,4 +212,5 @@ __marimo__/
 # for this project
 out/
 logs/
+testing_data/
 .vscode
