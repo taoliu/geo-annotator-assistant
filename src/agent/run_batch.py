@@ -40,6 +40,15 @@ def _build_failure_audit(gsm_accession: str, error_message: str) -> Dict[str, st
         "gsm_accession": gsm_accession,
         "error": message,
         "final_decision": "FLAGGED",
+        "rationale": {
+            "final_decision": "FLAGGED",
+            "primary_failure": None,
+            "terminal_fallback_fields": [],
+            "n_llm_calls": 0,
+            "attempts_by_field": {},
+            "ontology_status_by_field": {},
+            "flags": [],
+        },
     }
 
 

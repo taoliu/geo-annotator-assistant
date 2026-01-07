@@ -37,6 +37,12 @@ def test_write_run_outputs_creates_jsonl(tmp_path: Path) -> None:
         assert len(parsed) == len(records)
         assert parsed == records
 
+    curation_path = Path(output["curation"])
+    assert curation_path.exists()
+    lines = curation_path.read_text(encoding="utf-8").splitlines()
+    assert lines[0].startswith("gse_accession\tgsm_accession\tfinal_decision")
+    assert len(lines) == len(audits) + 1
+
 
 def test_write_jsonl_overwrites_atomically(tmp_path: Path) -> None:
     path = tmp_path / "data.jsonl"

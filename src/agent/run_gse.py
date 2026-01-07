@@ -45,6 +45,15 @@ def _build_failure_audit(record: dict, error_message: str) -> Dict[str, str]:
         "gse_accession": record.get("gse_accession", "Unknown"),
         "error": message,
         "final_decision": "FLAGGED",
+        "rationale": {
+            "final_decision": "FLAGGED",
+            "primary_failure": None,
+            "terminal_fallback_fields": [],
+            "n_llm_calls": 0,
+            "attempts_by_field": {},
+            "ontology_status_by_field": {},
+            "flags": [],
+        },
     }
 
 

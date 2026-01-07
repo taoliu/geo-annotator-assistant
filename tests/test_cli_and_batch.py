@@ -77,6 +77,12 @@ def test_writer_integration(tmp_path: Path) -> None:
         assert path.exists()
         assert len(path.read_text(encoding="utf-8").splitlines()) == expected_count
 
+    curation_path = Path(output_paths["curation"])
+    assert curation_path.exists()
+    assert len(curation_path.read_text(encoding="utf-8").splitlines()) == (
+        len(audits) + 1
+    )
+
 
 def test_cli_dry_run_prints_summary(capsys) -> None:
     from agent import cli

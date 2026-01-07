@@ -91,7 +91,16 @@ def apply_gse_consistency_postpass(
                 outliers.append(gsm_accession)
                 audit = audit_by_gsm.get(gsm_accession)
                 if audit is not None:
-                    audit[f"gse_outlier_{field}"] = True
+                    flag_name = f"gse_outlier_{field}"
+                    audit[flag_name] = True
+                    rationale = audit.get("rationale")
+                    if isinstance(rationale, dict):
+                        flags = rationale.get("flags")
+                        if not isinstance(flags, list):
+                            flags = []
+                        if flag_name not in flags:
+                            flags.append(flag_name)
+                        rationale["flags"] = flags
 
         report_fields[field] = {
             "n_non_placeholder": n_non_placeholder,
