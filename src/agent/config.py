@@ -30,7 +30,7 @@ def load_config(path: str) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError(f"Config file must contain a top-level mapping: {path}")
 
-    return _apply_paths_defaults(_apply_rag_defaults(data))
+    return _apply_postpass_defaults(_apply_paths_defaults(_apply_rag_defaults(data)))
 
 
 @dataclass(frozen=True)
@@ -106,6 +106,21 @@ class RagConfig:
 
 _DEFAULT_RAG_CONFIG = RagConfig().to_dict()
 _DEFAULT_PATHS_CONFIG = {"soft_cache_dir": None}
+_DEFAULT_POSTPASS_CONFIG = {
+    "gse_consistency": {
+        "enabled": True,
+        "fields": [
+            "data_type",
+            "organism",
+            "tissue_type",
+            "cell_line",
+            "disease",
+        ],
+        "ignore_values": ["Unknown", "None", "No", "Healthy"],
+        "outlier_min_samples": 5,
+        "outlier_min_dominant_fraction": 0.80,
+    }
+}
 _LEGACY_KEYS = {
     "ontology_chroma_enabled",
     "ontology_chroma_db_path",
@@ -188,4 +203,16 @@ def _apply_paths_defaults(config: dict[str, Any]) -> dict[str, Any]:
         merged["paths"] = dict(_DEFAULT_PATHS_CONFIG)
     elif isinstance(paths_cfg, dict):
         merged["paths"] = _deep_merge(_DEFAULT_PATHS_CONFIG, paths_cfg)
+    return merged
+
+
+def _apply_postpass_defaults(config: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(config, dict):
+        return config
+    merged = dict(config)
+    postpass_cfg = merged.get("postpass")
+    if postpass_cfg is None:
+        merged["postpass"] = _deep_merge(_DEFAULT_POSTPASS_CONFIG, {})
+    elif isinstance(postpass_cfg, dict):
+        merged["postpass"] = _deep_merge(_DEFAULT_POSTPASS_CONFIG, postpass_cfg)
     return merged

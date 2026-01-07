@@ -43,6 +43,14 @@ rag:
 paths:
   soft_cache_dir: null
 
+postpass:
+  gse_consistency:
+    enabled: true
+    fields: ["data_type","organism","tissue_type","cell_line","disease"]
+    ignore_values: ["Unknown","None","No","Healthy"]
+    outlier_min_samples: 5
+    outlier_min_dominant_fraction: 0.80
+
 thresholds:
   data_type: 0.75
   tissue_type: 0.75

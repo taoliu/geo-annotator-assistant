@@ -104,6 +104,7 @@ def main(argv: list[str] | None = None) -> None:
     try:
         config = load_config(args.config)
 
+        gse_report = None
         if args.gsm:
             annotation, audit, is_flagged = run_single_gsm(args.gsm, config)
             annotations = [annotation]
@@ -118,15 +119,15 @@ def main(argv: list[str] | None = None) -> None:
             gsm_ids = _read_gsm_file(args.gsm_file)
             annotations, audits, flagged, summary = run_batch(gsm_ids, config)
         elif args.jsonl:
-            annotations, audits, flagged, summary = run_gse_from_jsonl(
+            annotations, audits, flagged, summary, gse_report = run_gse_from_jsonl(
                 args.jsonl, config
             )
         elif args.gse:
-            annotations, audits, flagged, summary = run_gse_from_accession(
+            annotations, audits, flagged, summary, gse_report = run_gse_from_accession(
                 args.gse, config, args.output_dir
             )
         elif args.gse_soft:
-            annotations, audits, flagged, summary = run_gse_from_soft_file(
+            annotations, audits, flagged, summary, gse_report = run_gse_from_soft_file(
                 args.gse_soft, config, args.output_dir
             )
         else:
@@ -139,8 +140,11 @@ def main(argv: list[str] | None = None) -> None:
         )
         output_paths = None
         if not args.dry_run:
+            extra_json = (
+                {"gse_consistency.json": gse_report} if gse_report else None
+            )
             output_paths = write_run_outputs(
-                output_dir, annotations, audits, flagged
+                output_dir, annotations, audits, flagged, extra_json=extra_json
             )
 
         _print_summary(summary, output_paths, args.dry_run)

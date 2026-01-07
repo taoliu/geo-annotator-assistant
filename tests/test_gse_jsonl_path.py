@@ -45,7 +45,9 @@ def test_run_gse_from_jsonl_stub(tmp_path: Path) -> None:
     _write_jsonl(jsonl_path, records)
 
     cfg = _load_stub_config()
-    annotations, audits, flagged, summary = run_gse_from_jsonl(str(jsonl_path), cfg)
+    annotations, audits, flagged, summary, report = run_gse_from_jsonl(
+        str(jsonl_path), cfg
+    )
 
     assert summary["n_total"] == 2
     assert summary["n_flagged"] == 0
@@ -54,6 +56,8 @@ def test_run_gse_from_jsonl_stub(tmp_path: Path) -> None:
     assert {row["gse_accession"] for row in annotations} == {"GSE123"}
     assert flagged == []
     assert len(audits) == 2
+    assert report is not None
+    assert report["gse_accession"] == "GSE123"
 
 
 def test_run_gse_from_jsonl_raises_on_missing_key(tmp_path: Path) -> None:
