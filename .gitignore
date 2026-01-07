@@ -214,3 +214,6 @@ out/
 logs/
 testing_data/
 .vscode
+gat_llama3_3b_it_qlora/
+ontology_chroma_db
+# 
