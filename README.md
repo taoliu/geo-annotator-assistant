@@ -1,20 +1,3 @@
-Below are **clean, ready-to-commit updates** for **README.md** and **docs/RESUME.md**, aligned with the v0.3 whitepaper and milestones you just finalized.
-
-I kept them:
-
-* concise,
-* factual,
-* architecture-consistent,
-* curator-facing (README),
-* contributor- and AI-session-facing (RESUME).
-
-No speculative v0.4 claims are included.
-
----
-
-## README.md (v0.3)
-
-````markdown
 # GEO GSM Annotator Agent
 
 A deterministic, ontology-aware annotation pipeline for GEO GSM metadata, combining large language models with rule-based validation and bounded repair loops.
@@ -131,7 +114,4 @@ All decisions are reproducible and explainable from audit logs.
 Research and curation support tool.
 Not intended for clinical or diagnostic use.
 
-````
-
----
 
