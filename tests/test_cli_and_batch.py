@@ -83,6 +83,12 @@ def test_writer_integration(tmp_path: Path) -> None:
         len(audits) + 1
     )
 
+    curation_jsonl_path = Path(output_paths["curation_jsonl"])
+    assert curation_jsonl_path.exists()
+    assert len(curation_jsonl_path.read_text(encoding="utf-8").splitlines()) == len(
+        audits
+    )
+
 
 def test_cli_dry_run_prints_summary(capsys) -> None:
     from agent import cli

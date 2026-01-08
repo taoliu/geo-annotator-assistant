@@ -6,7 +6,7 @@ import csv
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional
 
 _CURATION_COLUMNS = [
     "gse_accession",
@@ -121,6 +121,27 @@ def _build_curation_row(
     }
 
 
+def _iter_curation_records(
+    annotations: List[Dict[str, Any]],
+    audits: List[Dict[str, Any]],
+) -> Iterator[Dict[str, Any]]:
+    total_rows = max(len(annotations), len(audits))
+    for idx in range(total_rows):
+        annotation = annotations[idx] if idx < len(annotations) else {}
+        audit = audits[idx] if idx < len(audits) else {}
+        row = _build_curation_row(annotation, audit)
+        yield {col: row.get(col) for col in _CURATION_COLUMNS}
+
+
+def write_curation_jsonl(
+    path: str,
+    annotations: List[Dict[str, Any]],
+    audits: List[Dict[str, Any]],
+) -> None:
+    records = list(_iter_curation_records(annotations, audits))
+    write_jsonl(path, records)
+
+
 def write_curation_tsv(
     path: str,
     annotations: List[Dict[str, Any]],
@@ -135,11 +156,7 @@ def write_curation_tsv(
                 delimiter="\t",
             )
             writer.writeheader()
-            total_rows = max(len(annotations), len(audits))
-            for idx in range(total_rows):
-                annotation = annotations[idx] if idx < len(annotations) else {}
-                audit = audits[idx] if idx < len(audits) else {}
-                row = _build_curation_row(annotation, audit)
+            for row in _iter_curation_records(annotations, audits):
                 writer.writerow(
                     {col: _stringify_tsv_value(row.get(col)) for col in _CURATION_COLUMNS}
                 )
@@ -167,10 +184,12 @@ def write_run_outputs(
     audit_path = output_path / "audit.jsonl"
     flagged_path = output_path / "flagged.jsonl"
     curation_path = output_path / "curation.tsv"
+    curation_jsonl_path = output_path / "curation.jsonl"
 
     write_jsonl(str(annotations_path), annotations)
     write_jsonl(str(audit_path), audits)
     write_jsonl(str(flagged_path), flagged)
+    write_curation_jsonl(str(curation_jsonl_path), annotations, audits)
     write_curation_tsv(str(curation_path), annotations, audits)
 
     output_paths = {
@@ -178,6 +197,7 @@ def write_run_outputs(
         "audit": str(audit_path),
         "flagged": str(flagged_path),
         "curation": str(curation_path),
+        "curation_jsonl": str(curation_jsonl_path),
     }
 
     if extra_json:

@@ -26,6 +26,7 @@ It is intended to help **new contributors and new AI coding sessions** resume wo
   - decision routing
   - bounded repair loop
 - Fully wired across CLI, GSM, and GSE modes
+- Outputs include `annotations.jsonl`, `audit.jsonl`, `flagged.jsonl`, `curation.tsv`, and `curation.jsonl` (lossless mirror)
 
 ### Repair and Validation
 
