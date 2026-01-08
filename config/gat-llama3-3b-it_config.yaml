@@ -58,6 +58,11 @@ postpass:
     ignore_values: ["Unknown","None","No","Healthy"]
     outlier_min_samples: 5
     outlier_min_dominant_fraction: 0.80
+  suggestions:
+    enabled: false
+    fields: ["data_type","organism","tissue_type","cell_line","disease","treatment"]
+    majority_fraction: 0.80
+    support_fraction_precision: 3
 
 thresholds:
   data_type: 0.70

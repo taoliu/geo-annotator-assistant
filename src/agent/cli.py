@@ -15,6 +15,7 @@ from agent.run_gse import (
     run_gse_from_soft_file,
 )
 from agent.run_single import run_single_gsm
+from agent.suggestions import build_gse_suggestions
 from agent.writer import write_run_outputs
 
 
@@ -95,6 +96,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Path to overrides.jsonl to apply to final outputs.",
     )
     parser.add_argument(
+        "--emit-suggestions",
+        action="store_true",
+        help="Emit suggestions.jsonl for cross-GSM advisory hints.",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Run the pipeline but skip writing output files.",
@@ -150,13 +156,23 @@ def main(argv: list[str] | None = None) -> None:
         )
         output_paths = None
         if not args.dry_run:
+            suggestions = None
+            if args.emit_suggestions:
+                suggestions = build_gse_suggestions(
+                    annotations, audits, config, emit_suggestions=True
+                )
             if overrides:
                 apply_overrides_to_outputs(overrides, annotations, audits, flagged)
             extra_json = (
                 {"gse_consistency.json": gse_report} if gse_report else None
             )
             output_paths = write_run_outputs(
-                output_dir, annotations, audits, flagged, extra_json=extra_json
+                output_dir,
+                annotations,
+                audits,
+                flagged,
+                suggestions=suggestions,
+                extra_json=extra_json,
             )
 
         _print_summary(summary, output_paths, args.dry_run)

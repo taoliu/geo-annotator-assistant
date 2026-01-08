@@ -299,6 +299,7 @@ def write_run_outputs(
     annotations: List[Dict[str, Any]],
     audits: List[Dict[str, Any]],
     flagged: List[Dict[str, Any]],
+    suggestions: Optional[List[Dict[str, Any]]] = None,
     extra_json: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> Dict[str, str]:
     output_path = Path(output_dir)
@@ -310,6 +311,7 @@ def write_run_outputs(
     curation_path = output_path / "curation.tsv"
     curation_jsonl_path = output_path / "curation.jsonl"
     evidence_path = output_path / "evidence.jsonl"
+    suggestions_path = output_path / "suggestions.jsonl"
 
     write_jsonl(str(annotations_path), annotations)
     write_jsonl(str(audit_path), audits)
@@ -317,6 +319,8 @@ def write_run_outputs(
     write_curation_jsonl(str(curation_jsonl_path), annotations, audits)
     write_curation_tsv(str(curation_path), annotations, audits)
     write_evidence_jsonl(str(evidence_path), annotations, audits)
+    if suggestions is not None:
+        write_jsonl(str(suggestions_path), suggestions)
 
     output_paths = {
         "annotations": str(annotations_path),
@@ -326,6 +330,8 @@ def write_run_outputs(
         "curation_jsonl": str(curation_jsonl_path),
         "evidence": str(evidence_path),
     }
+    if suggestions is not None:
+        output_paths["suggestions"] = str(suggestions_path)
 
     if extra_json:
         for name, payload in extra_json.items():

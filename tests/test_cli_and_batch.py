@@ -103,3 +103,21 @@ def test_cli_dry_run_prints_summary(capsys) -> None:
     output = capsys.readouterr().out
     assert "Total: 1" in output
     assert "Dry-run: no files written" in output
+
+
+def test_cli_no_suggestions_file(tmp_path: Path) -> None:
+    from agent import cli
+
+    config_path = str(ROOT / "config" / "example_config.yaml")
+    cli.main(
+        [
+            "--gsm",
+            "GSM000001",
+            "--config",
+            config_path,
+            "--output-dir",
+            str(tmp_path),
+        ]
+    )
+
+    assert not (tmp_path / "suggestions.jsonl").exists()

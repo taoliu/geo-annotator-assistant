@@ -301,3 +301,151 @@ This document defines what **must remain true** even as the system evolves.
 v0.3 establishes a stable, auditable, and curator-ready backend suitable for real GEO datasets, while intentionally deferring UI-level concerns to v0.4.
 
 ---
+
+## 16. Human-in-the-Loop Governance (v0.4)
+
+Starting in v0.4, the system formally supports **human-in-the-loop correction**, subject to strict architectural constraints.
+
+The core principle is:
+
+> Human judgment may *override* automated outputs, but must never *silently alter* system behavior.
+
+Accordingly:
+
+* Human corrections are treated as **explicit external inputs**, not internal state.
+* Corrections must be **replayable, auditable, and deterministic**.
+* Automated inference, validation, repair, and grounding logic remain unchanged.
+
+Human involvement is therefore **governed**, not interactive or implicit.
+
+---
+
+## 17. Explicit Overrides as First-Class Inputs (v0.4)
+
+v0.4 introduces an explicit override mechanism to represent curator decisions.
+
+### Architectural invariants
+
+* Overrides are provided as **versioned input artifacts**.
+* Overrides apply **only after** all automated processing has completed.
+* Overrides must not trigger:
+
+  * new inference,
+  * additional repair,
+  * ontology re-grounding,
+  * or cross-GSM propagation.
+
+Overrides affect only the **final output values** and are recorded verbatim in audit logs, including:
+
+* the original value,
+* the overridden value,
+* and optional curator metadata.
+
+This design ensures that human judgment is:
+
+* transparent,
+* repeatable,
+* and clearly separable from automated reasoning.
+
+---
+
+## 18. Structured Review Artifacts (v0.4)
+
+v0.4 formalizes a set of **machine-readable review artifacts** intended to support curation workflows and downstream tooling.
+
+These artifacts expose *what the system decided* and *why*, without changing decisions.
+
+### Curator summary outputs
+
+* Tabular and structured summaries present final GSM-level outputs.
+* Structured formats are defined as **lossless mirrors** of curator-facing tables.
+* No additional semantics are introduced beyond what is already decided by the pipeline.
+
+### Structural diagnostic evidence
+
+v0.4 introduces **structural evidence diagnostics**, derived solely from existing audit signals, including:
+
+* number of repair attempts per field,
+* terminal fallback usage,
+* ontology grounding status,
+* field-relevant diagnostic flags.
+
+Importantly:
+
+* No free-text explanations are generated.
+* No new inference is performed.
+* Evidence is diagnostic, not justificatory prose.
+
+This preserves determinism while enabling informed human review.
+
+---
+
+## 19. Cross-GSM Signals as Advisory Information (v0.4)
+
+v0.4 allows the system to compute **cross-GSM diagnostic signals**, subject to strict non-forcing rules.
+
+Key constraints:
+
+* GSMs remain **independent decision units**.
+* No labels are automatically propagated across GSMs.
+* Aggregation is **diagnostic only**, never prescriptive.
+
+Cross-GSM analysis may surface:
+
+* majority outliers,
+* singleton values,
+* internal inconsistencies within a GSE.
+
+These signals are **advisory**, opt-in, and explicitly separated from final outputs.
+
+---
+
+## 20. Performance as an Architectural Requirement (v0.4)
+
+v0.4 elevates **performance stability** to an architectural concern.
+
+Specifically:
+
+* GSE-scale processing must be feasible on a single accelerator device.
+* Performance optimizations must not alter:
+
+  * inference semantics,
+  * decision ordering,
+  * or determinism guarantees.
+
+Performance improvements are therefore treated as **behavior-preserving transformations**, not algorithmic changes.
+
+---
+
+## 21. Updated Boundary of Deferred Concerns
+
+With v0.4, the following concerns remain **explicitly deferred**:
+
+* interactive or web-based curator UI,
+* persistent or collaborative curation state,
+* learning from human edits,
+* automated consensus enforcement across GSMs.
+
+These are intentionally excluded from the long-term architecture and require separate governance.
+
+---
+
+## 22. Updated Summary
+
+With the additions in v0.4, the system now satisfies the following long-term properties:
+
+* Fully deterministic automated annotation
+* Explicit, auditable human correction
+* Structured, machine-readable review artifacts
+* Advisory (non-forcing) cross-GSM diagnostics
+* Performance stability at GSE scale
+
+The architectural contract remains unchanged:
+
+* The whitepaper defines **what must remain true**.
+* Milestones define **what exists at a given time**.
+* Tickets define **what work is permitted**.
+
+v0.4 closes the backend phase of development and establishes a stable foundation for curator-facing interfaces in subsequent milestones.
+
+---

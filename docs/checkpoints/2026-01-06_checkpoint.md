@@ -86,6 +86,7 @@ No new features are expected for v0.3 beyond documentation and cleanup.
 * Audit logs contain full repair history and decision rationale.
 * TSV summaries support spreadsheet-based human review.
 * Output structure is stable and suitable for downstream UI work.
+* Optional, opt-in `suggestions.jsonl` can surface cross-GSM outliers without changing labels.
 
 ### Override Application (v0.4)
 

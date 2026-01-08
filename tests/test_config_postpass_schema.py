@@ -32,3 +32,17 @@ def test_postpass_defaults_applied(tmp_path: Path) -> None:
     assert gse_cfg.get("ignore_values") == ["Unknown", "None", "No", "Healthy"]
     assert gse_cfg.get("outlier_min_samples") == 5
     assert gse_cfg.get("outlier_min_dominant_fraction") == 0.80
+
+    suggestions_cfg = postpass_cfg.get("suggestions")
+    assert isinstance(suggestions_cfg, dict)
+    assert suggestions_cfg.get("enabled") is False
+    assert suggestions_cfg.get("fields") == [
+        "data_type",
+        "organism",
+        "tissue_type",
+        "cell_line",
+        "disease",
+        "treatment",
+    ]
+    assert suggestions_cfg.get("majority_fraction") == 0.80
+    assert suggestions_cfg.get("support_fraction_precision") == 3

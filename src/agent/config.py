@@ -119,7 +119,20 @@ _DEFAULT_POSTPASS_CONFIG = {
         "ignore_values": ["Unknown", "None", "No", "Healthy"],
         "outlier_min_samples": 5,
         "outlier_min_dominant_fraction": 0.80,
-    }
+    },
+    "suggestions": {
+        "enabled": False,
+        "fields": [
+            "data_type",
+            "organism",
+            "tissue_type",
+            "cell_line",
+            "disease",
+            "treatment",
+        ],
+        "majority_fraction": 0.80,
+        "support_fraction_precision": 3,
+    },
 }
 _LEGACY_KEYS = {
     "ontology_chroma_enabled",
