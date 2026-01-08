@@ -20,6 +20,14 @@ llm:
   dtype: "auto"          # auto | float16 | bfloat16 | float32
   model_path: "./llama-3.2-1b-it"
   stop: []
+  # Example OpenAI-style HTTP transport:
+  # transport: "openai_http"
+  # openai_http:
+  #   base_url: "http://localhost:8000"
+  #   model: "gpt-4o-mini"
+  #   timeout_s: 30
+  #   endpoint: "chat_completions"
+  #   default_max_tokens: 256
 
 rag:
   persist_path: "ontology_chroma_db"

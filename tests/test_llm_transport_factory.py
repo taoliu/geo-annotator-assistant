@@ -45,12 +45,18 @@ def test_factory_selects_local_transformers(monkeypatch: pytest.MonkeyPatch) -> 
     assert isinstance(client, FakeLocalTransformersClient)
 
 
-def test_factory_creates_openai_http_stub() -> None:
-    client = create_llm_client({"transport": "openai_http"})
+def test_factory_creates_openai_http_client() -> None:
+    client = create_llm_client(
+        {
+            "transport": "openai_http",
+            "openai_http": {
+                "base_url": "http://example.com",
+                "model": "test-model",
+            },
+        }
+    )
 
     assert client.__class__.__name__ == "OpenAIHttpClient"
-    with pytest.raises(NotImplementedError):
-        client.generate(_build_request("hello"))
 
 
 def test_factory_creates_llama_cpp_http_stub() -> None:
