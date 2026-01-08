@@ -11,19 +11,28 @@ parser:
   command: ""            # used if mode=subprocess
 
 llm:
-  transport: "local_transformers"
-  apply_chat_template: true
+  #transport: "local_transformers"
+  #apply_chat_template: true
 
-  # generation
-  max_new_tokens: 1028
-  do_sample: false          # <-- add this (explicit)
-  temperature: 0.0          # kept for clarity; ignored when do_sample=false
-  top_p: 1.0                # kept for clarity; ignored when do_sample=false
+  ## generation
+  #max_new_tokens: 1028
+  #do_sample: false          # <-- add this (explicit)
+  #temperature: 0.0          # kept for clarity; ignored when do_sample=false
+  #top_p: 1.0                # kept for clarity; ignored when do_sample=false
 
-  # runtime
-  device: "auto"            # auto | cpu | mps
-  dtype: "auto"             # auto | float16 | bfloat16 | float32
-  model_path: "./gat_llama3_3b_it_qlora"
+  ## runtime
+  #device: "auto"            # auto | cpu | mps
+  #dtype: "auto"             # auto | float16 | bfloat16 | float32
+  #model_path: "./gat_llama3_3b_it_qlora"
+
+  # Example OpenAI-style HTTP transport:
+  transport: "openai_http"
+  openai_http:
+    base_url: "http://127.0.0.1:8941"
+    model: "gat_llama3_3b_it_qlora_mlx"
+    timeout_s: 30
+    endpoint: "chat_completions"
+    default_max_tokens: 1024
 
   # stopping
   stop: ["\nCONTEXT:", "\nPREVIOUS_OUTPUT:", "<|eot_id|>", "<|end_of_text|>", "<end_of_turn>"]
