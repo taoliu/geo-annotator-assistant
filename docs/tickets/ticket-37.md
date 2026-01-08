@@ -1,6 +1,6 @@
 # Ticket #37: CURATION-005 — Emit cross-GSM suggestions (opt-in, non-forcing)
 
-### Background
+## Background
 
 v0.4 allows curators to review GSMs individually. However, many issues are only visible **in aggregate**, for example:
 
@@ -14,7 +14,7 @@ Suggestions are advisory, optional, and explicitly separated from final outputs.
 
 ---
 
-### Scope (STRICT)
+## Scope (STRICT)
 
 **In scope**
 
@@ -33,7 +33,7 @@ Suggestions are advisory, optional, and explicitly separated from final outputs.
 
 ---
 
-### Goals
+## Goals
 
 1. Help curators **spot inconsistencies and outliers**
 2. Preserve GSM independence and determinism
@@ -42,7 +42,7 @@ Suggestions are advisory, optional, and explicitly separated from final outputs.
 
 ---
 
-### Activation (Opt-in Only)
+## Activation (Opt-in Only)
 
 Suggestions must be emitted **only if explicitly requested**:
 
@@ -60,7 +60,7 @@ If the flag is not present:
 
 ---
 
-### Source of Truth (MUST)
+## Source of Truth (MUST)
 
 Suggestions must be computed **only from existing artifacts**, such as:
 
@@ -78,7 +78,7 @@ Overrides may be *reported* but must not change suggestion logic.
 
 ---
 
-### Canonical `suggestions.jsonl` Record Structure (v1)
+## Canonical `suggestions.jsonl` Record Structure (v1)
 
 One JSON object per suggestion.
 
@@ -99,7 +99,7 @@ One JSON object per suggestion.
 
 ---
 
-### Field Semantics
+## Field Semantics
 
 * `scope`
 
@@ -152,7 +152,7 @@ No other reasons in this ticket.
 
 ---
 
-### Suggestion Rules (Deterministic)
+## Suggestion Rules (Deterministic)
 
 At minimum, implement:
 
@@ -175,7 +175,7 @@ Rules must:
 
 ---
 
-### Ordering and Determinism
+## Ordering and Determinism
 
 * Suggestions must be emitted in deterministic order:
 
@@ -184,7 +184,7 @@ Rules must:
 
 ---
 
-### Output Location and Naming
+## Output Location and Naming
 
 * Emit `suggestions.jsonl` in the same output directory as:
 
@@ -194,7 +194,7 @@ Rules must:
 
 ---
 
-### Acceptance Criteria
+## Acceptance Criteria
 
 **Functional**
 
@@ -213,7 +213,7 @@ Rules must:
 
 ---
 
-### Tests Required
+## Tests Required
 
 1. **No-flag test**
 
@@ -236,7 +236,7 @@ Rules must:
 
 ---
 
-### Non-Goals (Explicit)
+## Non-Goals (Explicit)
 
 * No override generation
 * No UI hints or rendering
@@ -245,7 +245,7 @@ Rules must:
 
 ---
 
-### Documentation Updates
+## Documentation Updates
 
 * Update `docs/RESUME.md`:
 
