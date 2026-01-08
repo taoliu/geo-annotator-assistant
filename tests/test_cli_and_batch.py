@@ -89,6 +89,10 @@ def test_writer_integration(tmp_path: Path) -> None:
         audits
     )
 
+    evidence_path = Path(output_paths["evidence"])
+    assert evidence_path.exists()
+    assert len(evidence_path.read_text(encoding="utf-8").splitlines()) == len(audits)
+
 
 def test_cli_dry_run_prints_summary(capsys) -> None:
     from agent import cli
