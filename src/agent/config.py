@@ -30,7 +30,9 @@ def load_config(path: str) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError(f"Config file must contain a top-level mapping: {path}")
 
-    return _apply_postpass_defaults(_apply_paths_defaults(_apply_rag_defaults(data)))
+    return _apply_postpass_defaults(
+        _apply_paths_defaults(_apply_llm_defaults(_apply_rag_defaults(data)))
+    )
 
 
 @dataclass(frozen=True)
@@ -204,6 +206,22 @@ def _apply_rag_defaults(config: dict[str, Any]) -> dict[str, Any]:
                 rag_cfg["ontology"] = ontology_mapping
 
     merged["rag"] = _deep_merge(_DEFAULT_RAG_CONFIG, rag_cfg)
+    return merged
+
+
+def _apply_llm_defaults(config: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(config, dict):
+        return config
+
+    merged = dict(config)
+    llm_cfg = merged.get("llm") if isinstance(merged.get("llm"), dict) else {}
+    llm_cfg = dict(llm_cfg)
+    if "transport" not in llm_cfg:
+        if "mode" in llm_cfg:
+            llm_cfg["transport"] = llm_cfg.get("mode")
+        else:
+            llm_cfg["transport"] = "stub"
+    merged["llm"] = llm_cfg
     return merged
 
 

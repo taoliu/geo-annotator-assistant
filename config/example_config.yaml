@@ -11,7 +11,7 @@ parser:
   command: ""            # used if mode=subprocess
 
 llm:
-  mode: "stub"           # stub | local_transformers
+  transport: "stub"      # stub | local_transformers | openai_http | llama_cpp_http
   apply_chat_template: true
   max_new_tokens: 256
   temperature: 0.0

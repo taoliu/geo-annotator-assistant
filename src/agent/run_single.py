@@ -22,6 +22,7 @@ from validator.decision_engine import decide_next_action, load_decision_table
 from validator.format_validator import validate_format
 from validator.ontology_validator import ground_all_fields
 from validator.semantic_validator import semantic_validate
+from llm.base import LLMRequest
 from llm.factory import create_llm_client
 
 REQUIRED_KEYS: List[str] = [
@@ -75,6 +76,50 @@ def _make_prompt_loader(cfg: dict):
         return load_prompt(prompt_dir, prompt_name)
 
     return _load
+
+
+def _normalize_stop_list(value: Any) -> list[str] | None:
+    if not value:
+        return None
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item)]
+    return [str(value)]
+
+
+def _make_llm_request_builder(cfg: dict, state: PipelineState):
+    llm_cfg = cfg.get("llm", {}) if isinstance(cfg, dict) else {}
+    stop_list = _normalize_stop_list(llm_cfg.get("stop"))
+    system_prompt = llm_cfg.get("system_prompt")
+    model_id = llm_cfg.get("model_id") or llm_cfg.get("model_path")
+    max_tokens = llm_cfg.get("max_tokens")
+    if max_tokens is None:
+        max_tokens = llm_cfg.get("max_new_tokens")
+    max_tokens = int(max_tokens) if max_tokens is not None else None
+    temperature = llm_cfg.get("temperature")
+    temperature = float(temperature) if temperature is not None else None
+    top_p = llm_cfg.get("top_p")
+    top_p = float(top_p) if top_p is not None else None
+    seed = llm_cfg.get("seed")
+    seed = int(seed) if seed is not None else None
+
+    def _build(prompt: str, stage: str) -> LLMRequest:
+        request_id = f"{state.gsm_accession}:{len(state.llm_raw_outputs) + 1}"
+        return LLMRequest(
+            prompt=prompt,
+            system=system_prompt,
+            model=model_id,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            stop=stop_list,
+            seed=seed,
+            request_id=request_id,
+            tags={"stage": stage},
+        )
+
+    return _build
 
 
 def _load_label_prompt(cfg: dict) -> str:
@@ -207,12 +252,15 @@ def _generate_with_format_repairs(
     context_text: str,
     cfg: dict,
     prompt_loader,
+    request_builder,
 ) -> tuple[Optional[Dict[str, str]], List[str]]:
     last_errors: List[str] = []
     word_limits = cfg.get("limits", {}).get("field_word_limits")
     label_prompt = _load_label_prompt(cfg)
     final_prompt = f"{label_prompt}\n\n{context_text}"
-    raw_output = client.generate(final_prompt)
+    request = request_builder(final_prompt, "label")
+    raw_result = client.generate(request)
+    raw_output = raw_result.text
     state.llm_raw_outputs.append(raw_output)
 
     parsed_output, format_errors = validate_format(
@@ -238,7 +286,9 @@ def _generate_with_format_repairs(
             f"{repair_template}\n\nCONTEXT:\n{context_text}\n\nPREVIOUS_OUTPUT:\n"
             f"{raw_output}"
         )
-        raw_output = client.generate(repair_prompt)
+        request = request_builder(repair_prompt, "repair_format")
+        raw_result = client.generate(request)
+        raw_output = raw_result.text
         state.llm_raw_outputs.append(raw_output)
         parsed_output, format_errors = validate_format(
             raw_output,
@@ -266,6 +316,7 @@ def _run_decision_repairs(
     cfg: dict,
     context_text: str,
     prompt_loader,
+    request_builder,
     max_total_repairs: Optional[int],
 ) -> PipelineState:
     while True:
@@ -356,7 +407,9 @@ def _run_decision_repairs(
                 f"{repair_template}\n\nCONTEXT:\n{context_text}\n\nPREVIOUS_OUTPUT:\n"
                 f"{json.dumps(previous_output, ensure_ascii=True)}"
             )
-            raw_output = llm_client.generate(repair_prompt)
+            request = request_builder(repair_prompt, "repair_field")
+            raw_result = llm_client.generate(request)
+            raw_output = raw_result.text
             state.llm_raw_outputs.append(raw_output)
             parsed_output, format_errors = validate_format(raw_output, REQUIRED_KEYS)
             state.format_errors = format_errors
@@ -397,12 +450,14 @@ def _run_llm_pipeline(
     else:
         client = llm_client
 
+    request_builder = _make_llm_request_builder(cfg, state)
     parsed_output, format_errors = _generate_with_format_repairs(
         state,
         client,
         context_text,
         cfg,
         prompt_loader,
+        request_builder,
     )
     state.format_errors = format_errors
     if parsed_output is None or format_errors:
@@ -440,6 +495,7 @@ def _run_llm_pipeline(
         context_text=context_text,
         prompt_loader=prompt_loader,
         max_total_repairs=cfg.get("limits", {}).get("max_total_repairs"),
+        request_builder=request_builder,
         validation_callback=_refresh_validation,
     )
 

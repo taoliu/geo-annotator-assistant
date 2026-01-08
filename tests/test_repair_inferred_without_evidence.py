@@ -12,6 +12,7 @@ if str(SRC) not in sys.path:
 from agent.config import load_config
 from agent.run_single import run_single_from_context_record
 import agent.run_single as run_single_module
+from llm.base import LLMRequest, LLMResult, compute_request_fingerprint
 from validator.failure_codes import (
     CELL_LINE_INFERRED_WITHOUT_EVIDENCE,
     CELL_LINE_IS_CELL_TYPE,
@@ -25,16 +26,23 @@ class FakeLLMClient:
         self._outputs = list(outputs)
         self.prompts: list[str] = []
 
-    def generate(self, prompt: str) -> str:
-        self.prompts.append(prompt)
+    def generate(self, request: LLMRequest) -> LLMResult:
+        self.prompts.append(request.prompt)
         if not self._outputs:
             raise AssertionError("FakeLLMClient has no remaining outputs.")
-        return self._outputs.pop(0)
+        text = self._outputs.pop(0)
+        return LLMResult(
+            text=text,
+            request_id=request.request_id,
+            usage=None,
+            transport_meta={"provider": "fake"},
+            request_fingerprint=compute_request_fingerprint(request),
+        )
 
 
 def _load_stub_config() -> dict:
     cfg = load_config(str(ROOT / "config" / "example_config.yaml"))
-    cfg.setdefault("llm", {})["mode"] = "stub"
+    cfg.setdefault("llm", {})["transport"] = "stub"
     cfg.setdefault("limits", {})
     cfg.setdefault("rag", {}).setdefault("ontology", {})["enabled"] = False
     return cfg

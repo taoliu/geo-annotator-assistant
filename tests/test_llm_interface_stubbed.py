@@ -11,6 +11,7 @@ if str(SRC) not in sys.path:
 
 from agent.config import load_config
 from agent.run_single import run_single_from_context_record
+from llm.base import LLMRequest
 from llm.factory import create_llm_client
 
 REQUIRED_KEYS = {
@@ -26,15 +27,27 @@ REQUIRED_KEYS = {
 
 
 def test_factory_returns_stub_client() -> None:
-    client = create_llm_client({"mode": "stub"})
+    client = create_llm_client({"transport": "stub"})
     assert client.__class__.__name__ == "StubLLMClient"
 
 
 def test_stub_generate_returns_valid_json() -> None:
-    client = create_llm_client({"mode": "stub"})
+    client = create_llm_client({"transport": "stub"})
     prompt = "Series Accession: GSE123456\nSample ID: GSM654321\n"
-    output = client.generate(prompt)
-    parsed = json.loads(output)
+    request = LLMRequest(
+        prompt=prompt,
+        system=None,
+        model=None,
+        max_tokens=None,
+        temperature=None,
+        top_p=None,
+        stop=None,
+        seed=None,
+        request_id="req-1",
+        tags={"stage": "label"},
+    )
+    result = client.generate(request)
+    parsed = json.loads(result.text)
 
     assert set(parsed.keys()) == REQUIRED_KEYS
     assert parsed["gse_accession"] == "GSE123456"
@@ -43,7 +56,7 @@ def test_stub_generate_returns_valid_json() -> None:
 
 def test_run_single_from_context_record_stub_smoke() -> None:
     cfg = load_config(str(ROOT / "config" / "example_config.yaml"))
-    cfg.setdefault("llm", {})["mode"] = "stub"
+    cfg.setdefault("llm", {})["transport"] = "stub"
 
     record = {
         "gsm_accession": "GSM000111",

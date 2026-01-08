@@ -25,7 +25,7 @@ from llm.factory import StubLLMClient
 def _load_stub_config() -> dict:
     cfg = load_config(str(ROOT / "config" / "example_config.yaml"))
     cfg.setdefault("parser", {})["mode"] = "stub"
-    cfg.setdefault("llm", {})["mode"] = "stub"
+    cfg.setdefault("llm", {})["transport"] = "stub"
     return cfg
 
 
@@ -198,9 +198,9 @@ def test_overrides_do_not_increase_llm_calls(monkeypatch) -> None:
             super().__init__(cfg)
             self.calls = 0
 
-        def generate(self, prompt: str) -> str:
+        def generate(self, request) -> object:
             self.calls += 1
-            return super().generate(prompt)
+            return super().generate(request)
 
     import agent.run_batch as run_batch_module
 

@@ -11,7 +11,7 @@ parser:
   command: ""            # used if mode=subprocess
 
 llm:
-  mode: "local_transformers"
+  transport: "local_transformers"
   apply_chat_template: true
 
   # generation

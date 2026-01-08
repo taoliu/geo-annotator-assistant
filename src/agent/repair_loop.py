@@ -8,6 +8,7 @@ from typing import Callable, Dict, List, Optional
 
 from agent.accession import override_accessions
 from agent.state import PipelineState
+from llm.base import LLMRequest
 from validator.format_validator import validate_format
 from validator.decision_engine import decide_next_action
 
@@ -116,6 +117,7 @@ def apply_repairs(
     context_text: Optional[str] = None,
     prompt_loader=None,
     max_total_repairs: Optional[int] = None,
+    request_builder: Optional[Callable[[str, str], LLMRequest]] = None,
     validation_callback: Optional[Callable[[PipelineState], None]] = None,
 ) -> PipelineState:
     if not _has_failures(state):
@@ -260,7 +262,24 @@ def apply_repairs(
                 f"{repair_template}\n\nCONTEXT:\n{context_text}\n\nPREVIOUS_OUTPUT:\n"
                 f"{json.dumps(previous_output, ensure_ascii=True)}"
             )
-            raw_output = llm_client.generate(repair_prompt)
+            if request_builder is None:
+                request_id = f"{state.gsm_accession}:{len(state.llm_raw_outputs) + 1}"
+                request = LLMRequest(
+                    prompt=repair_prompt,
+                    system=None,
+                    model=None,
+                    max_tokens=None,
+                    temperature=None,
+                    top_p=None,
+                    stop=None,
+                    seed=None,
+                    request_id=request_id,
+                    tags={"stage": "repair_field"},
+                )
+            else:
+                request = request_builder(repair_prompt, "repair_field")
+            raw_result = llm_client.generate(request)
+            raw_output = raw_result.text
             state.llm_raw_outputs.append(raw_output)
             parsed_output, format_errors = validate_format(
                 raw_output,

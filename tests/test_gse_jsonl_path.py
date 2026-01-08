@@ -17,7 +17,7 @@ from agent.run_gse import run_gse_from_jsonl
 
 def _load_stub_config() -> dict:
     cfg = load_config(str(ROOT / "config" / "example_config.yaml"))
-    cfg.setdefault("llm", {})["mode"] = "stub"
+    cfg.setdefault("llm", {})["transport"] = "stub"
     return cfg
 
 

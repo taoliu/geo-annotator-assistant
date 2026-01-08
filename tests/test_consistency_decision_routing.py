@@ -23,7 +23,7 @@ def _decision_table() -> dict:
 def _load_stub_config() -> dict:
     cfg = load_config(str(ROOT / "config" / "example_config.yaml"))
     cfg.setdefault("parser", {})["mode"] = "stub"
-    cfg.setdefault("llm", {})["mode"] = "stub"
+    cfg.setdefault("llm", {})["transport"] = "stub"
     return cfg
 
 

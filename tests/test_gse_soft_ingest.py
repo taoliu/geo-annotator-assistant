@@ -16,7 +16,7 @@ from agent.run_gse import run_gse_from_accession, run_gse_from_soft_file
 def _load_stub_config() -> dict:
     cfg = load_config(str(ROOT / "config" / "example_config.yaml"))
     cfg.setdefault("parser", {})["mode"] = "stub"
-    cfg.setdefault("llm", {})["mode"] = "stub"
+    cfg.setdefault("llm", {})["transport"] = "stub"
     cfg.setdefault("rag", {}).setdefault("ontology", {})["enabled"] = False
     return cfg
 

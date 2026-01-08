@@ -65,13 +65,13 @@ def run_batch(
     llm_client = None
     reuse_logged = False
     llm_cfg = cfg.get("llm", {}) if isinstance(cfg.get("llm"), dict) else {}
-    llm_mode = llm_cfg.get("mode", "stub")
+    llm_transport = llm_cfg.get("transport") or llm_cfg.get("mode", "stub")
 
     for gsm_accession in gsms:
         try:
             if llm_client is None:
                 llm_client = create_llm_client(llm_cfg)
-            elif not reuse_logged and llm_mode in {"local_transformers", "transformers"}:
+            elif not reuse_logged and llm_transport in {"local_transformers", "transformers"}:
                 print("[LLM] Reusing existing model instance")
                 reuse_logged = True
 

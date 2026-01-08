@@ -11,6 +11,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from llm.base import LLMRequest
 
 class FakeTensor:
     def __init__(self, data: list[list[int]]):
@@ -146,7 +147,20 @@ def test_generate_passes_attention_mask_without_sampling_args(
         }
     )
 
-    client.generate("hello")
+    client.generate(
+        LLMRequest(
+            prompt="hello",
+            system=None,
+            model=None,
+            max_tokens=None,
+            temperature=None,
+            top_p=None,
+            stop=None,
+            seed=None,
+            request_id="req-1",
+            tags={"stage": "label"},
+        )
+    )
 
     model = FakeModel.last_instance
     assert model is not None
@@ -176,7 +190,20 @@ def test_generate_passes_sampling_args_when_do_sample_true(
         }
     )
 
-    client.generate("hello")
+    client.generate(
+        LLMRequest(
+            prompt="hello",
+            system=None,
+            model=None,
+            max_tokens=None,
+            temperature=None,
+            top_p=None,
+            stop=None,
+            seed=None,
+            request_id="req-1",
+            tags={"stage": "label"},
+        )
+    )
 
     model = FakeModel.last_instance
     assert model is not None

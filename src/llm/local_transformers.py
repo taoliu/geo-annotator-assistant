@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any, Dict, Optional
+
+from llm.base import LLMRequest, LLMResult, compute_request_fingerprint
 
 
 class LocalTransformersClient:
@@ -12,14 +15,16 @@ class LocalTransformersClient:
         self._cfg = cfg or {}
         self._model_path = self._cfg.get("model_path")
         if not self._model_path:
-            raise ValueError("llm.model_path is required for local_transformers mode")
+            raise ValueError(
+                "llm.model_path is required for local_transformers transport"
+            )
 
         try:
             import torch
             from transformers import AutoModelForCausalLM, AutoTokenizer
         except Exception as exc:  # pragma: no cover - dependency guard
             raise RuntimeError(
-                "transformers and torch are required for llm.mode=local_transformers"
+                "transformers and torch are required for llm.transport=local_transformers"
             ) from exc
 
         self._torch = torch
@@ -98,11 +103,11 @@ class LocalTransformersClient:
             raise ValueError(f"Unsupported dtype: {dtype}")
         return mapping[dtype]
 
-    def _build_inputs(self, prompt: str):
+    def _build_inputs(self, prompt: str, system_prompt: str | None):
         if self._apply_chat_template and getattr(self._tokenizer, "chat_template", None):
             messages = []
-            if self._system_prompt:
-                messages.append({"role": "system", "content": self._system_prompt})
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
             messages.append({"role": "user", "content": prompt})
             rendered = self._tokenizer.apply_chat_template(
                 messages,
@@ -130,8 +135,12 @@ class LocalTransformersClient:
             return text
         return text[:earliest]
 
-    def generate(self, prompt: str) -> str:
-        input_ids, attention_mask = self._build_inputs(prompt)
+    def generate(self, request: LLMRequest) -> LLMResult:
+        start_time = time.perf_counter()
+        system_prompt = (
+            request.system if request.system is not None else self._system_prompt
+        )
+        input_ids, attention_mask = self._build_inputs(request.prompt, system_prompt)
         input_ids = input_ids.to(self._model.device)
         attention_mask = attention_mask.to(self._model.device)
 
@@ -149,16 +158,21 @@ class LocalTransformersClient:
         if isinstance(eot_id, int) and eot_id >= 0 and eot_id not in eos_ids:
             eos_ids.append(eot_id)
 
+        max_tokens = request.max_tokens if request.max_tokens is not None else self._max_new_tokens
+        temperature = (
+            request.temperature if request.temperature is not None else self._temperature
+        )
+        top_p = request.top_p if request.top_p is not None else self._top_p
         generate_kwargs = {
-            "max_new_tokens": self._max_new_tokens,
+            "max_new_tokens": max_tokens,
             "do_sample": self._do_sample,
             "eos_token_id": eos_ids[0] if len(eos_ids) == 1 else eos_ids,
             "pad_token_id": self._tokenizer.pad_token_id,
         }
 
         if self._do_sample:
-            generate_kwargs["temperature"] = self._temperature
-            generate_kwargs["top_p"] = self._top_p
+            generate_kwargs["temperature"] = temperature
+            generate_kwargs["top_p"] = top_p
 
         with self._torch.no_grad():
             output_ids = self._model.generate(
@@ -170,6 +184,20 @@ class LocalTransformersClient:
         generated_ids = output_ids[0][input_ids.shape[-1] :]
         text = self._tokenizer.decode(generated_ids, skip_special_tokens=False)
 
-        if self._stop:
-            text = self._apply_stop(text, self._stop)
-        return text
+        stop_list = request.stop if request.stop is not None else self._stop
+        if stop_list:
+            text = self._apply_stop(text, stop_list)
+        latency_ms = int((time.perf_counter() - start_time) * 1000)
+        return LLMResult(
+            text=text,
+            request_id=request.request_id,
+            usage=None,
+            transport_meta={
+                "provider": "local_transformers",
+                "model_id": request.model or self._model_path,
+                "device": self._device,
+                "latency_ms": latency_ms,
+                "retry_count": 0,
+            },
+            request_fingerprint=compute_request_fingerprint(request),
+        )
