@@ -26,6 +26,7 @@ dependencies = [
   "bitsandbytes; sys_platform != 'darwin'",
   "flash-attn; sys_platform != 'darwin'",
   "mlx-lm; sys_platform == 'darwin'",
+  "watchdog>=6.0.0",
 ]
 
 [project.scripts]
