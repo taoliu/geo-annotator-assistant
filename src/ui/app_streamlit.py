@@ -19,10 +19,9 @@ from ui.overrides import (
     apply_overrides_to_record,
     clear_all_overrides,
     clear_overrides_for_gsm,
+    compute_overrides,
     format_override_value,
     overrides_for_gsm,
-    parse_override_input,
-    set_override,
 )
 from ui.paths import InputPaths, resolve_input_paths
 from ui.schema import CANONICAL_FIELDS
@@ -97,50 +96,6 @@ def _render_filters(rows: list[dict]) -> tuple[str | None, str, bool]:
     return gse_filter, search_text, edit_mode
 
 
-def _render_edit_panel(
-    selection_key: tuple[str, str],
-    curation: dict | None,
-    effective_fields: dict | None,
-    overrides: dict,
-) -> None:
-    st.markdown("**Edit Fields**")
-    st.caption("Edits are stored in memory only for this session.")
-    if not curation:
-        st.write("No curation record found.")
-        return
-
-    gse, gsm = selection_key
-    effective_fields = effective_fields or {}
-    edits: dict[str, str] = {}
-    form_key = f"edit_form_{gse}_{gsm}"
-    with st.form(form_key):
-        for field in CANONICAL_FIELDS:
-            current_value = effective_fields.get(field, curation["fields"][field])
-            edits[field] = st.text_input(
-                field,
-                value=format_override_value(current_value),
-                key=f"edit_{gse}_{gsm}_{field}",
-            )
-        save = st.form_submit_button("Save changes")
-
-    action_cols = st.columns(2)
-    if action_cols[0].button("Revert this GSM"):
-        st.session_state["overrides"] = clear_overrides_for_gsm(overrides, gse, gsm)
-    if action_cols[1].button("Clear all edits"):
-        st.session_state["overrides"] = clear_all_overrides(overrides)
-
-    if save:
-        updated = dict(overrides)
-        for field, raw_value in edits.items():
-            parsed_value = parse_override_input(raw_value)
-            key = (gse, gsm, field)
-            if parsed_value == curation["fields"][field]:
-                updated.pop(key, None)
-            else:
-                updated = set_override(updated, key, parsed_value)
-        st.session_state["overrides"] = updated
-
-
 def _render_details(
     selection_key: tuple[str, str],
     curation_lookup: dict[tuple[str, str], dict],
@@ -148,7 +103,6 @@ def _render_details(
     suggestions_lookup: dict[tuple[str, str], list[dict]],
     suggestions_present: bool,
     flags_by_gsm: dict[tuple[str, str], dict[str, list[str]]],
-    edit_mode: bool,
     overrides: dict,
 ) -> None:
     st.subheader("Record Details")
@@ -182,9 +136,6 @@ def _render_details(
     else:
         st.json(selected_overrides)
 
-    if edit_mode:
-        _render_edit_panel(selection_key, curation, effective_fields, overrides)
-
     st.markdown("**Curation (effective)**")
     if effective_fields:
         st.json(effective_fields)
@@ -215,6 +166,66 @@ def _render_details(
         st.json([record["raw"] for record in records])
 
 
+def _render_unsaved_indicator(container: st.delta_generator.DeltaGenerator, overrides: dict) -> None:
+    if not overrides:
+        container.empty()
+        return
+    edited_gsms = {(gse, gsm) for gse, gsm, _ in overrides}
+    container.info(
+        "Unsaved edits (session-only). "
+        f"Edited GSMs: {len(edited_gsms)}. "
+        f"Edited fields: {len(overrides)}."
+    )
+
+
+def _build_editable_df(
+    df_base: pd.DataFrame,
+    overrides: dict,
+    flags_by_gsm: dict[tuple[str, str], dict[str, list[str]]],
+) -> pd.DataFrame:
+    df_editable = df_base.copy()
+    for (gse, gsm, field), value in overrides.items():
+        if field not in CANONICAL_FIELDS:
+            continue
+        mask = (df_editable["gse_accession"] == gse) & (
+            df_editable["gsm_accession"] == gsm
+        )
+        if mask.any():
+            df_editable.loc[mask, field] = format_override_value(value)
+
+    edited_keys = {(gse, gsm) for gse, gsm, _ in overrides}
+    edited_values = [
+        "Yes" if (row["gse_accession"], row["gsm_accession"]) in edited_keys else ""
+        for row in df_base.to_dict("records")
+    ]
+    df_editable.insert(2, "Edited", edited_values)
+
+    flagged_values = []
+    for row in df_base.to_dict("records"):
+        flagged = flags_by_gsm.get((row["gse_accession"], row["gsm_accession"]), {})
+        flagged_values.append(",".join(sorted(flagged)))
+    df_editable["flagged_fields"] = flagged_values
+    return df_editable
+
+
+def _disabled_columns(df: pd.DataFrame) -> list[str]:
+    return [column for column in df.columns if column not in CANONICAL_FIELDS]
+
+
+def _merge_overrides(
+    existing: dict,
+    overrides_visible: dict,
+    visible_keys: set[tuple[str, str]],
+) -> dict:
+    merged = {
+        key: value
+        for key, value in existing.items()
+        if (key[0], key[1]) not in visible_keys
+    }
+    merged.update(overrides_visible)
+    return merged
+
+
 def run_app() -> None:
     input_dir = _resolve_input_dir()
     if not input_dir:
@@ -238,19 +249,13 @@ def run_app() -> None:
     st.caption(f"Rows: {len(filtered_rows)}")
     flags_by_gsm = build_flags_index(evidence_records)
     overrides = st.session_state.get("overrides", {})
-    edited_keys = {(gse, gsm) for gse, gsm, _ in overrides}
-    df = pd.DataFrame(filtered_rows)
-    if not df.empty:
-        edited_values = [
-            "Yes" if (row["gse_accession"], row["gsm_accession"]) in edited_keys else ""
-            for row in filtered_rows
-        ]
-        df.insert(2, "Edited", edited_values)
-    styled = style_curation_table(df, flags_by_gsm)
-    st.subheader("Curation Table")
-    st.dataframe(styled, width="stretch", hide_index=True)
+    if not isinstance(overrides, dict):
+        overrides = {}
+
+    indicator = st.empty()
 
     if not filtered_rows:
+        _render_unsaved_indicator(indicator, overrides)
         st.info("No records match the current filters.")
         st.stop()
 
@@ -260,6 +265,44 @@ def run_app() -> None:
         options,
         format_func=lambda item: f"{item[0]} / {item[1]}",
     )
+
+    if edit_mode:
+        action_cols = st.columns(2)
+        if action_cols[0].button("Revert selected row"):
+            overrides = clear_overrides_for_gsm(
+                overrides, selection[0], selection[1]
+            )
+        if action_cols[1].button("Clear all edits"):
+            overrides = clear_all_overrides(overrides)
+
+        df_base = pd.DataFrame(filtered_rows)
+        df_editable = _build_editable_df(df_base, overrides, flags_by_gsm)
+        st.subheader("Curation Table (Editable)")
+        df_edited = st.data_editor(
+            df_editable,
+            disabled=_disabled_columns(df_editable),
+            hide_index=True,
+        )
+        overrides_visible = compute_overrides(df_base, df_edited)
+        visible_keys = {
+            (row["gse_accession"], row["gsm_accession"]) for row in filtered_rows
+        }
+        overrides = _merge_overrides(overrides, overrides_visible, visible_keys)
+        st.session_state["overrides"] = overrides
+        _render_unsaved_indicator(indicator, overrides)
+    else:
+        _render_unsaved_indicator(indicator, overrides)
+        df = pd.DataFrame(filtered_rows)
+        if not df.empty:
+            edited_keys = {(gse, gsm) for gse, gsm, _ in overrides}
+            edited_values = [
+                "Yes" if (row["gse_accession"], row["gsm_accession"]) in edited_keys else ""
+                for row in filtered_rows
+            ]
+            df.insert(2, "Edited", edited_values)
+        styled = style_curation_table(df, flags_by_gsm)
+        st.subheader("Curation Table")
+        st.dataframe(styled, width="stretch", hide_index=True)
 
     curation_lookup = index_curation_records(curation_records)
     evidence_lookup = index_evidence_records(evidence_records)
@@ -272,7 +315,6 @@ def run_app() -> None:
         suggestions_lookup,
         paths.suggestions_present,
         flags_by_gsm,
-        edit_mode,
         overrides,
     )
 
