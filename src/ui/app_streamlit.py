@@ -15,7 +15,17 @@ from ui.loaders import (
     load_evidence_jsonl,
     load_suggestions_jsonl_optional,
 )
+from ui.overrides import (
+    apply_overrides_to_record,
+    clear_all_overrides,
+    clear_overrides_for_gsm,
+    format_override_value,
+    overrides_for_gsm,
+    parse_override_input,
+    set_override,
+)
 from ui.paths import InputPaths, resolve_input_paths
+from ui.schema import CANONICAL_FIELDS
 from ui.state import (
     build_table_rows,
     filter_table_rows,
@@ -77,13 +87,58 @@ def _gse_options(rows: list[dict]) -> list[str]:
     return options
 
 
-def _render_filters(rows: list[dict]) -> tuple[str | None, str]:
+def _render_filters(rows: list[dict]) -> tuple[str | None, str, bool]:
     st.sidebar.header("Filters")
     options = _gse_options(rows)
     selected_gse = st.sidebar.selectbox("GSE", options)
     search_text = st.sidebar.text_input("Search")
+    edit_mode = st.sidebar.checkbox("Enable editing", value=False)
     gse_filter = None if selected_gse == "All" else selected_gse
-    return gse_filter, search_text
+    return gse_filter, search_text, edit_mode
+
+
+def _render_edit_panel(
+    selection_key: tuple[str, str],
+    curation: dict | None,
+    effective_fields: dict | None,
+    overrides: dict,
+) -> None:
+    st.markdown("**Edit Fields**")
+    st.caption("Edits are stored in memory only for this session.")
+    if not curation:
+        st.write("No curation record found.")
+        return
+
+    gse, gsm = selection_key
+    effective_fields = effective_fields or {}
+    edits: dict[str, str] = {}
+    form_key = f"edit_form_{gse}_{gsm}"
+    with st.form(form_key):
+        for field in CANONICAL_FIELDS:
+            current_value = effective_fields.get(field, curation["fields"][field])
+            edits[field] = st.text_input(
+                field,
+                value=format_override_value(current_value),
+                key=f"edit_{gse}_{gsm}_{field}",
+            )
+        save = st.form_submit_button("Save changes")
+
+    action_cols = st.columns(2)
+    if action_cols[0].button("Revert this GSM"):
+        st.session_state["overrides"] = clear_overrides_for_gsm(overrides, gse, gsm)
+    if action_cols[1].button("Clear all edits"):
+        st.session_state["overrides"] = clear_all_overrides(overrides)
+
+    if save:
+        updated = dict(overrides)
+        for field, raw_value in edits.items():
+            parsed_value = parse_override_input(raw_value)
+            key = (gse, gsm, field)
+            if parsed_value == curation["fields"][field]:
+                updated.pop(key, None)
+            else:
+                updated = set_override(updated, key, parsed_value)
+        st.session_state["overrides"] = updated
 
 
 def _render_details(
@@ -93,6 +148,8 @@ def _render_details(
     suggestions_lookup: dict[tuple[str, str], list[dict]],
     suggestions_present: bool,
     flags_by_gsm: dict[tuple[str, str], dict[str, list[str]]],
+    edit_mode: bool,
+    overrides: dict,
 ) -> None:
     st.subheader("Record Details")
     evidence = lookup_evidence(evidence_lookup, selection_key[0], selection_key[1])
@@ -115,8 +172,26 @@ def _render_details(
             tags = ", ".join(flagged_fields[field])
             st.write(f"{field}: {tags}")
 
-    st.markdown("**Curation (raw)**")
     curation = curation_lookup.get(selection_key)
+    selected_overrides = overrides_for_gsm(overrides, selection_key[0], selection_key[1])
+    effective_fields = apply_overrides_to_record(curation, selected_overrides)
+
+    st.markdown("**Overrides (in-memory)**")
+    if not selected_overrides:
+        st.write("None.")
+    else:
+        st.json(selected_overrides)
+
+    if edit_mode:
+        _render_edit_panel(selection_key, curation, effective_fields, overrides)
+
+    st.markdown("**Curation (effective)**")
+    if effective_fields:
+        st.json(effective_fields)
+    else:
+        st.write("No curation record found.")
+
+    st.markdown("**Curation (raw)**")
     if curation:
         st.json(curation["raw"])
     else:
@@ -157,12 +232,20 @@ def run_app() -> None:
     _render_header(paths)
 
     rows = build_table_rows(curation_records)
-    gse_filter, search_text = _render_filters(rows)
+    gse_filter, search_text, edit_mode = _render_filters(rows)
     filtered_rows = filter_table_rows(rows, gse_filter, search_text)
 
     st.caption(f"Rows: {len(filtered_rows)}")
     flags_by_gsm = build_flags_index(evidence_records)
+    overrides = st.session_state.get("overrides", {})
+    edited_keys = {(gse, gsm) for gse, gsm, _ in overrides}
     df = pd.DataFrame(filtered_rows)
+    if not df.empty:
+        edited_values = [
+            "Yes" if (row["gse_accession"], row["gsm_accession"]) in edited_keys else ""
+            for row in filtered_rows
+        ]
+        df.insert(2, "Edited", edited_values)
     styled = style_curation_table(df, flags_by_gsm)
     st.subheader("Curation Table")
     st.dataframe(styled, width="stretch", hide_index=True)
@@ -189,6 +272,8 @@ def run_app() -> None:
         suggestions_lookup,
         paths.suggestions_present,
         flags_by_gsm,
+        edit_mode,
+        overrides,
     )
 
 
