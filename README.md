@@ -1,26 +1,32 @@
 # GEO GSM Annotator Agent
 
-A deterministic, ontology-aware annotation pipeline for GEO **GSM-level metadata**, combining large language models with rule-based validation, bounded repair loops, and explicit human curation support.
+A deterministic, ontology-aware annotation system for GEO **GSM-level metadata**,
+combining large language models with rule-based validation, bounded repair,
+and explicit human curation.
+
+The system is designed for **auditable, reproducible, curator-controlled**
+metadata normalization rather than fully automated labeling.
 
 ---
 
 ## Overview
 
-The GEO GSM Annotator Agent extracts, validates, repairs, and standardizes sample-level (GSM) metadata from the GEO database.
+The GEO GSM Annotator Agent extracts, validates, repairs, and standardizes
+sample-level (GSM) metadata from the GEO database.
 
-It is designed for **semi-automated curation**:
+It follows a **semi-automated curation model**:
 
 * LLMs propose candidate annotations
-* Deterministic logic decides
-* Humans can review and explicitly override results
+* Deterministic logic validates and decides
+* Humans review results and apply explicit overrides when needed
 
-The system emphasizes **auditability, reproducibility, and curator control**, rather than blind automation.
+All decisions are recorded and explainable.
 
 ---
 
 ## Output Schema (Stable)
 
-Each GSM record produces **exactly eight fields**:
+Each GSM record produces **exactly eight canonical fields**:
 
 * `gse_accession`
 * `gsm_accession`
@@ -31,17 +37,17 @@ Each GSM record produces **exactly eight fields**:
 * `disease`
 * `treatment`
 
-This schema is invariant across v0.x.
+This schema is invariant across all v0.x releases.
 
 ---
 
-## Key Features (v0.4)
+## Key Features (v0.5)
 
 ### Deterministic annotation pipeline
 
-* LLM-based candidate generation
+* LLM-based proposal generation
 * Format and semantic validation
-* Ontology grounding (read-only)
+* Read-only ontology grounding
 * Field-scoped repair with bounded attempts
 * Terminal fallback values with anti-cycling guarantees
 * Fully ordered, deterministic execution
@@ -56,46 +62,69 @@ This schema is invariant across v0.x.
 
 Each run may produce:
 
-* **`curation.tsv`**
+* **`curation.tsv`**  
   Human-readable tabular summary
 
-* **`curation.jsonl`**
-  Lossless JSON mirror of `curation.tsv` for tooling and UI
+* **`curation.jsonl`**  
+  Lossless JSON mirror of `curation.tsv`
 
-* **`evidence.jsonl`**
-  Structural diagnostic evidence derived from audits:
-
+* **`evidence.jsonl`**  
+  Structural diagnostic evidence derived strictly from audits:
   * repair attempts
   * terminal fallback usage
   * ontology grounding status
-  * field-level flags
-    (no free-text explanations, no new inference)
+  * field-level flags  
+  (no free-text rationale, no new inference)
 
-* **`suggestions.jsonl`** (optional)
-  Advisory cross-GSM diagnostics highlighting outliers or singletons
+* **`suggestions.jsonl`** (optional)  
+  Advisory cross-GSM diagnostics highlighting outliers or singletons  
   Suggestions never modify outputs
 
-* **`audit.jsonl`**
+* **`audit.jsonl`**  
   Mandatory, structured audit log for all decisions
 
-### Explicit human overrides
+---
+
+## Human Curation Support
+
+### Overrides (backend contract)
 
 * Human corrections are provided via **`overrides.jsonl`**
+* Each override targets:
+  * one GSM
+  * one canonical field
+  * a new value
 * Overrides:
-
-  * are explicit inputs
   * apply after automated processing
-  * do not trigger re-inference
-* All overrides are recorded with full audit provenance
+  * do not trigger re-inference or re-grounding
+* All applied overrides are fully audited
+
+### Curator UI (v0.5)
+
+* Local, Streamlit-based curator UI
+* Read-only by default
+* Loads:
+  * `curation.jsonl`
+  * `evidence.jsonl`
+  * `suggestions.jsonl` (optional)
+* Wide, searchable GSM table
+* Per-GSM detail panels showing raw artifacts
+* Evidence-derived field-level issue highlighting
+* Explicit edit mode with inline table editing
+* Deterministic export of backend-compatible `overrides.jsonl`
+
+The UI introduces **no persistence, no learning, and no inference**.
 
 ---
 
 ## What This Tool Does *Not* Do
 
 * No automatic learning from curator feedback
-* No forced label propagation across GSMs
+* No forced cross-GSM consensus or label propagation
 * No ontology mutation or online training
-* No interactive UI (planned for a future release)
+* No hidden or persistent state
+
+These exclusions are intentional design decisions.
 
 ---
 
@@ -148,18 +177,25 @@ Unless `--dry-run` is used, the pipeline writes:
 
 Optional outputs:
 
-* `suggestions.jsonl` (when enabled)
+* `suggestions.jsonl`
 
-All results are reproducible and explainable from audit artifacts.
+All results are deterministic and reproducible.
 
 ---
 
 ## Development Model
 
-* **Whitepaper**: long-term architecture (`docs/whitepaper.md`)
-* **Milestones**: medium-term state (`docs/milestones/`)
-* **Checkpoints**: operational memory (`docs/checkpoints/`)
-* **Tickets**: executable work units (`docs/tickets/`)
+* **Whitepaper** (`docs/whitepaper.md`)
+  Long-term architectural invariants
+
+* **Milestones** (`docs/milestones/`)
+  Medium-term state snapshots
+
+* **Checkpoints** (`docs/checkpoints/`)
+  Operational handoff points
+
+* **Tickets** (`docs/tickets/`)
+  Executable work units
 
 All code changes must correspond to a ticket.
 
@@ -169,5 +205,3 @@ All code changes must correspond to a ticket.
 
 Research and curation support tool.
 Not intended for clinical or diagnostic use.
-
----

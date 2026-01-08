@@ -1,82 +1,82 @@
 # GEO GSM Annotator Agent — Project Resume
 
-This document summarizes the **current state, guarantees, and operating assumptions** of the project.
-It is intended to help **new contributors and new AI coding sessions** resume work safely and correctly.
+This document summarizes the **current state, guarantees, and operating assumptions**
+of the project.
+
+It is intended to help **new contributors and new AI coding sessions**
+resume work safely, correctly, and without violating architectural invariants.
 
 ---
 
 ## Project Status
 
-* **Current milestone**: **v0.4 — Curator-Ready Backend**
-* **Stability level**: backend-stable
+* **Current milestone**: **v0.5 — Curator UI and Review Workflow**
+* **Stability level**: backend-stable, UI-functional
 * **Intended users**: computational biologists, data curators
-* **Primary use**: GSM-level metadata normalization, review, and correction
+* **Primary use**: GSM-level metadata normalization, review, and explicit correction
 
-v0.4 closes the backend phase of development. No UI is included yet.
+The backend reached stability in v0.4.
+v0.5 completes the human review loop without altering backend behavior.
 
 ---
 
-## What Exists and Works (v0.4)
+## What Exists and Works
 
-### Core Pipeline
+### Core Pipeline (Backend, v0.4-stable)
 
 * Deterministic end-to-end pipeline:
-
   * context ingestion
-  * LLM generation (proposal only)
+  * LLM proposal generation
   * format validation
   * semantic validation
   * ontology grounding
   * decision routing
   * bounded repair loop
   * final decision
-* Fully wired across GSM and GSE modes
 * Strict execution ordering enforced
-* No hidden state between runs
+* Fully wired for GSM-level and GSE-level processing
+* No hidden or persistent state between runs
 
 ### Performance
 
 * **Single-GPU, single-process model reuse**
-
-  * Local HuggingFace LLM is loaded once per run
+  * Local HuggingFace LLM loaded once per run
   * All GSMs reuse the same model instance
   * No change to inference semantics or outputs
-* GSE-scale processing is practical on one GPU
+* GSE-scale processing is practical on a single GPU
 
 ---
 
-### Outputs and Review Artifacts
+## Outputs and Review Artifacts
 
-A typical v0.4 run may produce:
+A standard run may produce:
 
-* `curation.tsv`
-  Curator-friendly tabular summary (unchanged semantics from v0.3)
+* `curation.tsv`  
+  Curator-friendly tabular summary
 
-* `curation.jsonl`
+* `curation.jsonl`  
   Lossless JSON mirror of `curation.tsv` using native JSON types
 
-* `evidence.jsonl`
-  Structural diagnostic evidence per GSM and per field, derived only from audits:
-
+* `evidence.jsonl`  
+  Structural diagnostic evidence per GSM and per field, derived strictly from audits:
   * repair attempt counts
   * terminal fallback usage
   * ontology grounding status
-  * field-relevant flags
-    No free-text rationale, no new inference
+  * field-level flags  
+  No free-text rationale, no new inference
 
-* `suggestions.jsonl` (opt-in)
-  Advisory cross-GSM diagnostics:
-
+* `suggestions.jsonl` (optional)  
+  Advisory, cross-GSM diagnostics:
   * majority outliers
-  * singleton values
-    Suggestions never modify outputs
+  * singleton values  
+  Suggestions never modify outputs
 
-* `audit.jsonl`
+* `audit.jsonl`  
   Mandatory, structured audit log capturing all decisions and provenance
 
 ---
 
-### Repair and Validation
+## Repair and Validation Guarantees
 
 * Field-scoped repairs only
 * Per-field attempt limits
@@ -87,16 +87,16 @@ A typical v0.4 run may produce:
 
 ---
 
-### Ontology Integration
+## Ontology Integration
 
 * Read-only ontology usage
 * Deterministic grounding thresholds
 * Grounding influences decisions but does not directly mutate outputs
-* Clear separation from semantic validation
+* Clear separation between semantic validation and ontology grounding
 
 ---
 
-### GSE-Level Processing
+## GSE-Level Processing
 
 * GSE accession ingestion (SOFT or JSONL)
 * Independent GSM decisions
@@ -105,38 +105,58 @@ A typical v0.4 run may produce:
 
 ---
 
-### Human-in-the-Loop Curation (v0.4)
+## Human-in-the-Loop Curation
+
+### Override Mechanism (Backend Contract)
 
 * Human corrections are expressed **only** via an explicit input artifact:
-
   * `overrides.jsonl`
 * Each override targets:
-
   * one GSM
   * one canonical output field
   * a new value
 * Overrides:
-
   * are optional
   * apply after automated inference and repair
   * do not trigger re-inference or re-grounding
-* All applied overrides are recorded in audit logs with old/new values and optional metadata
+* All applied overrides are recorded in audit logs with old/new values
 
 This makes human intervention explicit, deterministic, and auditable.
 
+### Curator UI (v0.5)
+
+* Local, Streamlit-based curator UI
+* Read-only by default
+* Loads:
+  * `curation.jsonl`
+  * `evidence.jsonl`
+  * `suggestions.jsonl` (optional)
+* Wide, searchable GSM table
+* Per-GSM detail panels showing raw artifacts
+* Evidence-derived field-level issue highlighting
+* Explicit edit mode:
+  * inline table editing of canonical fields
+  * edits are session-scoped (in-memory only)
+* Deterministic export of `overrides.jsonl`
+  * backend-compatible schema
+  * preview-before-export
+  * no automatic writes
+
+The UI introduces **no persistence, no learning, and no inference**.
+
 ---
 
-## What Is Explicitly Deferred
+## What Is Explicitly Not Present
 
-The following are **intentional deferrals**, not missing features:
+The following are **intentional design exclusions**, not missing features:
 
-* Curator UI (web or desktop)
 * Persistent or collaborative curation state
+* Automatic application of suggestions
 * Learning or adaptation from human edits
 * Forced cross-GSM consensus or voting
 * Ontology validation of override values
 
-These are planned for **v0.5+**.
+Any introduction of these requires a new milestone and explicit documentation.
 
 ---
 
@@ -148,30 +168,29 @@ The following must remain true across v0.x:
 * Deterministic decision engine
 * Mandatory audit emission
 * Ontology grounding is read-only
-* No silent repair loops
+* No silent or unbounded repair loops
 * No hidden or persistent state
 * GSM independence is preserved
 
-Any change that violates these invariants requires:
-
-* a design discussion,
-* a milestone update,
-* and explicit documentation.
+Violating any invariant requires:
+* design discussion
+* milestone update
+* explicit documentation
 
 ---
 
 ## How Work Is Organized
 
-* **Whitepaper** (`docs/whitepaper.md`)
+* **Whitepaper** (`docs/whitepaper.md`)  
   Long-term architectural law
 
-* **Milestones** (`docs/milestones/`)
+* **Milestones** (`docs/milestones/`)  
   Medium-term state snapshots
 
-* **Checkpoints** (`docs/checkpoints/`)
+* **Checkpoints** (`docs/checkpoints/`)  
   Operational memory and handoff points
 
-* **Tickets** (`docs/tickets/`)
+* **Tickets** (`docs/tickets/`)  
   Short-term, executable work units
 
 All code changes must correspond to a ticket.
@@ -183,7 +202,6 @@ All code changes must correspond to a ticket.
 Before coding:
 
 1. Read:
-
    * `docs/whitepaper.md`
    * the latest milestone doc
    * the latest checkpoint doc
@@ -194,15 +212,11 @@ Before coding:
 
 ---
 
-## Current Next Direction
+## Current Direction
 
-* v0.4 backend is complete and stable
-* Begin **v0.5** planning:
-
-  * curator UI
-  * review and override interfaces
-  * visualization of evidence and suggestions
-
-Backend redesign is **not** expected in v0.5.
-
----
+* v0.5 curator UI is complete
+* Backend remains v0.4-stable and unchanged
+* Next milestone is expected to focus on:
+  * validation logic refinement
+  * LLM transport abstraction (llama.cpp, OpenAI-style HTTP)
+  * deployment and performance optimization
