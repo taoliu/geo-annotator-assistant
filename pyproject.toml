@@ -19,6 +19,7 @@ dependencies = [
   "GEOparse",
   "tqdm",
   "requests",
+  "streamlit",
   "torch>=2.5",
   "transformers",
   "accelerate",
@@ -29,6 +30,7 @@ dependencies = [
 
 [project.scripts]
 geo-gsm-annotate = "agent.cli:main"
+geo-gsm-ui = "ui.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
