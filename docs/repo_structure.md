@@ -9,12 +9,14 @@
 │   │   ├── 2026-01-04_checkpoint.md
 │   │   ├── 2026-01-05_checkpoint.md
 │   │   ├── 2026-01-06_checkpoint.md
-│   │   └── 2026-01-07_checkpoint.md
+│   │   ├── 2026-01-07_checkpoint.md
+│   │   └── 2026-01-08_checkpoint.md
 │   ├── milestones
 │   │   ├── v0.1-llm.md
 │   │   ├── v0.2-ontology-grounding.md
 │   │   ├── v0.3-real-world-refinement.md
-│   │   └── v0.4-curation-backend.md
+│   │   ├── v0.4-curation-backend.md
+│   │   └── v0.5-curator-ui.md
 │   ├── repo_structure.md
 │   ├── RESUME.md
 │   ├── tickets
@@ -56,12 +58,20 @@
 │   │   ├── ticket-35.md
 │   │   ├── ticket-36.md
 │   │   ├── ticket-37.md
+│   │   ├── ticket-38.md
+│   │   ├── ticket-39.md
 │   │   ├── ticket-4.md
+│   │   ├── ticket-40.md
+│   │   ├── ticket-41.md
+│   │   ├── ticket-42.md
+│   │   ├── ticket-43.md
+│   │   ├── ticket-44.md
 │   │   ├── ticket-5.md
 │   │   ├── ticket-6.md
 │   │   ├── ticket-7.md
 │   │   ├── ticket-8.md
 │   │   └── ticket-9.md
+│   ├── ui.md
 │   └── whitepaper.md
 ├── LICENSE
 ├── prompts
@@ -114,6 +124,17 @@
 │   │   ├── ontology_retrieve.py
 │   │   ├── retrieve.py
 │   │   └── version.py
+│   ├── ui
+│   │   ├── __init__.py
+│   │   ├── app_streamlit.py
+│   │   ├── cli.py
+│   │   ├── flags.py
+│   │   ├── loaders.py
+│   │   ├── overrides.py
+│   │   ├── paths.py
+│   │   ├── schema.py
+│   │   ├── state.py
+│   │   └── styling.py
 │   └── validator
 │       ├── __init__.py
 │       ├── cell_line_rules.py
@@ -168,7 +189,13 @@
 │   ├── test_state_and_audit.py
 │   ├── test_suggestions.py
 │   ├── test_thresholds_and_ontology_validator.py
-│   └── test_writer.py
+│   ├── test_writer.py
+│   └── ui
+│       ├── test_cli.py
+│       ├── test_flags.py
+│       ├── test_loaders.py
+│       ├── test_overrides.py
+│       └── test_state.py
 └── uv.lock
 
-16 directories, 156 files
+18 directories, 181 files
