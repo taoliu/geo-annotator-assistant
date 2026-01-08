@@ -7,6 +7,7 @@ from ui.loaders import (
     load_suggestions_jsonl_optional,
 )
 from ui.paths import InputPaths, resolve_input_paths
+from ui.flags import build_flags_index, extract_field_flags
 from ui.schema import (
     CANONICAL_FIELDS,
     CANONICAL_FIELDS_SET,
@@ -27,6 +28,7 @@ from ui.state import (
     lookup_evidence,
     lookup_suggestions,
 )
+from ui.styling import style_curation_table
 
 __all__ = [
     "CANONICAL_FIELDS",
@@ -34,6 +36,8 @@ __all__ = [
     "CanonicalField",
     "CurationFields",
     "EvidenceRecord",
+    "build_flags_index",
+    "extract_field_flags",
     "InputPaths",
     "NormalizedCurationRecord",
     "SuggestionRecord",
@@ -51,4 +55,5 @@ __all__ = [
     "lookup_evidence",
     "lookup_suggestions",
     "resolve_input_paths",
+    "style_curation_table",
 ]

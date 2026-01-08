@@ -6,8 +6,10 @@ import argparse
 import os
 from pathlib import Path
 
+import pandas as pd
 import streamlit as st
 
+from ui.flags import build_flags_index
 from ui.loaders import (
     load_curation_jsonl,
     load_evidence_jsonl,
@@ -24,6 +26,7 @@ from ui.state import (
     lookup_evidence,
     lookup_suggestions,
 )
+from ui.styling import style_curation_table
 
 st.set_page_config(layout="wide")
 
@@ -83,29 +86,34 @@ def _render_filters(rows: list[dict]) -> tuple[str | None, str]:
     return gse_filter, search_text
 
 
-def _render_table(rows: list[dict]) -> None:
-    st.subheader("Curation Table")
-    st.dataframe(rows, width="stretch", hide_index=True)
-
-
 def _render_details(
     selection_key: tuple[str, str],
     curation_lookup: dict[tuple[str, str], dict],
     evidence_lookup: dict[tuple[str, str], dict],
     suggestions_lookup: dict[tuple[str, str], list[dict]],
     suggestions_present: bool,
+    flags_by_gsm: dict[tuple[str, str], dict[str, list[str]]],
 ) -> None:
     st.subheader("Record Details")
     evidence = lookup_evidence(evidence_lookup, selection_key[0], selection_key[1])
     suggestions = lookup_suggestions(
         suggestions_lookup, selection_key[0], selection_key[1]
     )
+    flagged_fields = flags_by_gsm.get(selection_key, {})
 
     st.caption(f"Evidence present: {'yes' if evidence else 'no'}")
     if suggestions_present:
         st.caption(f"Suggestions: {len(suggestions)}")
     else:
         st.caption("Suggestions: 0 (not loaded)")
+
+    st.markdown("**Flags**")
+    if not flagged_fields:
+        st.write("None.")
+    else:
+        for field in sorted(flagged_fields):
+            tags = ", ".join(flagged_fields[field])
+            st.write(f"{field}: {tags}")
 
     st.markdown("**Curation (raw)**")
     curation = curation_lookup.get(selection_key)
@@ -153,7 +161,11 @@ def run_app() -> None:
     filtered_rows = filter_table_rows(rows, gse_filter, search_text)
 
     st.caption(f"Rows: {len(filtered_rows)}")
-    _render_table(filtered_rows)
+    flags_by_gsm = build_flags_index(evidence_records)
+    df = pd.DataFrame(filtered_rows)
+    styled = style_curation_table(df, flags_by_gsm)
+    st.subheader("Curation Table")
+    st.dataframe(styled, width="stretch", hide_index=True)
 
     if not filtered_rows:
         st.info("No records match the current filters.")
@@ -176,6 +188,7 @@ def run_app() -> None:
         evidence_lookup,
         suggestions_lookup,
         paths.suggestions_present,
+        flags_by_gsm,
     )
 
 
