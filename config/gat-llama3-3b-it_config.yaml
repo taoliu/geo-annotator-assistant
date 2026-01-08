@@ -75,4 +75,5 @@ limits:
   max_format_repairs: 2
   max_total_repairs: 6
   field_word_limits:
+    disease: 10
     treatment: 0
