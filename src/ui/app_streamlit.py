@@ -22,6 +22,7 @@ from ui.overrides import (
     compute_overrides,
     format_override_value,
     overrides_for_gsm,
+    overrides_to_jsonl,
 )
 from ui.paths import InputPaths, resolve_input_paths
 from ui.schema import CANONICAL_FIELDS
@@ -226,6 +227,41 @@ def _merge_overrides(
     return merged
 
 
+def _render_export_section(overrides: dict) -> dict:
+    st.subheader("Overrides export (session-only edits)")
+    edited_gsms = {(gse, gsm) for gse, gsm, _ in overrides}
+    st.write(f"Edited GSMs: {len(edited_gsms)}")
+    st.write(f"Edited fields: {len(overrides)}")
+    if not overrides:
+        st.write("No edits to export.")
+
+    lines: list[str] = []
+    if overrides:
+        try:
+            lines = overrides_to_jsonl(overrides)
+        except ValueError as exc:
+            st.error(str(exc))
+
+    preview = "\n".join(lines)
+    st.text_area("Preview (JSONL)", value=preview, height=200, disabled=True)
+
+    cols = st.columns(2)
+    downloaded = cols[0].download_button(
+        "Export overrides.jsonl",
+        data=preview,
+        file_name="overrides.jsonl",
+        mime="application/jsonl",
+        disabled=not lines,
+    )
+    clear_clicked = cols[1].button("Cancel / Clear edits")
+    if downloaded:
+        st.success("Overrides ready for download.")
+    if clear_clicked:
+        overrides = clear_all_overrides(overrides)
+        st.session_state["overrides"] = overrides
+    return overrides
+
+
 def run_app() -> None:
     input_dir = _resolve_input_dir()
     if not input_dir:
@@ -303,6 +339,8 @@ def run_app() -> None:
         styled = style_curation_table(df, flags_by_gsm)
         st.subheader("Curation Table")
         st.dataframe(styled, width="stretch", hide_index=True)
+
+    overrides = _render_export_section(overrides)
 
     curation_lookup = index_curation_records(curation_records)
     evidence_lookup = index_evidence_records(evidence_records)

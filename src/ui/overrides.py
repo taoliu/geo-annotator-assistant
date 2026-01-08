@@ -114,6 +114,25 @@ def compute_overrides(
     return overrides
 
 
+def overrides_to_jsonl(overrides_map: Mapping[OverrideKey, OverrideValue]) -> list[str]:
+    lines: list[str] = []
+    for (gse, gsm, field), value in sorted(
+        overrides_map.items(), key=lambda item: item[0]
+    ):
+        if not isinstance(gse, str) or not isinstance(gsm, str):
+            raise ValueError("Override keys must include gse_accession and gsm_accession strings.")
+        if field not in CANONICAL_FIELDS_SET:
+            raise ValueError(f"Override field must be canonical: {field!r}")
+        _validate_override_value(value)
+        record = {
+            "gsm_accession": gsm,
+            "field": field,
+            "new_value": value,
+        }
+        lines.append(json.dumps(record))
+    return lines
+
+
 def _validate_override_value(value: OverrideValue) -> None:
     if isinstance(value, str):
         return
@@ -173,6 +192,7 @@ __all__ = [
     "clear_all_overrides",
     "clear_overrides_for_gsm",
     "compute_overrides",
+    "overrides_to_jsonl",
     "format_override_value",
     "overrides_for_gsm",
     "parse_override_input",

@@ -3,6 +3,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import json
+
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -15,6 +17,7 @@ from ui.overrides import (
     clear_all_overrides,
     clear_overrides_for_gsm,
     compute_overrides,
+    overrides_to_jsonl,
     overrides_for_gsm,
     set_override,
 )
@@ -197,3 +200,84 @@ def test_compute_overrides_ignores_non_canonical_columns() -> None:
     overrides = compute_overrides(df_base, df_edited)
 
     assert overrides == {}
+
+
+def test_overrides_to_jsonl_single_record() -> None:
+    overrides = {("GSE1", "GSM1", "disease"): "Flu"}
+
+    lines = overrides_to_jsonl(overrides)
+
+    assert lines == [
+        json.dumps(
+            {
+                "gsm_accession": "GSM1",
+                "field": "disease",
+                "new_value": "Flu",
+            }
+        )
+    ]
+
+
+def test_overrides_to_jsonl_ordering() -> None:
+    overrides = {
+        ("GSE2", "GSM3", "treatment"): "Drug A",
+        ("GSE1", "GSM2", "disease"): "Flu",
+        ("GSE1", "GSM2", "cell_line"): "HeLa",
+        ("GSE1", "GSM1", "organism"): "Homo sapiens",
+    }
+
+    lines = overrides_to_jsonl(overrides)
+
+    assert lines == [
+        json.dumps(
+            {
+                "gsm_accession": "GSM1",
+                "field": "organism",
+                "new_value": "Homo sapiens",
+            }
+        ),
+        json.dumps(
+            {
+                "gsm_accession": "GSM2",
+                "field": "cell_line",
+                "new_value": "HeLa",
+            }
+        ),
+        json.dumps(
+            {
+                "gsm_accession": "GSM2",
+                "field": "disease",
+                "new_value": "Flu",
+            }
+        ),
+        json.dumps(
+            {
+                "gsm_accession": "GSM3",
+                "field": "treatment",
+                "new_value": "Drug A",
+            }
+        ),
+    ]
+
+
+def test_overrides_to_jsonl_invalid_field() -> None:
+    overrides = {("GSE1", "GSM1", "invalid"): "x"}
+
+    try:
+        overrides_to_jsonl(overrides)
+    except ValueError as exc:
+        assert "canonical" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError for invalid field.")
+
+
+def test_overrides_to_jsonl_deterministic() -> None:
+    overrides = {
+        ("GSE1", "GSM1", "disease"): "Flu",
+        ("GSE1", "GSM2", "tissue_type"): "Liver",
+    }
+
+    first = overrides_to_jsonl(overrides)
+    second = overrides_to_jsonl(overrides)
+
+    assert first == second
