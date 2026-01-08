@@ -87,6 +87,12 @@ No new features are expected for v0.3 beyond documentation and cleanup.
 * TSV summaries support spreadsheet-based human review.
 * Output structure is stable and suitable for downstream UI work.
 
+### Override Application (v0.4)
+
+* Overrides can be provided as explicit `overrides.jsonl` inputs.
+* Overrides are applied deterministically immediately before output emission.
+* Audit records capture override provenance (old/new values plus curator metadata when supplied).
+
 ---
 
 ## Known Behaviors (Accepted)

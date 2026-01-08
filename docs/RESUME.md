@@ -56,7 +56,7 @@ It is intended to help **new contributors and new AI coding sessions** resume wo
 
 - Human corrections are expressed as an explicit `overrides.jsonl` input artifact (one JSON object per line)
 - Each record targets a GSM + output field with a new value; optional metadata may include reason/curator/timestamp
-- Overrides are validated on load but not applied to outputs yet
+- Overrides can be supplied via `--overrides` (or `paths.overrides_path`) and are applied deterministically immediately before final output emission, with audit provenance
 
 ---
 

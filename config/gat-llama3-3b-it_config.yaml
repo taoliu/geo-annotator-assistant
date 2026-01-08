@@ -49,6 +49,7 @@ rag:
 
 paths:
   soft_cache_dir: null
+  overrides_path: null
 
 postpass:
   gse_consistency:

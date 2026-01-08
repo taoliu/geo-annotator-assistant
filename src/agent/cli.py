@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from agent.config import load_config
+from agent.overrides import apply_overrides_to_outputs, load_overrides
 from agent.run_batch import run_batch
 from agent.run_gse import (
     run_gse_from_accession,
@@ -90,6 +91,10 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", default="outputs", help="Directory for outputs.")
     parser.add_argument("--config", required=True, help="Path to YAML config file.")
     parser.add_argument(
+        "--overrides",
+        help="Path to overrides.jsonl to apply to final outputs.",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Run the pipeline but skip writing output files.",
@@ -103,6 +108,11 @@ def main(argv: list[str] | None = None) -> None:
 
     try:
         config = load_config(args.config)
+        overrides_path = args.overrides
+        if not overrides_path:
+            paths_cfg = config.get("paths") if isinstance(config.get("paths"), dict) else {}
+            overrides_path = paths_cfg.get("overrides_path") if paths_cfg else None
+        overrides = load_overrides(overrides_path) if overrides_path else {}
 
         gse_report = None
         if args.gsm:
@@ -140,6 +150,8 @@ def main(argv: list[str] | None = None) -> None:
         )
         output_paths = None
         if not args.dry_run:
+            if overrides:
+                apply_overrides_to_outputs(overrides, annotations, audits, flagged)
             extra_json = (
                 {"gse_consistency.json": gse_report} if gse_report else None
             )

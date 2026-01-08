@@ -7,9 +7,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-_OUTPUT_FIELDS = (
-    "gse_accession",
-    "gsm_accession",
+_OVERRIDE_FIELDS = (
     "data_type",
     "organism",
     "tissue_type",
@@ -83,9 +81,9 @@ def _validate_record(record: object, line_number: int) -> tuple[OverrideRecord |
         value = record.get("field")
         if not isinstance(value, str):
             errors.append(f"Line {line_number}: key 'field' must be a string")
-        elif value not in _OUTPUT_FIELDS:
+        elif value not in _OVERRIDE_FIELDS:
             errors.append(
-                f"Line {line_number}: field '{value}' is not a valid output field"
+                f"Line {line_number}: field '{value}' is not a valid override field"
             )
         else:
             field = value
@@ -159,3 +157,99 @@ def load_overrides(path: str) -> dict[tuple[str, str], OverrideRecord]:
         f"[OVERRIDES] Loaded {len(overrides)} override records from {path_obj.name}"
     )
     return overrides
+
+
+def _index_records_by_gsm(records: list[dict]) -> dict[str, list[int]]:
+    index: dict[str, list[int]] = {}
+    for idx, record in enumerate(records):
+        if not isinstance(record, dict):
+            continue
+        gsm_accession = record.get("gsm_accession")
+        if isinstance(gsm_accession, str) and gsm_accession:
+            index.setdefault(gsm_accession, []).append(idx)
+    return index
+
+
+def _record_applied_override(
+    audit: dict,
+    record: OverrideRecord,
+    old_value: OverrideValue | None,
+) -> None:
+    applied = audit.get("human_overrides_applied")
+    if not isinstance(applied, list):
+        applied = []
+        audit["human_overrides_applied"] = applied
+
+    entry: dict[str, OverrideValue | str | None] = {
+        "gsm_accession": record.gsm_accession,
+        "field": record.field,
+        "old_value": old_value,
+        "new_value": record.new_value,
+    }
+    if record.reason is not None:
+        entry["reason"] = record.reason
+    if record.curator is not None:
+        entry["curator"] = record.curator
+    if record.timestamp is not None:
+        entry["timestamp"] = record.timestamp
+    applied.append(entry)
+
+    rationale = audit.get("rationale")
+    if not isinstance(rationale, dict):
+        rationale = {}
+        audit["rationale"] = rationale
+    flags = rationale.get("flags")
+    if not isinstance(flags, list):
+        flags = []
+        rationale["flags"] = flags
+    if "human_override_applied" not in flags:
+        flags.append("human_override_applied")
+
+
+def apply_overrides_to_outputs(
+    overrides: dict[tuple[str, str], OverrideRecord],
+    annotations: list[dict],
+    audits: list[dict],
+    flagged: list[dict] | None = None,
+) -> None:
+    if not overrides:
+        return
+
+    annotations_by_gsm = _index_records_by_gsm(annotations)
+    audits_by_gsm = _index_records_by_gsm(audits)
+    flagged_by_gsm = _index_records_by_gsm(flagged or [])
+
+    for (_, _), record in sorted(overrides.items(), key=lambda item: item[0]):
+        gsm_accession = record.gsm_accession
+        annotation_indices = annotations_by_gsm.get(gsm_accession, [])
+        audit_indices = audits_by_gsm.get(gsm_accession, [])
+        flagged_indices = flagged_by_gsm.get(gsm_accession, [])
+        if not annotation_indices and not audit_indices and not flagged_indices:
+            continue
+
+        for idx in audit_indices:
+            audit = audits[idx]
+            final_output = audit.get("final_output")
+            if not isinstance(final_output, dict):
+                if annotation_indices:
+                    fallback = annotations[annotation_indices[0]]
+                    final_output = fallback if isinstance(fallback, dict) else {}
+                else:
+                    final_output = {}
+                audit["final_output"] = final_output
+
+            old_value = final_output.get(record.field)
+            if old_value == record.new_value:
+                continue
+            final_output[record.field] = record.new_value
+            _record_applied_override(audit, record, old_value)
+
+        for idx in annotation_indices:
+            annotation = annotations[idx]
+            if isinstance(annotation, dict) and annotation.get(record.field) != record.new_value:
+                annotation[record.field] = record.new_value
+
+        for idx in flagged_indices:
+            flagged_record = flagged[idx]
+            if isinstance(flagged_record, dict) and flagged_record.get(record.field) != record.new_value:
+                flagged_record[record.field] = record.new_value

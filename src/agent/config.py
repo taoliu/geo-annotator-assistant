@@ -105,7 +105,7 @@ class RagConfig:
 
 
 _DEFAULT_RAG_CONFIG = RagConfig().to_dict()
-_DEFAULT_PATHS_CONFIG = {"soft_cache_dir": None}
+_DEFAULT_PATHS_CONFIG = {"soft_cache_dir": None, "overrides_path": None}
 _DEFAULT_POSTPASS_CONFIG = {
     "gse_consistency": {
         "enabled": True,
