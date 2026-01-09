@@ -43,6 +43,8 @@ rag:
   k: 20
   ontology:
     enabled: true
+    canonicalize_terminal_exact_labels: true
+    lock_terminal_exact_fields: true
     embedding:
       provider: "langchain_huggingface"
       model_name: "BAAI/bge-base-en-v1.5"

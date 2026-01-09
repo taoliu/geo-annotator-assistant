@@ -8,8 +8,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from agent.accession import override_accessions
 from agent.audit import build_audit_record
+from agent.ontology_canonicalization import apply_terminal_exact_canonicalization_and_lock
 from agent.prompts import load_prompt
-from agent.repair_loop import apply_repairs
+from agent.repair_loop import apply_repairs, merge_repair_output
 from agent.state import PipelineState
 from validator.consistency_validator import (
     ASSAY_PLATFORM_CONFLICT,
@@ -244,6 +245,7 @@ def _update_validation_state(
         for field, match in matches.items()
     }
     state.ontology_failures = _filter_missing_grounders(ontology_failures)
+    apply_terminal_exact_canonicalization_and_lock(state, cfg)
 
 
 def _generate_with_format_repairs(
@@ -325,6 +327,9 @@ def _run_decision_repairs(
             state.ontology_failures,
             state.consistency_flags,
         )
+        if state.locked_fields:
+            for locked_field in list(state.locked_fields):
+                failures_by_field.pop(locked_field, None)
         if not failures_by_field:
             state.final_decision = "ACCEPT"
             return state
@@ -360,6 +365,11 @@ def _run_decision_repairs(
             if decision.failure_code and decision.failure_code not in state.flags:
                 state.flags.append(decision.failure_code)
             return state
+
+        if decision.decision_type in {"FALLBACK", "REPAIR"} and field in state.locked_fields:
+            state.semantic_errors.pop(field, None)
+            state.ontology_failures.pop(field, None)
+            continue
 
         if decision.decision_type == "FALLBACK":
             if state.final_output is None:
@@ -423,7 +433,7 @@ def _run_decision_repairs(
             if parsed_output is None or format_errors:
                 continue
 
-            state.final_output = dict(parsed_output)
+            merge_repair_output(state, parsed_output)
             state.format_errors = []
             _update_validation_state(state, state.final_output, context_text, cfg)
             continue

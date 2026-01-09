@@ -24,6 +24,8 @@ def test_example_config_uses_rag_schema() -> None:
     ontology_cfg = rag_cfg.get("ontology")
     assert isinstance(ontology_cfg, dict)
     assert ontology_cfg.get("enabled") is False
+    assert ontology_cfg.get("canonicalize_terminal_exact_labels") is False
+    assert ontology_cfg.get("lock_terminal_exact_fields") is False
     embedding_cfg = ontology_cfg.get("embedding")
     assert isinstance(embedding_cfg, dict)
     assert embedding_cfg.get("device") == "cpu"

@@ -32,6 +32,8 @@ class PipelineState:
     consistency_flags: List[str] = field(default_factory=list)
     ontology_matches: Dict[str, Any] = field(default_factory=dict)
     ontology_failures: Dict[str, str] = field(default_factory=dict)
+    canonicalizations: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    locked_fields: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
     attempts_by_field: Dict[str, int] = field(default_factory=dict)
     repair_history: List[Dict[str, Any]] = field(default_factory=list)
@@ -60,6 +62,12 @@ class PipelineState:
             "consistency_flags": list(self.consistency_flags),
             "ontology_matches": _serialize_ontology_matches(self.ontology_matches),
             "ontology_failures": dict(self.ontology_failures),
+            "canonicalizations": [
+                self.canonicalizations[key] for key in sorted(self.canonicalizations)
+            ],
+            "locked_fields": {
+                key: self.locked_fields[key] for key in sorted(self.locked_fields)
+            },
             "attempts_by_field": dict(self.attempts_by_field),
             "repair_history": list(self.repair_history),
             "terminal_fallback_fields": sorted(self.terminal_fallback_fields),

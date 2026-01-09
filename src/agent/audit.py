@@ -92,6 +92,8 @@ def build_audit_record(state: PipelineState) -> Dict[str, Any]:
             "ontology_matches": state_dict["ontology_matches"],
             "ontology_failures": state_dict["ontology_failures"],
         },
+        "canonicalizations": state_dict.get("canonicalizations", []),
+        "locked_fields": state_dict.get("locked_fields", {}),
         "repair_history": state_dict["repair_history"],
         "attempts_by_field": state_dict["attempts_by_field"],
         "final_output": state_dict["final_output"],

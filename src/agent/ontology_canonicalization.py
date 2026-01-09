@@ -1,0 +1,98 @@
+"""Canonicalization and locking for terminal exact ontology matches."""
+
+from __future__ import annotations
+
+from typing import Any, Dict, Optional
+
+from agent.state import PipelineState
+from validator.ontology_match import is_terminal_exact
+
+
+def _extract_match_values(match: Any) -> tuple[Optional[str], float, Optional[str], Optional[str], Optional[str], Optional[str]]:
+    if isinstance(match, dict):
+        status = match.get("status")
+        score = match.get("score")
+        match_type = match.get("match_type")
+        label = match.get("matched_label")
+        term_id = match.get("matched_term_id")
+        source = match.get("matched_source")
+    else:
+        status = getattr(match, "status", None)
+        score = getattr(match, "score", None)
+        match_type = getattr(match, "match_type", None)
+        label = getattr(match, "matched_label", None)
+        term_id = getattr(match, "matched_term_id", None)
+        source = getattr(match, "matched_source", None)
+    try:
+        score_value = float(score) if score is not None else 0.0
+    except (TypeError, ValueError):
+        score_value = 0.0
+    return status, score_value, match_type, label, term_id, source
+
+
+def _ontology_cfg(config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not isinstance(config, dict):
+        return {}
+    rag_cfg = config.get("rag") if isinstance(config.get("rag"), dict) else {}
+    ontology_cfg = rag_cfg.get("ontology") if isinstance(rag_cfg.get("ontology"), dict) else {}
+    return dict(ontology_cfg) if ontology_cfg else {}
+
+
+def apply_terminal_exact_canonicalization_and_lock(
+    state: PipelineState,
+    config: Optional[Dict[str, Any]],
+) -> None:
+    if state.final_output is None:
+        return
+    if not state.ontology_matches:
+        return
+
+    ontology_cfg = _ontology_cfg(config)
+    canonicalize_enabled = bool(
+        ontology_cfg.get("canonicalize_terminal_exact_labels", False)
+    )
+    lock_enabled = bool(ontology_cfg.get("lock_terminal_exact_fields", False))
+    if not canonicalize_enabled and not lock_enabled:
+        return
+
+    # Locking implies canonicalization to avoid freezing non-canonical strings.
+    canonicalize_for_lock = canonicalize_enabled or lock_enabled
+    canonicalizations = dict(state.canonicalizations)
+    locked_fields = dict(state.locked_fields)
+
+    for field in sorted(state.ontology_matches):
+        match = state.ontology_matches[field]
+        status, score, match_type, label, term_id, source = _extract_match_values(match)
+        if not is_terminal_exact(str(status or ""), score, str(match_type or "")):
+            continue
+
+        original_value = state.final_output.get(field)
+        if canonicalize_for_lock and label:
+            state.final_output[field] = label
+            canonicalizations[field] = {
+                "field": field,
+                "original_value": original_value,
+                "canonical_value": label,
+                "term_id": term_id,
+                "source": source,
+                "match_type": match_type,
+            }
+
+        if lock_enabled:
+            locked_fields[field] = {
+                "term_id": term_id,
+                "label": label,
+                "source": source,
+                "reason": "ontology_terminal_exact",
+            }
+
+    if lock_enabled and locked_fields:
+        for field in list(state.semantic_errors):
+            if field in locked_fields:
+                state.semantic_errors.pop(field, None)
+        for field in list(state.ontology_failures):
+            if field in locked_fields:
+                state.ontology_failures.pop(field, None)
+
+    state.canonicalizations = canonicalizations
+    state.locked_fields = locked_fields

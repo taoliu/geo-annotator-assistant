@@ -35,24 +35,32 @@ _TERMINAL_FALLBACK_VALUES: Dict[str, set[str]] = {
 
 
 def _has_failures(state: PipelineState) -> bool:
+    locked_fields = set(state.locked_fields or {})
     if state.format_errors:
         return True
     if state.consistency_flags:
         return True
-    if any(state.semantic_errors.values()):
-        return True
-    if state.ontology_failures:
-        return True
+    for field, errors in state.semantic_errors.items():
+        if field in locked_fields:
+            continue
+        if errors:
+            return True
+    for field, failure_code in state.ontology_failures.items():
+        if field in locked_fields:
+            continue
+        if failure_code:
+            return True
     return False
 
 
 def _build_failures_by_field(state: PipelineState) -> Dict[str, List[str]]:
     failures: Dict[str, List[str]] = {}
+    locked_fields = set(state.locked_fields or {})
     for field, failures_list in state.semantic_errors.items():
-        if failures_list:
+        if failures_list and field not in locked_fields:
             failures[field] = list(failures_list)
     for field, failure_code in state.ontology_failures.items():
-        if failure_code:
+        if failure_code and field not in locked_fields:
             failures.setdefault(field, []).append(failure_code)
     if state.format_errors:
         failures[_FORMAT_FIELD] = list(state.format_errors)
@@ -86,6 +94,27 @@ def _is_terminal_fallback(field: str, value: Optional[str]) -> bool:
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
+
+
+def merge_repair_output(
+    state: PipelineState,
+    parsed_output: Dict[str, str],
+    *,
+    field: Optional[str] = None,
+) -> None:
+    if state.final_output is None:
+        state.final_output = {}
+    locked_fields = set(state.locked_fields or {})
+    if field is not None:
+        if field in locked_fields:
+            return
+        if field in parsed_output:
+            state.final_output[field] = parsed_output[field]
+        return
+    for key, value in parsed_output.items():
+        if key in locked_fields:
+            continue
+        state.final_output[key] = value
 
 
 def _load_repair_prompt(
@@ -163,6 +192,15 @@ def apply_repairs(
             if decision.failure_code and decision.failure_code not in state.flags:
                 state.flags.append(decision.failure_code)
             return state
+
+        if (
+            decision.decision_type in {"FALLBACK", "REPAIR"}
+            and field in state.locked_fields
+        ):
+            _clear_failures_for_field(state, field)
+            if validation_callback is not None:
+                validation_callback(state)
+            continue
 
         if (
             decision.decision_type in {"FALLBACK", "REPAIR"}
@@ -299,9 +337,7 @@ def apply_repairs(
             if state.final_output is None:
                 state.final_output = {}
 
-            # Only update the field we are repairing.
-            if field in parsed_output:
-                state.final_output[field] = parsed_output[field]
+            merge_repair_output(state, parsed_output, field=field)
 
             override_accessions(
                 state.final_output,

@@ -71,6 +71,8 @@ class OntologyRagConfig:
     embedding: EmbeddingConfig = EmbeddingConfig()
     sources_by_field: dict[str, str] = None  # type: ignore[assignment]
     thresholds: ThresholdConfig = ThresholdConfig()
+    canonicalize_terminal_exact_labels: bool = False
+    lock_terminal_exact_fields: bool = False
 
     def __post_init__(self):
         if self.sources_by_field is None:
@@ -91,6 +93,8 @@ class OntologyRagConfig:
             "embedding": self.embedding.to_dict(),
             "sources_by_field": dict(self.sources_by_field),
             "thresholds": self.thresholds.to_dict(),
+            "canonicalize_terminal_exact_labels": self.canonicalize_terminal_exact_labels,
+            "lock_terminal_exact_fields": self.lock_terminal_exact_fields,
         }
 
 
