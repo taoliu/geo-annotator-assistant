@@ -4,21 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-import time
 from typing import Any, Dict, Optional
 from urllib.parse import urlparse
 
-try:  # pragma: no cover - exercised via mocks in tests
-    import httpx  # type: ignore
-except Exception:  # pragma: no cover - optional dependency
-    httpx = None
-
-try:  # pragma: no cover - exercised via mocks in tests
-    import requests  # type: ignore
-except Exception:  # pragma: no cover - optional dependency
-    requests = None
-
 from llm.base import LLMRequest, LLMResult
+from llm.http_utils import LLMTransportError, post_json_with_retries
+from llm.text_postprocess import apply_stop
 
 
 class OpenAIHttpClient:
@@ -41,9 +32,15 @@ class OpenAIHttpClient:
         self._default_max_tokens = (
             int(max_tokens_value) if max_tokens_value is not None else 256
         )
-        self._httpx = httpx
-        self._requests = requests
+        max_retries_value = openai_cfg.get("max_retries")
+        self._max_retries = (
+            int(max_retries_value) if max_retries_value is not None else 2
+        )
         self._normalized_base_url = self._normalize_base_url(self._base_url)
+        stop = self._cfg.get("stop") or []
+        if isinstance(stop, str):
+            stop = [stop]
+        self._stop = [str(item) for item in stop if str(item)]
 
     @staticmethod
     def _normalize_base_url(base_url: str) -> str:
@@ -98,7 +95,9 @@ class OpenAIHttpClient:
     def _build_payload(self, request: LLMRequest) -> dict[str, Any]:
         model = self._effective_model(request)
         if not model:
-            raise ValueError("llm.openai_http.model is required for openai_http transport")
+            raise ValueError(
+                "llm.openai_http.model is required for openai_http transport"
+            )
 
         params = self._effective_params(request)
         if self._endpoint == "chat_completions":
@@ -120,40 +119,6 @@ class OpenAIHttpClient:
             return payload
 
         raise ValueError(f"Unsupported openai_http endpoint: {self._endpoint}")
-
-    def _post_json(
-        self,
-        url: str,
-        payload: dict[str, Any],
-        headers: dict[str, str],
-    ) -> tuple[int, dict[str, Any]]:
-        if self._httpx is not None:
-            response = self._httpx.post(
-                url,
-                json=payload,
-                headers=headers,
-                timeout=self._timeout_s,
-            )
-            status = response.status_code
-            try:
-                data = response.json()
-            except Exception as exc:  # pragma: no cover - defensive
-                raise RuntimeError("Invalid JSON response from openai_http") from exc
-            return status, data
-        if self._requests is not None:
-            response = self._requests.post(
-                url,
-                json=payload,
-                headers=headers,
-                timeout=self._timeout_s,
-            )
-            status = response.status_code
-            try:
-                data = response.json()
-            except Exception as exc:  # pragma: no cover - defensive
-                raise RuntimeError("Invalid JSON response from openai_http") from exc
-            return status, data
-        raise RuntimeError("httpx or requests is required for openai_http transport")
 
     def _parse_text(self, data: dict[str, Any]) -> str:
         if self._endpoint == "chat_completions":
@@ -184,19 +149,43 @@ class OpenAIHttpClient:
 
     def generate(self, request: LLMRequest) -> LLMResult:
         if not self._base_url:
-            raise ValueError("llm.openai_http.base_url is required for openai_http transport")
+            raise ValueError(
+                "llm.openai_http.base_url is required for openai_http transport"
+            )
 
         url = f"{self._base_url.rstrip('/')}{self._endpoint_path()}"
         payload = self._build_payload(request)
         headers = self._build_headers()
-        start_time = time.perf_counter()
-        status, data = self._post_json(url, payload, headers)
-        latency_ms = int((time.perf_counter() - start_time) * 1000)
+        try:
+            data, transport_meta = post_json_with_retries(
+                url,
+                payload,
+                headers,
+                timeout_s=self._timeout_s,
+                max_retries=self._max_retries,
+                request_id=request.request_id,
+                endpoint=self._endpoint,
+            )
+        except LLMTransportError as exc:
+            exc.transport_meta.update(
+                {
+                    "provider": "openai_http",
+                    "base_url": self._normalized_base_url or self._base_url,
+                    "model": self._effective_model(request),
+                    "endpoint": self._endpoint,
+                }
+            )
+            if "http_status" not in exc.transport_meta:
+                exc.transport_meta["http_status"] = exc.transport_meta.get(
+                    "last_http_status"
+                )
+            raise
 
-        if status >= 400:
-            raise RuntimeError(f"openai_http request failed with status {status}")
+        if "http_status" not in transport_meta:
+            transport_meta["http_status"] = transport_meta.get("last_http_status")
 
         text = self._parse_text(data)
+        text = apply_stop(text, request.stop)
         usage = data.get("usage") if isinstance(data, dict) else None
         return LLMResult(
             text=text,
@@ -207,9 +196,7 @@ class OpenAIHttpClient:
                 "base_url": self._normalized_base_url or self._base_url,
                 "model": self._effective_model(request),
                 "endpoint": self._endpoint,
-                "latency_ms": latency_ms,
-                "http_status": status,
-                "retry_count": 0,
+                **transport_meta,
             },
             request_fingerprint=self._build_fingerprint(request),
         )

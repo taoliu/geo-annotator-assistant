@@ -49,13 +49,22 @@ def test_payload_defaults_include_deterministic_params(
     client = _make_client()
     captured: dict[str, object] = {}
 
-    def _fake_post(url: str, payload: dict, headers: dict):
+    def _fake_post(url: str, payload: dict, headers: dict, **_kwargs):
         captured["url"] = url
         captured["payload"] = payload
         captured["headers"] = headers
-        return 200, {"choices": [{"message": {"content": "ok"}}]}
+        return {"choices": [{"message": {"content": "ok"}}]}, {
+            "retry_count": 0,
+            "backoff_s": [],
+            "timeout_s": 30.0,
+            "last_http_status": 200,
+            "latency_ms": 1,
+        }
 
-    monkeypatch.setattr(client, "_post_json", _fake_post)
+    monkeypatch.setattr(
+        "llm.openai_http.post_json_with_retries",
+        _fake_post,
+    )
 
     client.generate(_build_request())
 
@@ -70,10 +79,19 @@ def test_payload_defaults_include_deterministic_params(
 def test_response_parsing_extracts_text(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _make_client()
 
-    def _fake_post(url: str, payload: dict, headers: dict):
-        return 200, {"choices": [{"message": {"content": "hello world"}}]}
+    def _fake_post(url: str, payload: dict, headers: dict, **_kwargs):
+        return {"choices": [{"message": {"content": "hello world"}}]}, {
+            "retry_count": 0,
+            "backoff_s": [],
+            "timeout_s": 30.0,
+            "last_http_status": 200,
+            "latency_ms": 1,
+        }
 
-    monkeypatch.setattr(client, "_post_json", _fake_post)
+    monkeypatch.setattr(
+        "llm.openai_http.post_json_with_retries",
+        _fake_post,
+    )
 
     result = client.generate(_build_request())
 
@@ -83,10 +101,19 @@ def test_response_parsing_extracts_text(monkeypatch: pytest.MonkeyPatch) -> None
 def test_request_fingerprint_determinism(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _make_client()
 
-    def _fake_post(url: str, payload: dict, headers: dict):
-        return 200, {"choices": [{"message": {"content": "ok"}}]}
+    def _fake_post(url: str, payload: dict, headers: dict, **_kwargs):
+        return {"choices": [{"message": {"content": "ok"}}]}, {
+            "retry_count": 0,
+            "backoff_s": [],
+            "timeout_s": 30.0,
+            "last_http_status": 200,
+            "latency_ms": 1,
+        }
 
-    monkeypatch.setattr(client, "_post_json", _fake_post)
+    monkeypatch.setattr(
+        "llm.openai_http.post_json_with_retries",
+        _fake_post,
+    )
 
     base_request = _build_request()
     base_fp = client.generate(base_request).request_fingerprint

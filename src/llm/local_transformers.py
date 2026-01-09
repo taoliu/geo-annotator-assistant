@@ -6,6 +6,7 @@ import time
 from typing import Any, Dict, Optional
 
 from llm.base import LLMRequest, LLMResult, compute_request_fingerprint
+from llm.text_postprocess import apply_stop
 
 
 class LocalTransformersClient:
@@ -126,14 +127,7 @@ class LocalTransformersClient:
 
     @staticmethod
     def _apply_stop(text: str, stop_list: list[str]) -> str:
-        earliest = None
-        for stop in stop_list:
-            idx = text.find(stop)
-            if idx != -1 and (earliest is None or idx < earliest):
-                earliest = idx
-        if earliest is None:
-            return text
-        return text[:earliest]
+        return apply_stop(text, stop_list)
 
     def generate(self, request: LLMRequest) -> LLMResult:
         start_time = time.perf_counter()
