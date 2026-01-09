@@ -18,9 +18,6 @@ from rag import chroma_client
 
 @pytest.mark.parametrize("device", ["cuda", "mps"])
 def test_chroma_embedding_device_passed(monkeypatch, tmp_path: Path, device: str) -> None:
-    persist_path = tmp_path / "ontology_chroma_db"
-    persist_path.mkdir()
-
     captured = {}
 
     class DummyEmbeddingFunction:
@@ -28,18 +25,6 @@ def test_chroma_embedding_device_passed(monkeypatch, tmp_path: Path, device: str
             captured["model_name"] = model_name
             captured["device"] = device
 
-    class FakeClient:
-        def get_collection(self, name, embedding_function=None):
-            captured["collection_name"] = name
-            captured["embedding_function"] = embedding_function
-            return "collection"
-
-    monkeypatch.setattr(
-        chromadb,
-        "PersistentClient",
-        lambda *args, **kwargs: FakeClient(),
-        raising=True,
-    )
     monkeypatch.setattr(
         chromadb.utils.embedding_functions,
         "SentenceTransformerEmbeddingFunction",
@@ -47,16 +32,13 @@ def test_chroma_embedding_device_passed(monkeypatch, tmp_path: Path, device: str
         raising=True,
     )
 
-    collection = chroma_client.get_chroma_collection(
-        str(persist_path),
-        "ontology_rag",
+    embedding_fn = chroma_client.build_embedding_function(
         model_name="BAAI/bge-base-en-v1.5",
         device=device,
     )
 
-    assert collection == "collection"
     assert captured["device"] == device
-    assert isinstance(captured["embedding_function"], DummyEmbeddingFunction)
+    assert isinstance(embedding_fn, DummyEmbeddingFunction)
 
 
 def test_invalid_embedding_device_rejected(tmp_path: Path) -> None:

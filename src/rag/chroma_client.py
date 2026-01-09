@@ -14,18 +14,19 @@ def get_chroma_client(persist_path: str) -> Any:
 def get_chroma_collection(
     persist_path: str,
     collection_name: str,
+) -> Any:
+    """Open a persisted Chroma collection without an embedding function."""
+    client = get_chroma_client(persist_path)
+    return client.get_collection(name=collection_name)
+
+
+def build_embedding_function(
     model_name: str = "BAAI/bge-base-en-v1.5",
     device: str = "cpu",
 ) -> Any:
-    """Open a persisted Chroma collection with a direct embedding function."""
-    client = get_chroma_client(persist_path)
+    """Build an embedding function for explicit query embeddings."""
     from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
-
-    embedding_function = SentenceTransformerEmbeddingFunction(
+    return SentenceTransformerEmbeddingFunction(
         model_name=model_name,
         device=device,
-    )
-    return client.get_collection(
-        name=collection_name,
-        embedding_function=embedding_function,
     )

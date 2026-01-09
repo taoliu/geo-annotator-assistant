@@ -214,6 +214,19 @@ def test_vector_fallback(monkeypatch, tmp_path: Path) -> None:
         "get_chroma_collection",
         lambda *args, **kwargs: collection,
     )
+    def fake_build_embedding_function(*args, **kwargs):
+        class DummyEmbeddingFunction:
+            def __call__(self, texts):
+                return [[0.0, 0.0, 0.0] for _ in texts]
+
+        return DummyEmbeddingFunction()
+
+    monkeypatch.setattr(
+        ontology_retrieve,
+        "build_embedding_function",
+        fake_build_embedding_function,
+        raising=True,
+    )
 
     candidates = ontology_retrieve.retrieve_ontology_candidates(
         query="Unknown",

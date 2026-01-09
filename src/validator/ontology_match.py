@@ -12,6 +12,7 @@ _ALLOWED_MATCH_TYPES = {
     "label_exact",
     "label_norm_exact",
     "synonym_exact",
+    "term_id_exact",
     "jaccard",
     "none",
     "fallback",
@@ -24,6 +25,16 @@ _ALLOWED_STATUSES = {
     "INDEX_UNAVAILABLE",
     "FALLBACK",
 }
+TERMINAL_EXACT_TYPES = {
+    "label_exact",
+    "label_norm_exact",
+    "synonym_exact",
+    "term_id_exact",
+}
+
+
+def is_terminal_exact(status: str, score: float, match_type: str) -> bool:
+    return status == "MATCHED" and score == 1.0 and match_type in TERMINAL_EXACT_TYPES
 
 _PUNCT_TABLE = str.maketrans({char: " " for char in string.punctuation})
 _WS_RE = re.compile(r"\s+")
@@ -90,6 +101,7 @@ class OntologyMatch:
     alternates: List[Dict[str, Any]] = dataclass_field(default_factory=list)
     matched_via: Optional[str] = None
     matched_synonym: Optional[str] = None
+    vector_fallback_skipped: Optional[bool] = None
 
     def __post_init__(self) -> None:
         if self.status not in _ALLOWED_STATUSES:
@@ -111,6 +123,7 @@ class OntologyMatch:
             "alternates": list(self.alternates),
             "matched_via": self.matched_via,
             "matched_synonym": self.matched_synonym,
+            "vector_fallback_skipped": self.vector_fallback_skipped,
         }
 
 

@@ -8,6 +8,7 @@ from validator.ontology_match import (
     OntologyMatch,
     OntologyMatchResult,
     choose_best_ontology_candidate,
+    is_terminal_exact,
     thresholds_from_config,
 )
 
@@ -60,8 +61,14 @@ def _build_match_from_result(
     raw_value: str,
     ontology: str,
     result: OntologyMatchResult,
+    *,
+    terminal_exact: bool = False,
+    vector_fallback_skipped: Optional[bool] = None,
 ) -> OntologyMatch:
-    alternates = [alt.to_dict() for alt in result.alternates]
+    if terminal_exact and result.best is not None:
+        alternates = [result.best.to_dict()]
+    else:
+        alternates = [alt.to_dict() for alt in result.alternates]
     if result.status == "MATCHED" and result.best is not None:
         return OntologyMatch(
             field=field,
@@ -76,6 +83,7 @@ def _build_match_from_result(
             alternates=alternates,
             matched_via=result.matched_via,
             matched_synonym=result.matched_synonym,
+            vector_fallback_skipped=vector_fallback_skipped,
         )
     return OntologyMatch(
         field=field,
@@ -90,6 +98,7 @@ def _build_match_from_result(
         alternates=alternates,
         matched_via=None,
         matched_synonym=None,
+        vector_fallback_skipped=vector_fallback_skipped,
     )
 
 
@@ -148,4 +157,19 @@ def ground_ontology_field(
         return _make_index_unavailable_match(field, raw_value, ontology)
 
     result = choose_best_ontology_candidate(raw_value, candidates, thresholds)
-    return _build_match_from_result(field, raw_value, ontology, result)
+    vector_fallback_used = any(
+        candidate.retrieval_mode == "vector_fallback" for candidate in candidates
+    )
+    terminal_exact = is_terminal_exact(
+        result.status,
+        float(result.confidence or 0.0),
+        str(result.match_type or ""),
+    )
+    return _build_match_from_result(
+        field,
+        raw_value,
+        ontology,
+        result,
+        terminal_exact=terminal_exact,
+        vector_fallback_skipped=terminal_exact and not vector_fallback_used,
+    )

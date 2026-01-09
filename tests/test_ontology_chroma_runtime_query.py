@@ -15,10 +15,17 @@ from validator.grounders import tissue_type as tissue_grounder
 
 
 def test_runtime_query_uses_manual_embeddings(monkeypatch, tmp_path: Path) -> None:
+    captured = {"calls": []}
+
     class DummyEmbeddingFunction:
         def __init__(self, model_name: str, device: str) -> None:
             self.model_name = model_name
             self.device = device
+            captured["instance"] = self
+
+        def __call__(self, texts):
+            captured["calls"].append(list(texts))
+            return [[0.1, 0.2, 0.3] for _ in texts]
 
     persist_path = tmp_path / "ontology_chroma_db"
     persist_path.mkdir()
@@ -29,8 +36,8 @@ def test_runtime_query_uses_manual_embeddings(monkeypatch, tmp_path: Path) -> No
         def get(self, **kwargs):
             return {"ids": [], "metadatas": [], "documents": []}
 
-        def query(self, *, query_texts, n_results, where, include):
-            assert query_texts == ["heart"]
+        def query(self, *, query_embeddings, n_results, where, include):
+            assert query_embeddings == [[0.1, 0.2, 0.3]]
             assert where == {"source": "Uberon Ontology"}
             return {
                 "ids": [["UBERON:0001"]],
@@ -50,9 +57,7 @@ def test_runtime_query_uses_manual_embeddings(monkeypatch, tmp_path: Path) -> No
 
     class FakeClient:
         def get_collection(self, name, **kwargs):
-            embedding_function = kwargs.get("embedding_function")
-            assert isinstance(embedding_function, DummyEmbeddingFunction)
-            assert embedding_function.device == "cpu"
+            assert kwargs.get("embedding_function") is None
             assert name == "ontology_rag"
             return fake_collection
 
@@ -92,3 +97,5 @@ def test_runtime_query_uses_manual_embeddings(monkeypatch, tmp_path: Path) -> No
     match = tissue_grounder.ground_tissue_type("heart", "", config)
     assert match.status == "MATCHED"
     assert match.matched_term_id == "UBERON:0001"
+    assert captured["calls"] == [["heart"]]
+    assert captured["instance"].device == "cpu"

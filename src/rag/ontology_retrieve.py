@@ -5,7 +5,7 @@ import os
 import re
 from typing import List, Optional, Sequence
 
-from rag.chroma_client import get_chroma_collection
+from rag.chroma_client import build_embedding_function, get_chroma_collection
 
 
 class OntologyIndexUnavailable(RuntimeError):
@@ -289,8 +289,6 @@ def retrieve_ontology_candidates(
         collection = get_chroma_collection(
             persist_path,
             collection_name,
-            model_name=embedding_model_name,
-            device=embedding_device,
         )
     except Exception as exc:
         raise OntologyIndexUnavailable(
@@ -335,9 +333,14 @@ def retrieve_ontology_candidates(
                 return _sort_candidates_by_term_id(meta_candidates)[:top_k]
 
     where = {"source": source} if source else None
+    embedding_function = build_embedding_function(
+        model_name=embedding_model_name,
+        device=embedding_device,
+    )
+    query_embeddings = embedding_function([query])
     try:
         res = collection.query(
-            query_texts=[query],
+            query_embeddings=query_embeddings,
             n_results=top_k,
             where=where,
             include=["metadatas", "documents", "distances"],
@@ -345,7 +348,7 @@ def retrieve_ontology_candidates(
     except TypeError:
         try:
             res = collection.query(
-                query_texts=[query],
+                query_embeddings=query_embeddings,
                 n_results=top_k,
                 where=where,
             )
