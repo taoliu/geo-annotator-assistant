@@ -116,6 +116,9 @@ def ground_ontology_field(
     embedding_model_name = str(
         embedding_cfg.get("model_name", "BAAI/bge-base-en-v1.5")
     )
+    embedding_device = str(
+        embedding_cfg.get("device", "cpu")
+    )
     normalize_embeddings = bool(
         embedding_cfg.get("normalize_embeddings", True)
     )
@@ -130,6 +133,7 @@ def ground_ontology_field(
             collection_name=collection_name,
             embedding_model_name=embedding_model_name,
             normalize_embeddings=normalize_embeddings,
+            embedding_device=embedding_device,
             top_k=top_k,
         )
     except OntologyIndexUnavailable as exc:

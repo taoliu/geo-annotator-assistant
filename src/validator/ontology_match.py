@@ -10,6 +10,7 @@ _ALLOWED_MATCH_TYPES = {
     "exact",
     "synonym",
     "label_exact",
+    "label_norm_exact",
     "synonym_exact",
     "jaccard",
     "none",
@@ -226,7 +227,11 @@ def choose_best_ontology_candidate(
         matched_synonym = None
         normalized_label_exact = normalize_exact_match_text(label)
 
-        if normalized_raw_exact and normalized_label_exact == normalized_raw_exact:
+        if candidate.retrieval_mode == "meta_exact":
+            confidence = 1.0
+            match_type = "label_norm_exact"
+            matched_via = "label_norm"
+        elif normalized_raw_exact and normalized_label_exact == normalized_raw_exact:
             confidence = 1.0
             match_type = "label_exact"
             matched_via = "label"
@@ -249,7 +254,7 @@ def choose_best_ontology_candidate(
                 match_type = "jaccard"
 
         match_rank = 2
-        if match_type == "label_exact":
+        if match_type in {"label_exact", "label_norm_exact"}:
             match_rank = 0
         elif match_type == "synonym_exact":
             match_rank = 1
@@ -270,7 +275,7 @@ def choose_best_ontology_candidate(
     best_confidence, best_match_rank = scored[0][0], scored[0][1]
     if (
         best_confidence == 1.0
-        and scored[0][3] in {"label_exact", "synonym_exact"}
+        and scored[0][3] in {"label_exact", "label_norm_exact", "synonym_exact"}
     ):
         tied = [
             item

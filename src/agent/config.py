@@ -30,21 +30,25 @@ def load_config(path: str) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError(f"Config file must contain a top-level mapping: {path}")
 
-    return _apply_postpass_defaults(
+    merged = _apply_postpass_defaults(
         _apply_paths_defaults(_apply_llm_defaults(_apply_rag_defaults(data)))
     )
+    _validate_rag_config(merged)
+    return merged
 
 
 @dataclass(frozen=True)
 class EmbeddingConfig:
     provider: str = "langchain_huggingface"
     model_name: str = "BAAI/bge-base-en-v1.5"
+    device: str = "cpu"
     normalize_embeddings: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "provider": self.provider,
             "model_name": self.model_name,
+            "device": self.device,
             "normalize_embeddings": self.normalize_embeddings,
         }
 
@@ -146,6 +150,7 @@ _LEGACY_KEYS = {
     "ontology_sources_by_field",
     "ontology_thresholds",
 }
+_ALLOWED_EMBEDDING_DEVICES = {"cpu", "cuda", "mps"}
 
 
 def _deep_merge(base: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]:
@@ -247,3 +252,31 @@ def _apply_postpass_defaults(config: dict[str, Any]) -> dict[str, Any]:
     elif isinstance(postpass_cfg, dict):
         merged["postpass"] = _deep_merge(_DEFAULT_POSTPASS_CONFIG, postpass_cfg)
     return merged
+
+
+def _validate_rag_config(config: dict[str, Any]) -> None:
+    if not isinstance(config, dict):
+        return
+    rag_cfg = config.get("rag") if isinstance(config.get("rag"), dict) else None
+    if not rag_cfg:
+        return
+    ontology_cfg = (
+        rag_cfg.get("ontology")
+        if isinstance(rag_cfg.get("ontology"), dict)
+        else None
+    )
+    if not ontology_cfg:
+        return
+    embedding_cfg = (
+        ontology_cfg.get("embedding")
+        if isinstance(ontology_cfg.get("embedding"), dict)
+        else None
+    )
+    if not embedding_cfg:
+        return
+    device = embedding_cfg.get("device", "cpu")
+    if device not in _ALLOWED_EMBEDDING_DEVICES:
+        raise ValueError(
+            "Invalid rag.ontology.embedding.device. "
+            f"Expected one of {sorted(_ALLOWED_EMBEDDING_DEVICES)}, got {device!r}."
+        )

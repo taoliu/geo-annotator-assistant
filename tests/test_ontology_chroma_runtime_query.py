@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import sqlite3
 import sys
-import types
 from pathlib import Path
 
 import chromadb
@@ -16,17 +15,10 @@ from validator.grounders import tissue_type as tissue_grounder
 
 
 def test_runtime_query_uses_manual_embeddings(monkeypatch, tmp_path: Path) -> None:
-    class DummyEmbeddings:
-        def __init__(self, model_name: str, encode_kwargs: dict) -> None:
+    class DummyEmbeddingFunction:
+        def __init__(self, model_name: str, device: str) -> None:
             self.model_name = model_name
-            self.encode_kwargs = encode_kwargs
-
-        def embed_query(self, text: str) -> list[float]:
-            return [0.1, 0.2, 0.3]
-
-    dummy_module = types.ModuleType("langchain_huggingface")
-    dummy_module.HuggingFaceEmbeddings = DummyEmbeddings
-    monkeypatch.setitem(sys.modules, "langchain_huggingface", dummy_module)
+            self.device = device
 
     persist_path = tmp_path / "ontology_chroma_db"
     persist_path.mkdir()
@@ -34,8 +26,11 @@ def test_runtime_query_uses_manual_embeddings(monkeypatch, tmp_path: Path) -> No
     sqlite3.connect(sqlite_path).close()
 
     class FakeCollection:
-        def query(self, *, query_embeddings, n_results, where, include):
-            assert query_embeddings == [[0.1, 0.2, 0.3]]
+        def get(self, **kwargs):
+            return {"ids": [], "metadatas": [], "documents": []}
+
+        def query(self, *, query_texts, n_results, where, include):
+            assert query_texts == ["heart"]
             assert where == {"source": "Uberon Ontology"}
             return {
                 "ids": [["UBERON:0001"]],
@@ -55,9 +50,18 @@ def test_runtime_query_uses_manual_embeddings(monkeypatch, tmp_path: Path) -> No
 
     class FakeClient:
         def get_collection(self, name, **kwargs):
-            assert "embedding_function" not in kwargs
+            embedding_function = kwargs.get("embedding_function")
+            assert isinstance(embedding_function, DummyEmbeddingFunction)
+            assert embedding_function.device == "cpu"
             assert name == "ontology_rag"
             return fake_collection
+
+    monkeypatch.setattr(
+        chromadb.utils.embedding_functions,
+        "SentenceTransformerEmbeddingFunction",
+        DummyEmbeddingFunction,
+        raising=True,
+    )
 
     monkeypatch.setattr(
         chromadb,

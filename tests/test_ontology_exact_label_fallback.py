@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sqlite3
 import sys
 from pathlib import Path
 
@@ -14,34 +13,29 @@ from validator.ontology_match import OntologyThresholds, choose_best_ontology_ca
 
 
 def test_exact_label_lookup_fallback(monkeypatch, tmp_path: Path) -> None:
-    class DummyEmbeddings:
-        def embed_query(self, text: str) -> list[float]:
-            return [0.1, 0.2, 0.3]
-
-    monkeypatch.setattr(
-        ontology_retrieve,
-        "_load_embedding_function",
-        lambda model_name, normalize_embeddings: DummyEmbeddings(),
-    )
-
     persist_path = tmp_path / "ontology_chroma_db"
     persist_path.mkdir()
-    sqlite_path = persist_path / "chroma.sqlite3"
-    sqlite3.connect(sqlite_path).close()
+    (persist_path / "chroma.sqlite3").touch()
 
     class FakeCollection:
-        def query(self, *, query_embeddings, n_results, where, include):
-            return {
-                "ids": [[]],
-                "distances": [[]],
-                "metadatas": [[]],
-                "documents": [[]],
-            }
+        def query(self, **kwargs):
+            raise AssertionError("Vector fallback should not be called.")
 
-        def get(self, *, where, include):
-            assert where == {
-                "source": "Experimental Factor Ontology",
-                "label": "ATAC-seq",
+        def get(self, **kwargs):
+            assert kwargs["where"] == {
+                "$and": [
+                    {"source": "Experimental Factor Ontology"},
+                    {
+                        "$or": [
+                            {"label_norm": "atac-seq"},
+                            {"label_norm_compact": "atacseq"},
+                            {"label_norm_space": "atac seq"},
+                            {"data_type": "atac-seq"},
+                            {"data_type_compact": "atacseq"},
+                            {"data_type_space": "atac seq"},
+                        ]
+                    },
+                ]
             }
             return {
                 "ids": ["EFO:0007045"],
@@ -60,15 +54,10 @@ def test_exact_label_lookup_fallback(monkeypatch, tmp_path: Path) -> None:
 
     fake_collection = FakeCollection()
 
-    class FakeClient:
-        def get_collection(self, name, **kwargs):
-            assert name == "ontology_rag"
-            return fake_collection
-
     monkeypatch.setattr(
         ontology_retrieve,
-        "get_chroma_client",
-        lambda path: FakeClient(),
+        "get_chroma_collection",
+        lambda *args, **kwargs: fake_collection,
         raising=True,
     )
 
@@ -89,7 +78,7 @@ def test_exact_label_lookup_fallback(monkeypatch, tmp_path: Path) -> None:
     )
 
     assert result.status == "MATCHED"
-    assert result.match_type == "label_exact"
+    assert result.match_type == "label_norm_exact"
     assert result.best is not None
     assert result.best.term_id == "EFO:0007045"
     assert result.confidence == 1.0
