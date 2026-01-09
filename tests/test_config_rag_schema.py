@@ -26,6 +26,12 @@ def test_example_config_uses_rag_schema() -> None:
     assert ontology_cfg.get("enabled") is False
     assert ontology_cfg.get("canonicalize_terminal_exact_labels") is False
     assert ontology_cfg.get("lock_terminal_exact_fields") is False
+    disease_cfg = ontology_cfg.get("disease")
+    assert isinstance(disease_cfg, dict)
+    ncit_cfg = disease_cfg.get("ncit_fallback")
+    assert isinstance(ncit_cfg, dict)
+    assert ncit_cfg.get("enabled") is True
+    assert "cancer" in (ncit_cfg.get("trigger_terms") or [])
     embedding_cfg = ontology_cfg.get("embedding")
     assert isinstance(embedding_cfg, dict)
     assert embedding_cfg.get("device") == "cpu"

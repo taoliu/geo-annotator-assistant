@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 import warnings
@@ -66,6 +66,45 @@ class ThresholdConfig:
 
 
 @dataclass(frozen=True)
+class NcitFallbackConfig:
+    enabled: bool = True
+    trigger_terms: list[str] = field(default_factory=lambda: [
+        "cancer",
+        "tumor",
+        "tumour",
+        "carcinoma",
+        "adenocarcinoma",
+        "sarcoma",
+        "neoplasm",
+        "malignan",
+        "metastat",
+        "leukemia",
+        "lymphoma",
+        "myeloma",
+        "glioma",
+        "glioblastoma",
+        "melanoma",
+        "blastoma",
+    ])
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "enabled": self.enabled,
+            "trigger_terms": list(self.trigger_terms),
+        }
+
+
+@dataclass(frozen=True)
+class DiseaseOntologyConfig:
+    ncit_fallback: NcitFallbackConfig = NcitFallbackConfig()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "ncit_fallback": self.ncit_fallback.to_dict(),
+        }
+
+
+@dataclass(frozen=True)
 class OntologyRagConfig:
     enabled: bool = False
     embedding: EmbeddingConfig = EmbeddingConfig()
@@ -73,6 +112,7 @@ class OntologyRagConfig:
     thresholds: ThresholdConfig = ThresholdConfig()
     canonicalize_terminal_exact_labels: bool = False
     lock_terminal_exact_fields: bool = False
+    disease: DiseaseOntologyConfig = DiseaseOntologyConfig()
 
     def __post_init__(self):
         if self.sources_by_field is None:
@@ -95,6 +135,7 @@ class OntologyRagConfig:
             "thresholds": self.thresholds.to_dict(),
             "canonicalize_terminal_exact_labels": self.canonicalize_terminal_exact_labels,
             "lock_terminal_exact_fields": self.lock_terminal_exact_fields,
+            "disease": self.disease.to_dict(),
         }
 
 

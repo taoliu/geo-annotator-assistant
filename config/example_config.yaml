@@ -37,6 +37,26 @@ rag:
     enabled: false        # disabled by default for tests
     canonicalize_terminal_exact_labels: false
     lock_terminal_exact_fields: false
+    disease:
+      ncit_fallback:
+        enabled: true
+        trigger_terms:
+          - cancer
+          - tumor
+          - tumour
+          - carcinoma
+          - adenocarcinoma
+          - sarcoma
+          - neoplasm
+          - malignan
+          - metastat
+          - leukemia
+          - lymphoma
+          - myeloma
+          - glioma
+          - glioblastoma
+          - melanoma
+          - blastoma
     embedding:
       provider: "langchain_huggingface"
       model_name: "BAAI/bge-base-en-v1.5"

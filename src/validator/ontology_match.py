@@ -102,6 +102,12 @@ class OntologyMatch:
     matched_via: Optional[str] = None
     matched_synonym: Optional[str] = None
     vector_fallback_skipped: Optional[bool] = None
+    ncit_fallback_enabled: Optional[bool] = None
+    ncit_triggered: Optional[bool] = None
+    ncit_trigger_terms_used: Optional[List[str]] = None
+    attempted_sources: Optional[List[str]] = None
+    selected_source: Optional[str] = None
+    selection_rule: Optional[str] = None
 
     def __post_init__(self) -> None:
         if self.status not in _ALLOWED_STATUSES:
@@ -124,6 +130,18 @@ class OntologyMatch:
             "matched_via": self.matched_via,
             "matched_synonym": self.matched_synonym,
             "vector_fallback_skipped": self.vector_fallback_skipped,
+            "ncit_fallback_enabled": self.ncit_fallback_enabled,
+            "ncit_triggered": self.ncit_triggered,
+            "ncit_trigger_terms_used": (
+                list(self.ncit_trigger_terms_used)
+                if self.ncit_trigger_terms_used is not None
+                else None
+            ),
+            "attempted_sources": (
+                list(self.attempted_sources) if self.attempted_sources is not None else None
+            ),
+            "selected_source": self.selected_source,
+            "selection_rule": self.selection_rule,
         }
 
 

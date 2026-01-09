@@ -41,6 +41,13 @@ def _make_index_unavailable_match(
     field: str,
     raw_value: str,
     ontology: str,
+    *,
+    ncit_fallback_enabled: Optional[bool] = None,
+    ncit_triggered: Optional[bool] = None,
+    ncit_trigger_terms_used: Optional[list[str]] = None,
+    attempted_sources: Optional[list[str]] = None,
+    selected_source: Optional[str] = None,
+    selection_rule: Optional[str] = None,
 ) -> OntologyMatch:
     return OntologyMatch(
         field=field,
@@ -53,6 +60,12 @@ def _make_index_unavailable_match(
         match_type=None,
         score=None,
         alternates=[],
+        ncit_fallback_enabled=ncit_fallback_enabled,
+        ncit_triggered=ncit_triggered,
+        ncit_trigger_terms_used=ncit_trigger_terms_used,
+        attempted_sources=attempted_sources,
+        selected_source=selected_source,
+        selection_rule=selection_rule,
     )
 
 
@@ -64,6 +77,12 @@ def _build_match_from_result(
     *,
     terminal_exact: bool = False,
     vector_fallback_skipped: Optional[bool] = None,
+    ncit_fallback_enabled: Optional[bool] = None,
+    ncit_triggered: Optional[bool] = None,
+    ncit_trigger_terms_used: Optional[list[str]] = None,
+    attempted_sources: Optional[list[str]] = None,
+    selected_source: Optional[str] = None,
+    selection_rule: Optional[str] = None,
 ) -> OntologyMatch:
     if terminal_exact and result.best is not None:
         alternates = [result.best.to_dict()]
@@ -84,6 +103,12 @@ def _build_match_from_result(
             matched_via=result.matched_via,
             matched_synonym=result.matched_synonym,
             vector_fallback_skipped=vector_fallback_skipped,
+            ncit_fallback_enabled=ncit_fallback_enabled,
+            ncit_triggered=ncit_triggered,
+            ncit_trigger_terms_used=ncit_trigger_terms_used,
+            attempted_sources=attempted_sources,
+            selected_source=selected_source,
+            selection_rule=selection_rule,
         )
     return OntologyMatch(
         field=field,
@@ -99,6 +124,12 @@ def _build_match_from_result(
         matched_via=None,
         matched_synonym=None,
         vector_fallback_skipped=vector_fallback_skipped,
+        ncit_fallback_enabled=ncit_fallback_enabled,
+        ncit_triggered=ncit_triggered,
+        ncit_trigger_terms_used=ncit_trigger_terms_used,
+        attempted_sources=attempted_sources,
+        selected_source=selected_source,
+        selection_rule=selection_rule,
     )
 
 
