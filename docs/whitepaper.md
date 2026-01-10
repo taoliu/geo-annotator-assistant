@@ -23,6 +23,7 @@ It is explicitly **not**:
 * or a configuration manual.
 
 The whitepaper is intended to remain valid across:
+
 * multiple implementation iterations,
 * multiple AI-assisted development sessions,
 * and multiple contributors (human or AI).
@@ -33,21 +34,22 @@ The whitepaper is intended to remain valid across:
 
 The system is governed by the following principles:
 
-1. **LLMs propose; deterministic logic decides**  
+1. **LLMs propose; deterministic logic decides**
    LLMs generate candidate annotations only.
    All acceptance, repair, fallback, and escalation decisions are deterministic.
 
-2. **Evidence over fluency**  
+2. **Evidence over fluency**
    A fluent answer without explicit support is worse than an incomplete answer.
    Unsupported inferences must be detected and resolved.
 
-3. **Repair over rejection**  
+3. **Repair over rejection**
    Errors are routed to targeted, field-scoped repair whenever possible.
 
-4. **Auditability over optimization**  
+4. **Auditability over optimization**
    Every decision must be explainable post hoc through structured audit artifacts.
 
 5. **Separation of time scales**
+
    * Whitepaper: architectural law
    * Milestones: system state
    * Tickets: permitted work
@@ -107,6 +109,7 @@ At each iteration:
 
 * **Exactly one primary failure** is selected deterministically
 * A decision table maps it to:
+
   * `ACCEPT`
   * `REPAIR`
   * `FALLBACK`
@@ -147,11 +150,25 @@ Invariants:
 * Ontologies are externally built and read-only
 * The agent never mutates ontology databases
 * Grounding yields structured outcomes:
+
   * confident match
   * no match
   * ambiguous
   * low confidence
-* Ontology results influence decisions but do not directly mutate outputs
+
+### Terminal exact matches
+
+Grounding may produce **terminal exact matches**, defined as deterministic
+matches with full confidence.
+
+When a terminal exact match is identified:
+
+* The ontology’s canonical label **may be used to normalize the output value**
+* Normalization is deterministic and auditable
+* Normalization does not constitute inference or decision-making
+
+Canonicalization and any associated safeguards must not violate the
+core output schema or decision ordering.
 
 ---
 
@@ -164,6 +181,17 @@ Retrieval-Augmented Generation (RAG):
 * supplies candidates only
 * never makes decisions
 * never learns or mutates state
+
+### Deterministic-first retrieval
+
+Ontology retrieval must prioritize **deterministic exact matches**
+before any approximate or vector-based methods.
+
+Consequences:
+
+* Exact metadata or identifier matches must short-circuit further retrieval
+* Vector similarity search is **fallback-only**
+* Retrieval optimizations must preserve determinism and ordering
 
 ---
 
@@ -187,6 +215,7 @@ Architectural guarantees:
 * Overrides are explicit input artifacts
 * Overrides apply only after automated processing completes
 * Overrides do not trigger:
+
   * re-inference
   * repair
   * ontology grounding
@@ -222,11 +251,14 @@ Requirements:
 
 * GSE-scale processing must be feasible on a single accelerator
 * Performance optimizations must preserve:
+
   * inference semantics
   * decision ordering
   * determinism
 
-Optimizations are behavior-preserving transformations only.
+Avoiding unnecessary computation (for example, redundant retrieval or
+embedding calls) is a valid and encouraged optimization when behavior is
+preserved.
 
 ---
 

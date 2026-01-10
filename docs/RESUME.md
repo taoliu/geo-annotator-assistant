@@ -1,222 +1,112 @@
 # GEO GSM Annotator Agent — Project Resume
 
-This document summarizes the **current state, guarantees, and operating assumptions**
-of the project.
+## Project Overview
 
-It is intended to help **new contributors and new AI coding sessions**
-resume work safely, correctly, and without violating architectural invariants.
+The GEO GSM Annotator Agent is a semi-automated system for extracting, validating,
+and standardizing **sample-level (GSM)** metadata from the Gene Expression Omnibus (GEO).
 
----
+The system combines:
 
-## Project Status
+* large language models (LLMs) for proposal generation,
+* deterministic validators and decision logic,
+* ontology grounding for normalization and confidence assessment,
+* bounded, field-scoped repair loops,
+* and explicit, auditable human overrides.
 
-* **Current milestone**: **v0.5 — Curator UI and Review Workflow**
-* **Stability level**: backend-stable, UI-functional
-* **Intended users**: computational biologists, data curators
-* **Primary use**: GSM-level metadata normalization, review, and explicit correction
-
-The backend reached stability in v0.4.
-v0.5 completes the human review loop without altering backend behavior.
+The project is designed for **determinism, auditability, and controlled extensibility**.
 
 ---
 
-## What Exists and Works
+## Current Status
 
-### Core Pipeline (Backend, v0.4-stable)
+**Backend:** Stable and frozen (post-v0.6)
+**UI:** Local curator UI implemented (v0.5), further improvements planned
+**Persistence / Learning:** Not implemented by design
 
-* Deterministic end-to-end pipeline:
-  * context ingestion
-  * LLM proposal generation
-  * format validation
-  * semantic validation
-  * ontology grounding
-  * decision routing
-  * bounded repair loop
-  * final decision
-* Strict execution ordering enforced
-* Fully wired for GSM-level and GSE-level processing
-* No hidden or persistent state between runs
-
-### Performance
-
-* **Single-GPU, single-process model reuse**
-  * Local HuggingFace LLM loaded once per run
-  * All GSMs reuse the same model instance
-  * No change to inference semantics or outputs
-* GSE-scale processing is practical on a single GPU
+The backend is considered **production-stable** for further UI-focused development.
 
 ---
 
-## Outputs and Review Artifacts
+## Latest Completed Milestone
 
-A standard run may produce:
+### v0.6 — RAG & Validation Robustness (CLOSED)
 
-* `curation.tsv`  
-  Curator-friendly tabular summary
+Milestone v0.6 strengthened correctness, determinism, and performance of the backend
+without changing architectural invariants.
 
-* `curation.jsonl`  
-  Lossless JSON mirror of `curation.tsv` using native JSON types
+Key outcomes:
 
-* `evidence.jsonl`  
-  Structural diagnostic evidence per GSM and per field, derived strictly from audits:
-  * repair attempt counts
-  * terminal fallback usage
-  * ontology grounding status
-  * field-level flags  
-  No free-text rationale, no new inference
+* Deterministic-first ontology retrieval (exact match before vector fallback)
+* Formalized terminal exact match semantics
+* Canonicalization to ontology labels for exact matches (config-gated)
+* Field locking to prevent repair overwrites on exact matches (config-gated)
+* Controlled disease ontology fallback (DOID → NCIT) with lexical gating
+* Elimination of unnecessary embedding calls
+* Explicit embedding device control (`cpu`, `cuda`, `mps`)
 
-* `suggestions.jsonl` (optional)  
-  Advisory, cross-GSM diagnostics:
-  * majority outliers
-  * singleton values  
-  Suggestions never modify outputs
-
-* `audit.jsonl`  
-  Mandatory, structured audit log capturing all decisions and provenance
+No changes were made to the 8-field output schema or pipeline ordering.
 
 ---
 
-## Repair and Validation Guarantees
+## Backend Guarantees
 
-* Field-scoped repairs only
-* Per-field attempt limits
-* Global repair cap
-* Terminal fallback values respected
-* Anti-cycling constraint enforced
-* Evidence-first failure prioritization
+The backend guarantees the following properties:
 
----
+* Exactly 8 output fields per GSM
+* Deterministic decision routing
+* Bounded repair loops
+* Read-only, non-decisional RAG
+* Fully auditable execution
 
-## Ontology Integration
+Ontology grounding:
 
-* Read-only ontology usage
-* Deterministic grounding thresholds
-* Grounding influences decisions but does not directly mutate outputs
-* Clear separation between semantic validation and ontology grounding
+* Is validation and normalization only
+* Never performs inference
+* May deterministically canonicalize labels on terminal exact matches
 
 ---
 
-## GSE-Level Processing
+## Curator UI (v0.5)
 
-* GSE accession ingestion (SOFT or JSONL)
-* Independent GSM decisions
-* GSE-level diagnostics and reporting
-* **No forced label propagation across GSMs**
+A local curator UI is available with the following properties:
 
----
-
-## Human-in-the-Loop Curation
-
-### Override Mechanism (Backend Contract)
-
-* Human corrections are expressed **only** via an explicit input artifact:
-  * `overrides.jsonl`
-* Each override targets:
-  * one GSM
-  * one canonical output field
-  * a new value
-* Overrides:
-  * are optional
-  * apply after automated inference and repair
-  * do not trigger re-inference or re-grounding
-* All applied overrides are recorded in audit logs with old/new values
-
-This makes human intervention explicit, deterministic, and auditable.
-
-### Curator UI (v0.5)
-
-* Local, Streamlit-based curator UI
 * Read-only by default
-* Loads:
-  * `curation.jsonl`
-  * `evidence.jsonl`
-  * `suggestions.jsonl` (optional)
-* Wide, searchable GSM table
-* Per-GSM detail panels showing raw artifacts
-* Evidence-derived field-level issue highlighting
-* Explicit edit mode:
-  * inline table editing of canonical fields
-  * edits are session-scoped (in-memory only)
-* Deterministic export of `overrides.jsonl`
-  * backend-compatible schema
-  * preview-before-export
-  * no automatic writes
+* Evidence-driven field highlighting
+* Session-only editing
+* Deterministic export of backend-compatible `overrides.jsonl`
 
-The UI introduces **no persistence, no learning, and no inference**.
+The UI introduces no persistence, learning, or inference.
 
 ---
 
-## What Is Explicitly Not Present
+## Documentation Map
 
-The following are **intentional design exclusions**, not missing features:
-
-* Persistent or collaborative curation state
-* Automatic application of suggestions
-* Learning or adaptation from human edits
-* Forced cross-GSM consensus or voting
-* Ontology validation of override values
-
-Any introduction of these requires a new milestone and explicit documentation.
+* `docs/whitepaper.md` — long-term architectural invariants (authoritative)
+* `docs/milestones/` — milestone-level system evolution
+* `docs/checkpoints/` — session reset and handoff anchors
+* `docs/tickets/` — short-term implementation tasks
 
 ---
 
-## Invariants (Do Not Break)
+## Next Planned Milestone
 
-The following must remain true across v0.x:
+### v0.7 — Curator UI Refinement
 
-* Output schema: **exactly 8 canonical fields**
-* Deterministic decision engine
-* Mandatory audit emission
-* Ontology grounding is read-only
-* No silent or unbounded repair loops
-* No hidden or persistent state
-* GSM independence is preserved
+Planned focus:
 
-Violating any invariant requires:
-* design discussion
-* milestone update
-* explicit documentation
+* UI usability improvements
+* Better visualization of ontology grounding and evidence
+* Safer and clearer override workflows
+
+Backend semantics introduced in v0.6 are considered **locked** unless explicitly revised.
 
 ---
 
-## How Work Is Organized
+## Development Model
 
-* **Whitepaper** (`docs/whitepaper.md`)  
-  Long-term architectural law
+* Architectural decisions are defined in the whitepaper
+* Work is executed strictly via tickets
+* ChatGPT acts as architect and reviewer
+* Codex CLI handles implementation
 
-* **Milestones** (`docs/milestones/`)  
-  Medium-term state snapshots
-
-* **Checkpoints** (`docs/checkpoints/`)  
-  Operational memory and handoff points
-
-* **Tickets** (`docs/tickets/`)  
-  Short-term, executable work units
-
-All code changes must correspond to a ticket.
-
----
-
-## Guidance for New AI / Codex Sessions
-
-Before coding:
-
-1. Read:
-   * `docs/whitepaper.md`
-   * the latest milestone doc
-   * the latest checkpoint doc
-2. Identify the active ticket number.
-3. Do **not** redesign architecture unless explicitly instructed.
-4. Prefer incremental, testable changes.
-5. Record the active ticket in the Codex session notes.
-
----
-
-## Current Direction
-
-* v0.5 curator UI is complete
-* Backend remains v0.4-stable and unchanged
-* Next milestone is expected to focus on:
-  * validation logic refinement
-  * LLM transport abstraction (llama.cpp, OpenAI-style HTTP)
-  * deployment and performance optimization
+This resume reflects the authoritative project state as of **post-v0.6**.

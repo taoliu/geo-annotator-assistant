@@ -1,121 +1,174 @@
-# AGENTS.md — Working Agreement for AI Coding Agents (Codex CLI)
+# AGENTS.md — Development Governance and Agent Roles
 
-This repository is developed by a small loop of:
-1) a human architect (project owner),
-2) a chatbot architect (ticket writer / reviewer),
-3) an AI coding agent (Codex CLI) that implements tickets.
+This document defines **how human developers, ChatGPT, and Codex CLI collaborate** on the GEO GSM Annotator Agent project.
 
-This file defines how the AI coding agent should work in this repo.
+It is a governance document, not an implementation guide.
 
 ---
 
-## 1. Read these files first (MANDATORY)
+## 1. Roles and Responsibilities
 
-Before starting any work, read:
+### ChatGPT (Architect / Reviewer)
 
-- `docs/whitepaper.md` (architecture + invariants)
-- `docs/milestones/` (current milestone scope)
-- `docs/tickets/README.md` and the active ticket under `docs/tickets/`
-- `config/example_config.yaml` (canonical config schema)
+ChatGPT acts as:
 
-If any instruction conflicts, prioritize in this order:
-1) `docs/whitepaper.md`
-2) milestone document
-3) ticket document
-4) code comments
+* system architect
+* design reviewer
+* ticket author
+* documentation editor
 
----
+Responsibilities:
 
-## 2. Ticket-first workflow (MANDATORY)
+* Define architectural intent and invariants
+* Propose milestone plans and tickets
+* Ensure determinism, auditability, and schema stability
+* Review designs for unintended semantic changes
+* Update whitepaper, milestones, checkpoints, and handoff docs
 
-All changes must be driven by a ticket.
+ChatGPT **does not**:
 
-For the current ticket:
-- implement exactly what is written
-- do not add “extra improvements” unless the ticket requests them
-
-After completing the ticket, the AI coding agent must:
-- ensure the ticket exists as a file under `docs/tickets/`
-  - `docs/tickets/ticket-XXX.md`
+* implement production code
+* bypass ticketing
+* silently change system semantics
 
 ---
 
-## 3. Output contract (MANDATORY)
+### Codex CLI (Implementer)
 
-The agent output schema is fixed at 8 fields:
+Codex CLI acts as:
 
-- `gse_accession`
-- `gsm_accession`
-- `data_type`
-- `organism`
-- `tissue_type`
-- `cell_line`
-- `disease`
-- `treatment`
+* code implementer
+* test author
+* refactor executor
 
-Do not add, remove, rename, or restructure these fields.
+Responsibilities:
 
----
+* Implement tickets verbatim
+* Preserve architectural invariants
+* Add or update tests as required by tickets
+* Save tickets and changes as markdown artifacts
 
-## 4. Configuration contract (MANDATORY)
+Codex CLI **must not**:
 
-Retrieval/grounding configuration must live under:
-
-- `rag.*`
-- `rag.ontology.*`
-
-Do not introduce new top-level config blocks for retrieval or grounding.
-
-If a config schema change is required, update all of:
-- `src/agent/config.py`
-- `config/example_config.yaml`
-- `config/gat-llama3-3b-it_config.yaml`
-- a config-loading unit test
+* introduce behavior not specified in a ticket
+* redesign pipeline structure
+* modify output schema
+* remove audit signals
 
 ---
 
-## 5. Ontology grounding (IMPORTANT)
+## 2. Architectural Invariants (Non-Negotiable)
 
-The ontology ChromaDB is externally built and read-only.
+All agents must respect the following invariants:
 
-Query pattern requirement:
-- open collection without embedding function
-- embed queries explicitly
-- query with `query_embeddings=[...]`
+* Exactly **8 output fields** per GSM
+* Deterministic decision routing
+* Bounded repair loops
+* Read-only, non-decisional RAG
+* Fully auditable execution
 
-Do not pass `embedding_function=` into `get_collection(...)` for the persisted DB.
-
----
-
-## 6. Testing and quality gates (MANDATORY)
-
-Testing should be run under `uv` environment. Before marking a ticket complete:
-
-- run unit tests:
-  - `uv run pytest -q`
-
-- if you change config parsing, add/adjust tests accordingly
-
-- keep logs and audit outputs bounded (no huge dumps)
+Any change violating these invariants requires explicit approval
+and a whitepaper update.
 
 ---
 
-## 7. Minimal diffs and clean commits
+## 3. Ontology and RAG Governance (v0.6+)
 
-- Make the smallest changes needed for the ticket.
-- Keep edits localized.
-- Avoid reformatting unrelated code.
-- Do not rename large modules unless requested.
+### Deterministic-first retrieval
+
+* Ontology retrieval must prioritize deterministic exact matches
+* Vector similarity search is **fallback-only**
+* Exact matches must short-circuit embedding and vector queries
+
+### Terminal exact semantics
+
+A terminal exact match is defined as:
+
+* `status == MATCHED`
+* `score == 1.0`
+* exact match type (label, normalized label, synonym, or ID)
+
+Terminal exact matches:
+
+* may canonicalize output labels
+* may lock fields against later repair
+* must be auditable and config-gated
+
+Agents must not bypass or weaken these semantics.
 
 ---
 
-## 8. When uncertain
+## 4. Embedding and Retrieval Implementation Notes
 
-If there is ambiguity:
-- prefer the existing structure in the repository
-- follow `docs/whitepaper.md` invariants
-- do not invent new conventions
+* ChromaDB collections may attach an embedding function when required
+* Embedding device (`cpu`, `cuda`, `mps`) must respect configuration
+* Avoid unnecessary embedding calls whenever behavior can be preserved
 
-If required, ask the architect for clarification before proceeding.
+Older guidance that prohibited embedding functions in Chroma is
+superseded by ticketed v0.6 decisions.
 
 ---
+
+## 5. Ticket-Driven Development Model
+
+* All changes must be associated with a numbered ticket
+* Tickets define:
+
+  * scope
+  * constraints
+  * acceptance criteria
+  * required tests
+* Code changes without tickets are invalid
+
+Tickets are stored under `docs/tickets/` and are the
+**only permitted mechanism** for altering code behavior.
+
+### Testing requirement
+
+Unless a ticket explicitly says otherwise, Codex must run unit tests with:
+
+```
+uv run pytest -q
+```
+
+If tests fail, fix them within the same ticket scope before reporting completion.
+
+---
+
+## 6. Documentation Hierarchy
+
+Agents must respect the following authority order:
+
+1. `docs/whitepaper.md` — architectural law
+2. `docs/milestones/v*.md` — system state
+3. `docs/checkpoints/xxxx-xx-xx_checkpoint.md`— handoff anchors
+4. `docs/tickets/ticket-xx.md` — permitted work
+5. code — implementation
+
+Conflicts must be resolved by updating the **higher-level document**,
+not by local code changes.
+
+---
+
+## 7. What Is Explicitly Out of Scope
+
+Agents must not introduce:
+
+* learning from human edits
+* hidden persistence
+* cross-GSM propagation
+* UI-driven backend logic
+
+These are architectural violations unless explicitly approved.
+
+---
+
+## 8. Summary
+
+This document exists to prevent drift across:
+
+* long-running development efforts
+* multiple AI-assisted sessions
+* multiple contributors
+
+If unsure, stop and escalate via a ticket or documentation update.
