@@ -10,13 +10,15 @@
 │   │   ├── 2026-01-05_checkpoint.md
 │   │   ├── 2026-01-06_checkpoint.md
 │   │   ├── 2026-01-07_checkpoint.md
-│   │   └── 2026-01-08_checkpoint.md
+│   │   ├── 2026-01-08_checkpoint.md
+│   │   └── 2026-01-09_checkpoint.md
 │   ├── milestones
 │   │   ├── v0.1-llm.md
 │   │   ├── v0.2-ontology-grounding.md
 │   │   ├── v0.3-real-world-refinement.md
 │   │   ├── v0.4-curation-backend.md
-│   │   └── v0.5-curator-ui.md
+│   │   ├── v0.5-curator-ui.md
+│   │   └── v0.6-rag-validation.md
 │   ├── repo_structure.md
 │   ├── RESUME.md
 │   ├── tickets
@@ -66,7 +68,18 @@
 │   │   ├── ticket-42.md
 │   │   ├── ticket-43.md
 │   │   ├── ticket-44.md
+│   │   ├── ticket-45.md
+│   │   ├── ticket-46.md
+│   │   ├── ticket-47.md
+│   │   ├── ticket-48.md
+│   │   ├── ticket-49.md
 │   │   ├── ticket-5.md
+│   │   ├── ticket-50.md
+│   │   ├── ticket-51.md
+│   │   ├── ticket-52.md
+│   │   ├── ticket-53.md
+│   │   ├── ticket-54.md
+│   │   ├── ticket-55.md
 │   │   ├── ticket-6.md
 │   │   ├── ticket-7.md
 │   │   ├── ticket-8.md
@@ -96,6 +109,7 @@
 │   │   ├── cli.py
 │   │   ├── config.py
 │   │   ├── gse_postpass.py
+│   │   ├── ontology_canonicalization.py
 │   │   ├── overrides.py
 │   │   ├── prompts.py
 │   │   ├── repair_loop.py
@@ -116,7 +130,11 @@
 │   │   ├── __init__.py
 │   │   ├── base.py
 │   │   ├── factory.py
-│   │   └── local_transformers.py
+│   │   ├── http_utils.py
+│   │   ├── llama_cpp_http.py
+│   │   ├── local_transformers.py
+│   │   ├── openai_http.py
+│   │   └── text_postprocess.py
 │   ├── rag
 │   │   ├── __init__.py
 │   │   ├── candidate.py
@@ -157,12 +175,15 @@
 ├── tests
 │   ├── README.md
 │   ├── test_cell_line_type_guard.py
+│   ├── test_chroma_embedding_device_config.py
 │   ├── test_cli_and_batch.py
+│   ├── test_config_llm_schema.py
 │   ├── test_config_postpass_schema.py
 │   ├── test_config_rag_schema.py
 │   ├── test_consistency_decision_routing.py
 │   ├── test_consistency_validator.py
 │   ├── test_decision_engine.py
+│   ├── test_disease_ncit_trigger_configurable.py
 │   ├── test_failure_codes_evidence_first.py
 │   ├── test_format_repair_extraction.py
 │   ├── test_format_validator.py
@@ -170,16 +191,23 @@
 │   ├── test_gse_jsonl_path.py
 │   ├── test_gse_soft_ingest.py
 │   ├── test_heuristics_loading.py
+│   ├── test_http_retry_policy.py
 │   ├── test_llm_interface_stubbed.py
 │   ├── test_llm_repair_loops.py
 │   ├── test_llm_reuse.py
+│   ├── test_llm_stop_trimming.py
+│   ├── test_llm_transport_factory.py
 │   ├── test_local_transformers_generation_args.py
+│   ├── test_ontology_canonicalize_and_lock.py
 │   ├── test_ontology_chroma_grounding.py
+│   ├── test_ontology_chroma_normalized_metadata_query.py
 │   ├── test_ontology_chroma_runtime_query.py
 │   ├── test_ontology_clean_raw_value.py
 │   ├── test_ontology_exact_label_fallback.py
+│   ├── test_ontology_match_scoring_exact_norm.py
 │   ├── test_ontology_synonym_matching.py
 │   ├── test_ontology_synonym_propagation.py
+│   ├── test_openai_http_transport.py
 │   ├── test_overrides_apply.py
 │   ├── test_overrides_loader.py
 │   ├── test_repair_inferred_without_evidence.py
@@ -188,6 +216,7 @@
 │   ├── test_semantic_validator.py
 │   ├── test_state_and_audit.py
 │   ├── test_suggestions.py
+│   ├── test_terminal_exact_short_circuit.py
 │   ├── test_thresholds_and_ontology_validator.py
 │   ├── test_writer.py
 │   └── ui
@@ -198,4 +227,4 @@
 │       └── test_state.py
 └── uv.lock
 
-18 directories, 181 files
+18 directories, 210 files

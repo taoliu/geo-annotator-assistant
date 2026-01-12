@@ -16,6 +16,7 @@ from agent.run_gse import (
 )
 from agent.run_single import run_single_gsm
 from agent.suggestions import build_gse_suggestions
+from agent import standardize_cli
 from agent.writer import write_run_outputs
 
 
@@ -79,7 +80,19 @@ def _resolve_output_dir(
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = _ArgumentParser(description="Run the GEO GSM annotator agent.")
+    description = "Run the GEO GSM annotator agent."
+    epilog = "\n".join(
+        [
+            "Subcommands:",
+            "  standardize-terms  Standardize curator-provided GSM annotations.",
+            "Use `geo-gsm-annotate standardize-terms --help` for details.",
+        ]
+    )
+    parser = _ArgumentParser(
+        description=description,
+        epilog=epilog,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--gsm", help="Single GSM identifier to process.")
     group.add_argument("--gsm-file", help="Path to a file containing GSM identifiers.")
@@ -109,8 +122,13 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
+    parsed_argv = list(argv) if argv is not None else sys.argv[1:]
+    if parsed_argv and parsed_argv[0] == "standardize-terms":
+        standardize_cli.main(parsed_argv[1:])
+        return
+
     parser = _build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(parsed_argv)
 
     try:
         config = load_config(args.config)
