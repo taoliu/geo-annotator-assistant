@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import os
 from pathlib import Path
 
@@ -16,25 +17,28 @@ from ui.loaders import (
     load_suggestions_jsonl_optional,
 )
 from ui.overrides import (
-    apply_overrides_to_record,
     clear_all_overrides,
     clear_overrides_for_gsm,
     compute_overrides,
     format_override_value,
-    overrides_for_gsm,
     overrides_to_jsonl,
 )
 from ui.paths import InputPaths, resolve_input_paths
 from ui.schema import CANONICAL_FIELDS
 from ui.state import (
+    DetailsContext,
+    build_details_context,
     build_table_rows,
+    close_modal,
+    default_modal_state,
+    details_render_mode,
     filter_table_rows,
     group_suggestions_by_field,
     index_curation_records,
     index_evidence_records,
     index_suggestion_records,
-    lookup_evidence,
-    lookup_suggestions,
+    resolve_selected_key,
+    update_modal_state,
 )
 from ui.styling import style_curation_table
 
@@ -97,21 +101,48 @@ def _render_filters(rows: list[dict]) -> tuple[str | None, str, bool]:
     return gse_filter, search_text, edit_mode
 
 
+def _supports_table_selection(widget: object) -> bool:
+    try:
+        params = inspect.signature(widget).parameters
+    except (TypeError, ValueError):
+        return False
+    return "on_select" in params and "selection_mode" in params
+
+
+def _extract_selected_rows(source: object) -> list[int]:
+    if source is None:
+        return []
+    selection = getattr(source, "selection", None)
+    if selection is None:
+        if isinstance(source, dict):
+            selection = source.get("selection")
+    if selection is None:
+        return []
+    if isinstance(selection, dict):
+        rows = (
+            selection.get("rows")
+            or selection.get("row_indices")
+            or selection.get("selected_rows")
+        )
+    else:
+        rows = getattr(selection, "rows", None) or getattr(
+            selection, "row_indices", None
+        )
+    if rows is None:
+        return []
+    return list(rows)
+
+
 def _render_details(
-    selection_key: tuple[str, str],
-    curation_lookup: dict[tuple[str, str], dict],
-    evidence_lookup: dict[tuple[str, str], dict],
-    suggestions_lookup: dict[tuple[str, str], list[dict]],
+    details: DetailsContext,
     suggestions_present: bool,
-    flags_by_gsm: dict[tuple[str, str], dict[str, list[str]]],
-    overrides: dict,
 ) -> None:
     st.subheader("Record Details")
-    evidence = lookup_evidence(evidence_lookup, selection_key[0], selection_key[1])
-    suggestions = lookup_suggestions(
-        suggestions_lookup, selection_key[0], selection_key[1]
-    )
-    flagged_fields = flags_by_gsm.get(selection_key, {})
+    selection_key = details["selection_key"]
+    st.caption(f"Selected: {selection_key[0]} / {selection_key[1]}")
+    evidence = details["evidence"]
+    suggestions = details["suggestions"]
+    flagged_fields = details["flagged_fields"]
 
     st.caption(f"Evidence present: {'yes' if evidence else 'no'}")
     if suggestions_present:
@@ -127,9 +158,9 @@ def _render_details(
             tags = ", ".join(flagged_fields[field])
             st.write(f"{field}: {tags}")
 
-    curation = curation_lookup.get(selection_key)
-    selected_overrides = overrides_for_gsm(overrides, selection_key[0], selection_key[1])
-    effective_fields = apply_overrides_to_record(curation, selected_overrides)
+    curation = details["curation"]
+    selected_overrides = details["selected_overrides"]
+    effective_fields = details["effective_fields"]
 
     st.markdown("**Overrides (in-memory)**")
     if not selected_overrides:
@@ -165,6 +196,32 @@ def _render_details(
     for field, records in group_suggestions_by_field(suggestions):
         st.markdown(f"**{field}**")
         st.json([record["raw"] for record in records])
+
+
+def _render_details_modal(
+    details: DetailsContext,
+    suggestions_present: bool,
+    modal_state: dict,
+) -> None:
+    def _body() -> None:
+        if st.button("Close"):
+            st.session_state["details_modal_state"] = close_modal(modal_state)
+        _render_details(details, suggestions_present)
+
+    dialog = getattr(st, "dialog", None)
+    if callable(dialog):
+        try:
+            with dialog("Record Details"):
+                _body()
+            return
+        except TypeError:
+            try:
+                dialog("Record Details")(_body)()
+                return
+            except TypeError:
+                pass
+    with st.expander("Record Details", expanded=True):
+        _body()
 
 
 def _render_unsaved_indicator(container: st.delta_generator.DeltaGenerator, overrides: dict) -> None:
@@ -287,6 +344,13 @@ def run_app() -> None:
     overrides = st.session_state.get("overrides", {})
     if not isinstance(overrides, dict):
         overrides = {}
+    modal_state = st.session_state.get("details_modal_state")
+    if (
+        not isinstance(modal_state, dict)
+        or "active" not in modal_state
+        or "is_open" not in modal_state
+    ):
+        modal_state = default_modal_state()
 
     indicator = st.empty()
 
@@ -295,18 +359,16 @@ def run_app() -> None:
         st.info("No records match the current filters.")
         st.stop()
 
-    options = [(row["gse_accession"], row["gsm_accession"]) for row in filtered_rows]
-    selection = st.selectbox(
-        "Select GSM",
-        options,
-        format_func=lambda item: f"{item[0]} / {item[1]}",
-    )
-
+    selected_rows: list[int] = []
     if edit_mode:
         action_cols = st.columns(2)
-        if action_cols[0].button("Revert selected row"):
+        active_selection = modal_state["active"]
+        if action_cols[0].button(
+            "Revert selected row",
+            disabled=active_selection is None,
+        ):
             overrides = clear_overrides_for_gsm(
-                overrides, selection[0], selection[1]
+                overrides, active_selection[0], active_selection[1]
             )
         if action_cols[1].button("Clear all edits"):
             overrides = clear_all_overrides(overrides)
@@ -314,10 +376,18 @@ def run_app() -> None:
         df_base = pd.DataFrame(filtered_rows)
         df_editable = _build_editable_df(df_base, overrides, flags_by_gsm)
         st.subheader("Curation Table (Editable)")
-        df_edited = st.data_editor(
-            df_editable,
-            disabled=_disabled_columns(df_editable),
-            hide_index=True,
+        editor_kwargs = {
+            "disabled": _disabled_columns(df_editable),
+            "hide_index": True,
+            "key": "curation_table_edit",
+        }
+        if _supports_table_selection(st.data_editor):
+            editor_kwargs.update(
+                {"on_select": "rerun", "selection_mode": "single-row"}
+            )
+        df_edited = st.data_editor(df_editable, **editor_kwargs)
+        selected_rows = _extract_selected_rows(
+            st.session_state.get("curation_table_edit")
         )
         overrides_visible = compute_overrides(df_base, df_edited)
         visible_keys = {
@@ -338,7 +408,39 @@ def run_app() -> None:
             df.insert(2, "Edited", edited_values)
         styled = style_curation_table(df, flags_by_gsm)
         st.subheader("Curation Table")
-        st.dataframe(styled, width="stretch", hide_index=True)
+        selection_event = None
+        selection_supported = _supports_table_selection(st.dataframe)
+        table_data = df if selection_supported else styled
+        if selection_supported:
+            selection_event = st.dataframe(
+                table_data,
+                width="stretch",
+                hide_index=True,
+                on_select="rerun",
+                selection_mode="single-row",
+                key="curation_table_view",
+            )
+        else:
+            st.dataframe(
+                table_data,
+                width="stretch",
+                hide_index=True,
+                key="curation_table_view",
+            )
+        selected_rows = _extract_selected_rows(
+            selection_event or st.session_state.get("curation_table_view")
+        )
+
+    previous_selected_rows = st.session_state.get("table_selected_rows", [])
+    if not isinstance(previous_selected_rows, list):
+        previous_selected_rows = []
+    selection_changed = selected_rows != previous_selected_rows
+    st.session_state["table_selected_rows"] = selected_rows
+    selection_key = None
+    if selection_changed:
+        selection_key = resolve_selected_key(filtered_rows, selected_rows)
+    modal_state = update_modal_state(modal_state, selection_key)
+    st.session_state["details_modal_state"] = modal_state
 
     overrides = _render_export_section(overrides)
 
@@ -346,15 +448,18 @@ def run_app() -> None:
     evidence_lookup = index_evidence_records(evidence_records)
     suggestions_lookup = index_suggestion_records(suggestions_records)
 
-    _render_details(
-        selection,
-        curation_lookup,
-        evidence_lookup,
-        suggestions_lookup,
-        paths.suggestions_present,
-        flags_by_gsm,
-        overrides,
-    )
+    if details_render_mode() == "modal":
+        active_selection = modal_state["active"]
+        if modal_state["is_open"] and active_selection is not None:
+            details = build_details_context(
+                active_selection,
+                curation_lookup,
+                evidence_lookup,
+                suggestions_lookup,
+                flags_by_gsm,
+                overrides,
+            )
+            _render_details_modal(details, paths.suggestions_present, modal_state)
 
 
 run_app()

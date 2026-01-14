@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterable, TypedDict
+from typing import Any, Iterable, Mapping, Sequence, TypedDict
 
 from ui.schema import (
     CANONICAL_FIELDS,
     EvidenceRecord,
     NormalizedCurationRecord,
     SuggestionRecord,
+)
+from ui.overrides import (
+    OverrideKey,
+    OverrideValue,
+    OverridesForGsm,
+    apply_overrides_to_record,
+    overrides_for_gsm,
 )
 
 
@@ -21,6 +28,24 @@ class TableRow(TypedDict):
     cell_line: str
     disease: str
     treatment: str
+
+
+SelectionKey = tuple[str, str]
+
+
+class ModalState(TypedDict):
+    active: SelectionKey | None
+    is_open: bool
+
+
+class DetailsContext(TypedDict):
+    selection_key: SelectionKey
+    evidence: EvidenceRecord | None
+    suggestions: list[SuggestionRecord]
+    flagged_fields: dict[str, list[str]]
+    curation: NormalizedCurationRecord | None
+    selected_overrides: OverridesForGsm
+    effective_fields: dict[str, OverrideValue] | None
 
 
 def build_table_rows(
@@ -122,7 +147,77 @@ def group_suggestions_by_field(
     return [(field, grouped[field]) for field in sorted(grouped)]
 
 
+def default_modal_state() -> ModalState:
+    return {"active": None, "is_open": False}
+
+
+def update_modal_state(
+    state: ModalState,
+    selected_key: SelectionKey | None,
+) -> ModalState:
+    if selected_key is None:
+        return state
+    return {"active": selected_key, "is_open": True}
+
+
+def close_modal(state: ModalState) -> ModalState:
+    if not state["is_open"]:
+        return state
+    return {"active": state["active"], "is_open": False}
+
+
+def resolve_selected_key(
+    rows: Sequence[TableRow],
+    selected_rows: Sequence[int] | None,
+) -> SelectionKey | None:
+    if not selected_rows:
+        return None
+    index = selected_rows[0]
+    if index < 0 or index >= len(rows):
+        return None
+    row = rows[index]
+    return (row["gse_accession"], row["gsm_accession"])
+
+
+def details_render_mode() -> str:
+    return "modal"
+
+
+def build_details_context(
+    selection_key: SelectionKey,
+    curation_lookup: dict[SelectionKey, NormalizedCurationRecord],
+    evidence_lookup: dict[SelectionKey, EvidenceRecord],
+    suggestions_lookup: dict[SelectionKey, list[SuggestionRecord]],
+    flags_by_gsm: dict[SelectionKey, dict[str, list[str]]],
+    overrides: Mapping[OverrideKey, OverrideValue],
+) -> DetailsContext:
+    evidence = lookup_evidence(
+        evidence_lookup, selection_key[0], selection_key[1]
+    )
+    suggestions = lookup_suggestions(
+        suggestions_lookup, selection_key[0], selection_key[1]
+    )
+    flagged_fields = flags_by_gsm.get(selection_key, {})
+    curation = curation_lookup.get(selection_key)
+    selected_overrides = overrides_for_gsm(
+        overrides, selection_key[0], selection_key[1]
+    )
+    effective_fields = apply_overrides_to_record(curation, selected_overrides)
+    return {
+        "selection_key": selection_key,
+        "evidence": evidence,
+        "suggestions": suggestions,
+        "flagged_fields": flagged_fields,
+        "curation": curation,
+        "selected_overrides": selected_overrides,
+        "effective_fields": effective_fields,
+    }
+
+
 __all__ = [
+    "SelectionKey",
+    "ModalState",
+    "DetailsContext",
     "TableRow",
     "build_table_rows",
     "filter_table_rows",
@@ -132,4 +227,10 @@ __all__ = [
     "lookup_evidence",
     "lookup_suggestions",
     "group_suggestions_by_field",
+    "default_modal_state",
+    "update_modal_state",
+    "close_modal",
+    "resolve_selected_key",
+    "details_render_mode",
+    "build_details_context",
 ]
