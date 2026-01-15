@@ -44,6 +44,19 @@ def clear_overrides_for_gsm(
     }
 
 
+def clear_override(
+    overrides: Mapping[OverrideKey, OverrideValue],
+    gse_accession: str,
+    gsm_accession: str,
+    field: str,
+) -> OverridesMap:
+    return {
+        key: value
+        for key, value in overrides.items()
+        if key != (gse_accession, gsm_accession, field)
+    }
+
+
 def clear_all_overrides(_: Mapping[OverrideKey, OverrideValue]) -> OverridesMap:
     return {}
 
@@ -190,6 +203,7 @@ __all__ = [
     "OverridesForGsm",
     "apply_overrides_to_record",
     "clear_all_overrides",
+    "clear_override",
     "clear_overrides_for_gsm",
     "compute_overrides",
     "overrides_to_jsonl",

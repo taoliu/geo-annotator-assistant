@@ -25,10 +25,14 @@ from ui.loaders import (
 )
 from ui.overrides import (
     clear_all_overrides,
+    clear_override,
     clear_overrides_for_gsm,
     compute_overrides,
     format_override_value,
+    overrides_for_gsm,
+    parse_override_input,
     overrides_to_jsonl,
+    set_override,
 )
 from ui.paths import InputPaths, resolve_input_paths
 from ui.schema import CANONICAL_FIELDS
@@ -44,6 +48,12 @@ from ui.state import (
     resolve_selected_key,
 )
 from ui.styling import style_curation_table
+from ui.override_safety import (
+    build_override_diff,
+    build_override_warning,
+    field_is_editable,
+    requires_override_confirmation,
+)
 
 st.set_page_config(layout="wide")
 
@@ -147,11 +157,13 @@ def _extract_selected_rows(source: object) -> list[int]:
 def _render_details(
     details: DetailsContext,
     suggestions_present: bool,
+    edit_mode: bool,
 ) -> None:
     st.subheader("Record Details")
     selection_key = details["selection_key"]
     st.caption(f"Selected: {selection_key[0]} / {selection_key[1]}")
     _render_field_status_dashboard(details)
+    _render_field_override_controls(details, edit_mode)
     _render_field_evidence_panels(details)
     evidence = details["evidence"]
     suggestions = details["suggestions"]
@@ -255,15 +267,154 @@ def _render_field_evidence_panels(details: DetailsContext) -> None:
     st.markdown("---")
 
 
+def _render_field_override_controls(details: DetailsContext, edit_mode: bool) -> None:
+    st.markdown("### Field Overrides")
+    selection_key = details["selection_key"]
+    gse_accession, gsm_accession = selection_key
+    evidence = details["evidence"]
+    evidence_raw = evidence["raw"] if evidence else None
+    curation = details["curation"]
+    backend_fields = curation.get("fields", {}) if curation else {}
+    overrides = st.session_state.get("overrides", {})
+    if not isinstance(overrides, dict):
+        overrides = {}
+    selected_overrides = overrides_for_gsm(overrides, gse_accession, gsm_accession)
+
+    if not edit_mode:
+        st.caption("Enable editing to apply overrides.")
+
+    for field in CANONICAL_FIELDS:
+        backend_value = backend_fields.get(field)
+        input_key = f"override_input_{gse_accession}_{gsm_accession}_{field}"
+        diff = build_override_diff(field, backend_value, selected_overrides)
+        st.markdown(f"**{field}**")
+        if diff:
+            st.markdown("`OVERRIDDEN`")
+            st.write(f"Backend value: {diff['backend_value']}")
+            st.write(f"Override value: {diff['override_value']}")
+            if edit_mode and st.button(
+                "Revert",
+                key=f"revert_override_{gse_accession}_{gsm_accession}_{field}",
+            ):
+                overrides = clear_override(
+                    overrides, gse_accession, gsm_accession, field
+                )
+                st.session_state["overrides"] = overrides
+                st.session_state[input_key] = _format_override_input(backend_value)
+        if not edit_mode or not field_is_editable(edit_mode, field, evidence_raw):
+            continue
+
+        warning = build_override_warning(field, evidence_raw)
+        if warning:
+            st.caption(warning)
+
+        current_value = selected_overrides.get(field, backend_value)
+        input_value = _format_override_input(current_value)
+        if input_key not in st.session_state:
+            st.session_state[input_key] = input_value
+        proposed_raw = st.text_input(
+            f"New value for {field}",
+            value=input_value,
+            key=input_key,
+        )
+        proposed_value = parse_override_input(proposed_raw)
+
+        pending_key = _pending_override_key(
+            gse_accession, gsm_accession, field
+        )
+        pending_value = st.session_state.get(pending_key)
+        if pending_value is not None and pending_value != proposed_value:
+            st.session_state.pop(pending_key, None)
+            pending_value = None
+
+        if st.button(
+            "Apply override",
+            key=f"apply_override_{gse_accession}_{gsm_accession}_{field}",
+        ):
+            if _override_matches_backend(backend_value, proposed_value):
+                overrides = clear_override(
+                    overrides, gse_accession, gsm_accession, field
+                )
+                st.session_state["overrides"] = overrides
+                st.session_state.pop(pending_key, None)
+                st.session_state[input_key] = _format_override_input(backend_value)
+            elif requires_override_confirmation(field, evidence_raw):
+                st.session_state[pending_key] = proposed_value
+            else:
+                overrides = set_override(
+                    overrides, (gse_accession, gsm_accession, field), proposed_value
+                )
+                st.session_state["overrides"] = overrides
+                st.session_state.pop(pending_key, None)
+
+        if pending_value is not None and requires_override_confirmation(
+            field, evidence_raw
+        ):
+            st.warning("Confirm override before applying.")
+            st.write(f"Field: {field}")
+            st.write(f"Backend value: {_format_override_display(backend_value)}")
+            st.write(
+                "Proposed override: "
+                f"{_format_override_display(pending_value)}"
+            )
+            cols = st.columns(2)
+            if cols[0].button(
+                "Confirm override",
+                key=f"confirm_override_{gse_accession}_{gsm_accession}_{field}",
+            ):
+                overrides = set_override(
+                    overrides, (gse_accession, gsm_accession, field), pending_value
+                )
+                st.session_state["overrides"] = overrides
+                st.session_state.pop(pending_key, None)
+            if cols[1].button(
+                "Cancel",
+                key=f"cancel_override_{gse_accession}_{gsm_accession}_{field}",
+            ):
+                st.session_state.pop(pending_key, None)
+
+    st.markdown("---")
+
+
+def _pending_override_key(gse_accession: str, gsm_accession: str, field: str) -> str:
+    return f"pending_override_{gse_accession}_{gsm_accession}_{field}"
+
+
+def _format_override_input(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        return format_override_value(value)
+    return str(value)
+
+
+def _format_override_display(value: object) -> str:
+    if value is None:
+        return "(not available)"
+    if isinstance(value, list):
+        return format_override_value(value)
+    return str(value)
+
+
+def _override_matches_backend(
+    backend_value: object,
+    override_value: object,
+) -> bool:
+    if isinstance(backend_value, str) and isinstance(override_value, str):
+        return backend_value.strip() == override_value.strip()
+    return backend_value == override_value
+
+
 def _render_details_modal(
     details: DetailsContext,
     suggestions_present: bool,
+    edit_mode: bool,
 ) -> None:
     def _body() -> None:
         if st.button("Close"):
             st.session_state["modal_open"] = False
             st.session_state["active_row_idx"] = None
-        _render_details(details, suggestions_present)
+        _render_details(details, suggestions_present, edit_mode)
 
     dialog = getattr(st, "dialog", None)
     if callable(dialog):
@@ -529,7 +680,7 @@ def run_app() -> None:
                 flags_by_gsm,
                 overrides,
             )
-            _render_details_modal(details, paths.suggestions_present)
+            _render_details_modal(details, paths.suggestions_present, edit_mode)
 
 
 run_app()
