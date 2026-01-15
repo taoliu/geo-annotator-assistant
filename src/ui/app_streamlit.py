@@ -38,6 +38,7 @@ from ui.paths import InputPaths, resolve_input_paths
 from ui.schema import CANONICAL_FIELDS
 from ui.state import (
     DetailsContext,
+    TableRow,
     build_details_context,
     build_table_rows,
     filter_table_rows,
@@ -48,6 +49,11 @@ from ui.state import (
     resolve_selected_key,
 )
 from ui.styling import style_curation_table
+from ui.triage import (
+    TRIAGE_FILTERS,
+    apply_triage_filter,
+    build_triage_flags,
+)
 from ui.override_safety import (
     build_override_diff,
     build_override_warning,
@@ -444,10 +450,44 @@ def _render_unsaved_indicator(container: st.delta_generator.DeltaGenerator, over
     )
 
 
+def _render_summary_strip(
+    rows: list[TableRow],
+    triage_flags: dict[tuple[str, str], dict[str, bool]],
+) -> None:
+    total = len(rows)
+    needs_attention = sum(
+        1 for flags in triage_flags.values() if flags.get("needs_attention")
+    )
+    has_overrides = sum(
+        1 for flags in triage_flags.values() if flags.get("has_overrides")
+    )
+    clean = sum(1 for flags in triage_flags.values() if flags.get("is_clean"))
+
+    cols = st.columns(4)
+    cols[0].markdown(f"**Total GSMs**\n{total}")
+    cols[1].markdown(f"**Needs attention**\n{needs_attention}")
+    cols[2].markdown(f"**Has overrides**\n{has_overrides}")
+    cols[3].markdown(f"**Clean**\n{clean}")
+    st.caption("Summary reflects current GSE/search filters.")
+
+
+def _render_triage_filters() -> str:
+    st.markdown("**Quick filter (single choice)**")
+    return st.radio(
+        "Table filter",
+        TRIAGE_FILTERS,
+        index=0,
+        horizontal=True,
+        label_visibility="collapsed",
+        key="triage_filter",
+    )
+
+
 def _build_editable_df(
     df_base: pd.DataFrame,
     overrides: dict,
     flags_by_gsm: dict[tuple[str, str], dict[str, list[str]]],
+    triage_flags: dict[tuple[str, str], dict[str, bool]],
 ) -> pd.DataFrame:
     df_editable = df_base.copy()
     for (gse, gsm, field), value in overrides.items():
@@ -465,6 +505,13 @@ def _build_editable_df(
         for row in df_base.to_dict("records")
     ]
     df_editable.insert(2, "Edited", edited_values)
+
+    attention_values = []
+    for row in df_base.to_dict("records"):
+        key = (row["gse_accession"], row["gsm_accession"])
+        flags = triage_flags.get(key, {})
+        attention_values.append("ATTN" if flags.get("needs_attention") else "")
+    df_editable.insert(3, "Needs attention", attention_values)
 
     flagged_values = []
     for row in df_base.to_dict("records"):
@@ -545,10 +592,10 @@ def run_app() -> None:
 
     rows = build_table_rows(curation_records)
     gse_filter, search_text, edit_mode = _render_filters(rows)
-    filtered_rows = filter_table_rows(rows, gse_filter, search_text)
+    base_rows = filter_table_rows(rows, gse_filter, search_text)
 
-    st.caption(f"Rows: {len(filtered_rows)}")
     flags_by_gsm = build_flags_index(evidence_records)
+    evidence_lookup = index_evidence_records(evidence_records)
     overrides = st.session_state.get("overrides", {})
     if not isinstance(overrides, dict):
         overrides = {}
@@ -560,6 +607,12 @@ def run_app() -> None:
         modal_open = False
 
     indicator = st.empty()
+
+    triage_flags = build_triage_flags(base_rows, evidence_lookup, overrides)
+    _render_summary_strip(base_rows, triage_flags)
+    triage_filter = _render_triage_filters()
+    filtered_rows = apply_triage_filter(base_rows, triage_flags, triage_filter)
+    st.caption(f"Rows: {len(filtered_rows)}")
 
     if not filtered_rows:
         _render_unsaved_indicator(indicator, overrides)
@@ -590,7 +643,9 @@ def run_app() -> None:
             overrides = clear_all_overrides(overrides)
 
         df_base = pd.DataFrame(filtered_rows)
-        df_editable = _build_editable_df(df_base, overrides, flags_by_gsm)
+        df_editable = _build_editable_df(
+            df_base, overrides, flags_by_gsm, triage_flags
+        )
         st.subheader("Curation Table (Editable)")
         editor_kwargs = {
             "disabled": _disabled_columns(df_editable),
@@ -623,6 +678,12 @@ def run_app() -> None:
                 for row in filtered_rows
             ]
             df.insert(2, "Edited", edited_values)
+            attention_values = []
+            for row in filtered_rows:
+                key = (row["gse_accession"], row["gsm_accession"])
+                flags = triage_flags.get(key, {})
+                attention_values.append("ATTN" if flags.get("needs_attention") else "")
+            df.insert(3, "Needs attention", attention_values)
         styled = style_curation_table(df, flags_by_gsm, active_row_idx=active_row_idx)
         st.subheader("Curation Table")
         selection_event = None
@@ -663,7 +724,6 @@ def run_app() -> None:
     overrides = _render_export_section(overrides)
 
     curation_lookup = index_curation_records(curation_records)
-    evidence_lookup = index_evidence_records(evidence_records)
     suggestions_lookup = index_suggestion_records(suggestions_records)
 
     if modal_open and isinstance(active_row_idx, int):
