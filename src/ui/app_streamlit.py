@@ -16,6 +16,8 @@ from ui.help_text import (
     table_guidance_text,
     table_help_lines,
 )
+from ui.dashboard import build_dashboard_items
+from ui.evidence import EVIDENCE_FIELDS, extract_field_evidence
 from ui.loaders import (
     load_curation_jsonl,
     load_evidence_jsonl,
@@ -149,6 +151,8 @@ def _render_details(
     st.subheader("Record Details")
     selection_key = details["selection_key"]
     st.caption(f"Selected: {selection_key[0]} / {selection_key[1]}")
+    _render_field_status_dashboard(details)
+    _render_field_evidence_panels(details)
     evidence = details["evidence"]
     suggestions = details["suggestions"]
     flagged_fields = details["flagged_fields"]
@@ -205,6 +209,50 @@ def _render_details(
     for field, records in group_suggestions_by_field(suggestions):
         st.markdown(f"**{field}**")
         st.json([record["raw"] for record in records])
+
+
+def _render_field_status_dashboard(details: DetailsContext) -> None:
+    st.markdown("### Field Status Dashboard")
+    evidence = details["evidence"]
+    items = build_dashboard_items(
+        details["selection_key"],
+        details["curation"],
+        details["effective_fields"],
+        evidence["raw"] if evidence else None,
+        details["selected_overrides"],
+    )
+    rows = [items[:4], items[4:]]
+    for row in rows:
+        cols = st.columns(4)
+        for idx, item in enumerate(row):
+            with cols[idx]:
+                st.markdown(f"**{item['label']}**")
+                st.write(item["value"])
+                if item["badges"]:
+                    badges = " ".join(f"`{badge}`" for badge in item["badges"])
+                    st.markdown(badges)
+    st.markdown("---")
+
+
+def _render_field_evidence_panels(details: DetailsContext) -> None:
+    evidence = details["evidence"]
+    evidence_raw = evidence["raw"] if evidence else None
+    selection_key = details["selection_key"]
+    expand_all = st.checkbox(
+        "Expand all evidence",
+        value=False,
+        key=f"expand_all_evidence_{selection_key[0]}_{selection_key[1]}",
+    )
+    st.markdown("### Evidence")
+    for field in EVIDENCE_FIELDS:
+        items = extract_field_evidence(field, evidence_raw)
+        with st.expander(f"{field} - Evidence", expanded=expand_all):
+            if not items:
+                st.write("(not available)")
+                continue
+            for item in items:
+                st.write(f"{item['label']}: {item['value']}")
+    st.markdown("---")
 
 
 def _render_details_modal(
