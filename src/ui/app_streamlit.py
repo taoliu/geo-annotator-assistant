@@ -11,6 +11,11 @@ import pandas as pd
 import streamlit as st
 
 from ui.flags import build_flags_index
+from ui.help_text import (
+    gsm_accession_tooltip,
+    table_guidance_text,
+    table_help_lines,
+)
 from ui.loaders import (
     load_curation_jsonl,
     load_evidence_jsonl,
@@ -29,16 +34,12 @@ from ui.state import (
     DetailsContext,
     build_details_context,
     build_table_rows,
-    close_modal,
-    default_modal_state,
-    details_render_mode,
     filter_table_rows,
     group_suggestions_by_field,
     index_curation_records,
     index_evidence_records,
     index_suggestion_records,
     resolve_selected_key,
-    update_modal_state,
 )
 from ui.styling import style_curation_table
 
@@ -107,6 +108,14 @@ def _supports_table_selection(widget: object) -> bool:
     except (TypeError, ValueError):
         return False
     return "on_select" in params and "selection_mode" in params
+
+
+def _table_column_config() -> dict[str, object]:
+    column_config = getattr(st, "column_config", None)
+    text_column = getattr(column_config, "TextColumn", None) if column_config else None
+    if text_column is None:
+        return {}
+    return {"gsm_accession": text_column(help=gsm_accession_tooltip())}
 
 
 def _extract_selected_rows(source: object) -> list[int]:
@@ -201,11 +210,11 @@ def _render_details(
 def _render_details_modal(
     details: DetailsContext,
     suggestions_present: bool,
-    modal_state: dict,
 ) -> None:
     def _body() -> None:
         if st.button("Close"):
-            st.session_state["details_modal_state"] = close_modal(modal_state)
+            st.session_state["modal_open"] = False
+            st.session_state["active_row_idx"] = None
         _render_details(details, suggestions_present)
 
     dialog = getattr(st, "dialog", None)
@@ -344,13 +353,12 @@ def run_app() -> None:
     overrides = st.session_state.get("overrides", {})
     if not isinstance(overrides, dict):
         overrides = {}
-    modal_state = st.session_state.get("details_modal_state")
-    if (
-        not isinstance(modal_state, dict)
-        or "active" not in modal_state
-        or "is_open" not in modal_state
-    ):
-        modal_state = default_modal_state()
+    active_row_idx = st.session_state.get("active_row_idx")
+    if not isinstance(active_row_idx, int):
+        active_row_idx = None
+    modal_open = st.session_state.get("modal_open")
+    if not isinstance(modal_open, bool):
+        modal_open = False
 
     indicator = st.empty()
 
@@ -359,10 +367,19 @@ def run_app() -> None:
         st.info("No records match the current filters.")
         st.stop()
 
+    st.caption(table_guidance_text())
+    with st.expander("Help"):
+        for line in table_help_lines():
+            st.write(line)
+
+    column_config = _table_column_config()
+
     selected_rows: list[int] = []
     if edit_mode:
         action_cols = st.columns(2)
-        active_selection = modal_state["active"]
+        active_selection = None
+        if isinstance(active_row_idx, int):
+            active_selection = resolve_selected_key(filtered_rows, [active_row_idx])
         if action_cols[0].button(
             "Revert selected row",
             disabled=active_selection is None,
@@ -380,6 +397,7 @@ def run_app() -> None:
             "disabled": _disabled_columns(df_editable),
             "hide_index": True,
             "key": "curation_table_edit",
+            "column_config": column_config,
         }
         if _supports_table_selection(st.data_editor):
             editor_kwargs.update(
@@ -406,7 +424,7 @@ def run_app() -> None:
                 for row in filtered_rows
             ]
             df.insert(2, "Edited", edited_values)
-        styled = style_curation_table(df, flags_by_gsm)
+        styled = style_curation_table(df, flags_by_gsm, active_row_idx=active_row_idx)
         st.subheader("Curation Table")
         selection_event = None
         selection_supported = _supports_table_selection(st.dataframe)
@@ -418,6 +436,7 @@ def run_app() -> None:
                 hide_index=True,
                 on_select="rerun",
                 selection_mode="single-row",
+                column_config=column_config,
                 key="curation_table_view",
             )
         else:
@@ -425,22 +444,22 @@ def run_app() -> None:
                 table_data,
                 width="stretch",
                 hide_index=True,
+                column_config=column_config,
                 key="curation_table_view",
             )
         selected_rows = _extract_selected_rows(
             selection_event or st.session_state.get("curation_table_view")
         )
 
-    previous_selected_rows = st.session_state.get("table_selected_rows", [])
-    if not isinstance(previous_selected_rows, list):
-        previous_selected_rows = []
-    selection_changed = selected_rows != previous_selected_rows
-    st.session_state["table_selected_rows"] = selected_rows
-    selection_key = None
-    if selection_changed:
-        selection_key = resolve_selected_key(filtered_rows, selected_rows)
-    modal_state = update_modal_state(modal_state, selection_key)
-    st.session_state["details_modal_state"] = modal_state
+    if selected_rows:
+        row_idx = selected_rows[0]
+        last_opened = st.session_state.get("last_opened_row_idx")
+        if row_idx != last_opened:
+            st.session_state["active_row_idx"] = row_idx
+            st.session_state["modal_open"] = True
+            st.session_state["last_opened_row_idx"] = row_idx
+            active_row_idx = row_idx
+            modal_open = True
 
     overrides = _render_export_section(overrides)
 
@@ -448,18 +467,21 @@ def run_app() -> None:
     evidence_lookup = index_evidence_records(evidence_records)
     suggestions_lookup = index_suggestion_records(suggestions_records)
 
-    if details_render_mode() == "modal":
-        active_selection = modal_state["active"]
-        if modal_state["is_open"] and active_selection is not None:
+    if modal_open and isinstance(active_row_idx, int):
+        selection_key = resolve_selected_key(filtered_rows, [active_row_idx])
+        if selection_key is None:
+            st.session_state["active_row_idx"] = None
+            st.session_state["modal_open"] = False
+        else:
             details = build_details_context(
-                active_selection,
+                selection_key,
                 curation_lookup,
                 evidence_lookup,
                 suggestions_lookup,
                 flags_by_gsm,
                 overrides,
             )
-            _render_details_modal(details, paths.suggestions_present, modal_state)
+            _render_details_modal(details, paths.suggestions_present)
 
 
 run_app()

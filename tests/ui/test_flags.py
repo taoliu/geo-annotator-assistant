@@ -11,7 +11,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from ui.flags import build_flags_index, extract_field_flags
-from ui.styling import style_curation_table
+from ui.styling import active_row_style, style_curation_table
 
 
 def test_extract_field_flags_uses_explicit_signals() -> None:
@@ -96,3 +96,29 @@ def test_style_curation_table_highlights_flagged_cell() -> None:
     html = styler.to_html()
 
     assert "#fff3cd" in html
+
+
+def test_active_row_style_marks_selected_row() -> None:
+    assert active_row_style(1, 1)
+    assert active_row_style(0, 1) == ""
+
+
+def test_style_curation_table_highlights_active_row() -> None:
+    rows = [
+        {
+            "gse_accession": "GSE1",
+            "gsm_accession": "GSM1",
+            "data_type": "RNA-seq",
+            "organism": "Homo sapiens",
+            "tissue_type": "Blood",
+            "cell_line": "No",
+            "disease": "Healthy",
+            "treatment": "No",
+        }
+    ]
+    df = pd.DataFrame(rows)
+
+    styler = style_curation_table(df, {}, active_row_idx=0)
+    html = styler.to_html()
+
+    assert "#e8f4ff" in html
