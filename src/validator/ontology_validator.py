@@ -135,6 +135,53 @@ def _is_fallback_value(field: str, raw_value: str) -> bool:
         value.lower() for value in _FALLBACK_VALUES[field]
     }
 
+
+def _normalize_allowlist_values(values: object) -> set[str]:
+    if values is None:
+        return set()
+    if isinstance(values, str):
+        items = [values]
+    elif isinstance(values, (list, tuple, set)):
+        items = list(values)
+    else:
+        return set()
+    return {str(item).strip().lower() for item in items if str(item).strip()}
+
+
+def _data_type_allowlist(config: Dict) -> set[str]:
+    if not isinstance(config, dict):
+        return set()
+    ontology_cfg = (
+        config.get("ontology")
+        if isinstance(config.get("ontology"), dict)
+        else None
+    )
+    if not isinstance(ontology_cfg, dict):
+        return set()
+    data_type_cfg = (
+        ontology_cfg.get("data_type")
+        if isinstance(ontology_cfg.get("data_type"), dict)
+        else None
+    )
+    if not isinstance(data_type_cfg, dict):
+        return set()
+    enabled = bool(data_type_cfg.get("fallback_allowlist_enabled", False))
+    if not enabled:
+        return set()
+    allowlist = data_type_cfg.get("fallback_allowlist")
+    if allowlist is None:
+        allowlist = data_type_cfg.get("allowlist")
+    return _normalize_allowlist_values(allowlist)
+
+
+def _is_data_type_allowlisted(raw_value: str, config: Dict) -> bool:
+    if not raw_value:
+        return False
+    allowlist = _data_type_allowlist(config)
+    if not allowlist:
+        return False
+    return raw_value.strip().lower() in allowlist
+
 def _call_grounder(
     grounder_fn,
     raw_value: str,
@@ -169,6 +216,8 @@ def ground_all_fields(
         if not raw_value:
             match = _make_none_match(field, raw_value, ontology)
         elif _is_fallback_value(field, raw_value):
+            match = _make_fallback_match(field, raw_value, ontology)
+        elif field == "data_type" and _is_data_type_allowlisted(raw_value, ontology_config):
             match = _make_fallback_match(field, raw_value, ontology)
         elif field == "cell_line" and is_cell_line_cell_type(raw_value):
             match = _make_fallback_match(field, raw_value, ontology)

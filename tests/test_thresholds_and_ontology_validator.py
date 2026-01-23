@@ -102,3 +102,94 @@ def test_low_confidence_grounder(monkeypatch) -> None:
     }
     _, failures = ground_all_fields(llm_output, "", {})
     assert failures == {"data_type": ONTOLOGY_LOW_CONFIDENCE_DATA_TYPE}
+
+
+def test_microarray_allowlist_enabled_short_circuits_grounder(monkeypatch) -> None:
+    called = {"value": False}
+
+    def dummy_ground_data_type(raw_value, context_text, config):
+        called["value"] = True
+        return OntologyMatch(
+            field="data_type",
+            raw_value=raw_value,
+            ontology="Experimental Factor Ontology",
+            status="NO_MATCH",
+            matched_term_id=None,
+            matched_label=None,
+            matched_source=None,
+            match_type="none",
+            score=None,
+            alternates=[],
+        )
+
+    monkeypatch.setattr(
+        data_type_grounder,
+        "ground_data_type",
+        dummy_ground_data_type,
+        raising=False,
+    )
+
+    llm_output = {
+        "data_type": "Microarray",
+        "tissue_type": "Unknown",
+        "cell_line": "No",
+        "disease": "Healthy",
+    }
+    config = {
+        "ontology": {
+            "data_type": {
+                "fallback_allowlist_enabled": True,
+                "fallback_allowlist": ["Microarray"],
+            }
+        }
+    }
+    matches, failures = ground_all_fields(llm_output, "", config)
+    assert failures == {}
+    assert matches["data_type"].status == "FALLBACK"
+    assert matches["data_type"].match_type == "fallback"
+    assert called["value"] is False
+
+
+def test_microarray_allowlist_disabled_uses_grounder(monkeypatch) -> None:
+    called = {"value": False}
+
+    def dummy_ground_data_type(raw_value, context_text, config):
+        called["value"] = True
+        return OntologyMatch(
+            field="data_type",
+            raw_value=raw_value,
+            ontology="Experimental Factor Ontology",
+            status="NO_MATCH",
+            matched_term_id=None,
+            matched_label=None,
+            matched_source=None,
+            match_type="none",
+            score=None,
+            alternates=[],
+        )
+
+    monkeypatch.setattr(
+        data_type_grounder,
+        "ground_data_type",
+        dummy_ground_data_type,
+        raising=False,
+    )
+
+    llm_output = {
+        "data_type": "Microarray",
+        "tissue_type": "Unknown",
+        "cell_line": "No",
+        "disease": "Healthy",
+    }
+    config = {
+        "ontology": {
+            "data_type": {
+                "fallback_allowlist_enabled": False,
+                "fallback_allowlist": ["Microarray"],
+            }
+        }
+    }
+    matches, failures = ground_all_fields(llm_output, "", config)
+    assert failures == {"data_type": ONTOLOGY_NO_MATCH_DATA_TYPE}
+    assert matches["data_type"].status == "NO_MATCH"
+    assert called["value"] is True
