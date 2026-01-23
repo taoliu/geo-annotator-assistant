@@ -36,12 +36,6 @@ def _build_failures_by_field(state_dict: Dict[str, Any]) -> Dict[str, list[str]]
 
 
 def _resolve_primary_failure(state_dict: Dict[str, Any]) -> str | None:
-    repair_history = state_dict.get("repair_history") or []
-    for entry in repair_history:
-        if isinstance(entry, dict):
-            failure_code = entry.get("failure_code")
-            if failure_code:
-                return failure_code
     failures_by_field = _build_failures_by_field(state_dict)
     if failures_by_field:
         try:

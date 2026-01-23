@@ -93,6 +93,39 @@ def test_disease_inferred_without_evidence_repairs(monkeypatch) -> None:
     )
 
 
+def test_primary_failure_cleared_after_repair(monkeypatch) -> None:
+    cfg = _load_stub_config()
+    record = {
+        "gsm_accession": "GSM000223",
+        "gse_accession": "GSE000112",
+        "context_text": "Primary liver tissue profiled with RNA-seq.",
+    }
+
+    outputs = [
+        _make_output(disease="Hepatocellular carcinoma"),
+        _make_output(disease="Healthy"),
+    ]
+    fake_client = FakeLLMClient(outputs)
+    monkeypatch.setattr(
+        run_single_module,
+        "create_llm_client",
+        lambda _cfg: fake_client,
+    )
+    monkeypatch.setattr(
+        run_single_module,
+        "ground_all_fields",
+        lambda *_args, **_kwargs: ({}, {}),
+    )
+
+    _, audit_record, flagged = run_single_from_context_record(record, cfg)
+
+    assert flagged is False
+    assert audit_record["final_decision"] == "ACCEPT"
+    assert audit_record["flags"] == []
+    rationale = audit_record.get("rationale") or {}
+    assert rationale.get("primary_failure") is None
+
+
 def test_cell_line_inferred_without_evidence_repairs(monkeypatch) -> None:
     cfg = _load_stub_config()
     record = {
