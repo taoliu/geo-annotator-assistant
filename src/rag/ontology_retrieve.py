@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import os
 import re
 from typing import List, Optional, Sequence
@@ -96,6 +97,20 @@ def _coerce_synonyms(value) -> List[str]:
         s = value.strip()
         if not s:
             return []
+        if s.startswith("[") and s.endswith("]"):
+            try:
+                parsed = json.loads(s)
+            except json.JSONDecodeError:
+                parsed = None
+            if isinstance(parsed, list):
+                return [
+                    str(item).strip()
+                    for item in parsed
+                    if item is not None and str(item).strip()
+                ]
+            if isinstance(parsed, str):
+                parsed_value = parsed.strip()
+                return [parsed_value] if parsed_value else []
         if "," in s:
             parts = [p.strip() for p in s.split(",")]
             return [p for p in parts if p]

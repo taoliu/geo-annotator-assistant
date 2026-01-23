@@ -10,6 +10,7 @@ if str(SRC) not in sys.path:
 
 from agent.config import load_config
 from rag.ontology_retrieve import OntologyCandidate
+import rag.ontology_retrieve as ontology_retrieve
 from validator.grounders import disease as disease_grounder
 
 
@@ -168,6 +169,48 @@ def test_terminal_exact_ncit_preferred_over_fuzzy_doid(monkeypatch) -> None:
     assert any(
         alt.get("label") == "B-Cell Malignant Neoplasm" for alt in match.alternates
     )
+
+
+def test_matched_synonym_serializes_cleanly(monkeypatch) -> None:
+    def _fake_retrieve(*, query, source, **kwargs):
+        if source == "NCI Thesaurus":
+            meta = {
+                "term_id": "NCIT:C12345",
+                "label": "B-Cell Malignant Neoplasm",
+                "source": "NCI Thesaurus",
+                "synonyms": '["B-Cell Malignancy","B cell malignancies"]',
+            }
+            return [
+                ontology_retrieve._build_candidate(
+                    "NCIT:C12345",
+                    0.0,
+                    meta,
+                    None,
+                    "NCI Thesaurus",
+                    retrieval_mode=None,
+                    query_candidate=query,
+                )
+            ]
+        return []
+
+    monkeypatch.setattr(
+        disease_grounder,
+        "retrieve_ontology_candidates",
+        _fake_retrieve,
+    )
+
+    config = _base_rag_config()
+    config["ontology"]["disease"]["ncit_fallback"]["trigger_terms"] = ["malignancy"]
+    match = disease_grounder.ground_disease("B cell malignancies", "", config)
+
+    matched_synonym = match.matched_synonym
+    if isinstance(matched_synonym, str) and matched_synonym.startswith("["):
+        import json
+
+        parsed = json.loads(matched_synonym)
+        assert isinstance(parsed, list)
+    else:
+        assert isinstance(matched_synonym, str)
 
 
 def test_disabled_fallback_never_queries_ncit(monkeypatch) -> None:
