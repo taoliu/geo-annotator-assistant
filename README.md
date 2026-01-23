@@ -1,127 +1,159 @@
 # GEO GSM Annotator Agent
 
-A deterministic, auditable system for extracting and standardizing **sample-level (GSM)** metadata from the NCBI Gene Expression Omnibus (GEO).
+A deterministic, audit-first system for annotating and standardizing **GEO sample-level (GSM)** metadata with explicit human oversight.
 
 ---
 
-## Overview
+## What this project does
 
-The GEO GSM Annotator Agent combines large language models (LLMs) with strict
-deterministic validation, ontology grounding, and bounded repair loops to
-produce **reliable, reviewable GSM annotations**.
+GEO GSM Annotator Agent processes GEO samples (GSMs) and produces a **fixed, standardized metadata record** for each sample.
 
-The system is designed to:
+Key properties:
 
-* scale to large GSEs,
-* avoid silent inference,
-* preserve auditability,
-* and support explicit human oversight.
+* Uses LLMs for **proposal generation only**
+* Makes **deterministic decisions** via validation and routing logic
+* Applies **ontology grounding for validation and normalization**, not inference
+* Supports **bounded repair loops** for common failures
+* Emits **structured audit artifacts** for every decision
+* Allows **explicit, session-only human overrides**
 
----
-
-## Key Properties
-
-* **Deterministic pipeline** — LLMs propose; deterministic logic decides
-* **Fixed output schema** — exactly 8 fields per GSM
-* **Evidence-first validation** — unsupported inference is rejected or repaired
-* **Ontology grounding** — normalization and confidence assessment only
-* **Deterministic-first retrieval** — exact matches before vector fallback
-* **Auditable execution** — full structured audit artifacts
-* **No learning or persistence** — by design
+The system is designed for **correctness, transparency, and curator trust**.
 
 ---
 
-## Output Schema (Invariant)
+## Output contract (invariant)
 
-Each GSM record produces exactly the following fields:
+Each GSM produces **exactly 8 output fields**:
 
+* `gse_accession`
+* `gsm_accession`
+* `data_type`
+* `organism`
+* `tissue_type`
+* `cell_line`
+* `disease`
+* `treatment`
+
+No additional fields may appear in final outputs. Ontology IDs and diagnostics are recorded only in audit artifacts.
+
+---
+
+## High-level pipeline
+
+1. Context ingestion
+2. Prompt construction
+3. LLM proposal generation
+4. Deterministic validation
+5. Ontology grounding (validation only)
+6. Decision routing
+7. Bounded repair (if needed)
+8. Final decision
+9. Audit emission
+
+The pipeline order is fixed and must not be altered.
+
+---
+
+## Architecture and governance
+
+This repository follows a strict separation of concerns:
+
+* **Whitepaper** (`docs/whitepaper.md`): architectural law and invariants
+* **Milestones** (`docs/milestones/`): medium-term system state
+* **Checkpoints** (`docs/checkpoints/`): session reset anchors
+* **Tickets** (`docs/tickets/`): short-term, permitted work
+
+If a change conflicts with the whitepaper, it is not allowed.
+
+---
+
+## Curator UI (v0.7)
+
+The curator UI is designed to expose backend decisions clearly without reinterpreting them.
+
+Key features:
+
+* Table-first interface for large GSEs
+* GSM detail inspection via modal popups
+* Field status dashboard (locked, canonicalized, ambiguous, overridden)
+* Structured evidence panels for ontology grounding
+* Safe, session-only override workflows
+* Table-level triage and filters
+
+The UI is non-authoritative and never alters backend logic.
+
+---
+
+## Command-line usage
+
+### Backend annotation
+
+```bash
+geo-gsm-annotate run-gse --gse GSEXXXXX
 ```
-gse_accession
-gsm_accession
-data_type
-organism
-tissue_type
-cell_line
-disease
-treatment
+
+Other backend subcommands exist for single GSM runs and diagnostics. See `geo-gsm-annotate --help`.
+
+### Term standardization utility
+
+```bash
+geo-gsm-annotate standardize-terms -i curated.jsonl
 ```
 
-This schema is immutable within v0.x.
+This command applies **ontology grounding and canonicalization only**, without LLMs, repair loops, or learning.
 
 ---
 
-## Ontology Grounding (v0.6+)
+## Overrides and exports
 
-Ontology grounding is used for **validation and normalization**, not inference.
+* Overrides are explicit, session-only inputs
+* Overrides do not retrigger inference, validation, or grounding
+* Exported overrides are deterministic and auditable
 
-Current behavior:
-
-* Deterministic exact matches are preferred
-* Vector similarity search is fallback-only
-* Terminal exact matches may:
-
-  * canonicalize output labels
-  * lock fields against later repair (config-gated)
-* Disease grounding uses a controlled fallback:
-
-  * Human Disease Ontology (DOID) primary
-  * NCIT secondary, gated by malignant-neoplasm lexical triggers
+Overrides are treated as curator judgments, not learned state.
 
 ---
 
-## Curator UI
+## What this project does not do
 
-A local curator UI is available with the following characteristics:
-
-* Read-only by default
-* Evidence-driven field highlighting
-* Session-only editing
-* Deterministic export of `overrides.jsonl`
-
-The UI introduces no persistence or learning.
+* No schema expansion
+* No learning from human edits
+* No persistence of UI state
+* No ontology mutation
+* No autonomous annotation
 
 ---
 
-## Repository Structure (Simplified)
+## Development workflow
 
-```
-config/          # configuration examples
-src/             # backend implementation
-docs/            # whitepaper, milestones, checkpoints, tickets
+* All work must be ticketed under `docs/tickets/`
+* Backend semantics are frozen post-v0.6
+* UI changes must not introduce backend logic
+* Tests are required for all changes
+
+Run tests with:
+
+```bash
+uv run pytest -q
 ```
 
 ---
 
-## Documentation
+## Getting started
 
-* **Architecture:** `docs/whitepaper.md`
-* **Milestones:** `docs/milestones/`
-* **Checkpoints:** `docs/checkpoints/`
-* **Tickets:** `docs/tickets/`
-
-New contributors should start with the whitepaper.
-
----
-
-## Development Model
-
-* Architectural rules are defined in the whitepaper
-* All changes are ticket-driven
-* ChatGPT acts as architect and reviewer
-* Codex CLI handles implementation
-
----
-
-## Status
-
-* Backend: stable and frozen (post-v0.6)
-* Current focus: curator UI refinement (v0.7)
+1. Read `docs/whitepaper.md`
+2. Read the latest milestone document
+3. Check the most recent checkpoint
+4. Start new work via a ticket
 
 ---
 
 ## License
 
-MIT license.
+See `LICENSE`.
 
 ---
 
+## Summary
+
+GEO GSM Annotator Agent is a **human-governed, deterministic annotation system** designed to make large-scale GSM metadata curation reliable, auditable, and scalable.
