@@ -38,6 +38,47 @@ No additional fields may appear in final outputs. Ontology IDs and diagnostics a
 
 ---
 
+## Output artifacts
+
+The pipeline emits multiple artifacts, but only one is **canonical** and schema-governed. UI-facing and diagnostic files are derived and **must not** be treated as final output.
+
+* **`annotations.jsonl`**
+  * Canonical final output
+  * Exactly 8 fields per GSM:
+    * `gse_accession`
+    * `gsm_accession`
+    * `data_type`
+    * `organism`
+    * `tissue_type`
+    * `cell_line`
+    * `disease`
+    * `treatment`
+  * Governed by the whitepaper's output contract
+
+* **`audit.jsonl`**
+  * Authoritative diagnostics and execution trace
+  * Validation, ontology grounding, repair history, decision routing
+  * Not schema-restricted
+
+* **`curation.jsonl` / `curation.tsv`**
+  * UI-facing, non-canonical, derived artifacts
+  * May include decisions, flags, ontology status summaries
+  * Must not be treated as schema-governed final output
+
+* **`flagged.jsonl`**
+  * Subset view of GSMs requiring curator attention
+  * Derived, non-authoritative
+
+* **`evidence.jsonl`**
+  * Structured evidence snapshots for UI and review
+  * Read-only, diagnostic
+
+* **`gse_consistency.json`**
+  * Advisory cross-GSM diagnostics
+  * Must not influence GSM-level decisions
+
+---
+
 ## High-level pipeline
 
 1. Context ingestion
