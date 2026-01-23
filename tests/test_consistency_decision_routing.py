@@ -61,7 +61,7 @@ def test_jsonl_stub_does_not_auto_flag_consistency(tmp_path: Path) -> None:
     jsonl_path = tmp_path / "contexts.jsonl"
     jsonl_path.write_text(json.dumps(record) + "\n", encoding="utf-8")
 
-    annotations, audits, flagged, summary, _ = run_gse_from_jsonl(
+    annotations, audits, flagged, summary, _, _ = run_gse_from_jsonl(
         str(jsonl_path), cfg
     )
 

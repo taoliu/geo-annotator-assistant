@@ -26,6 +26,47 @@ def _resolve_gse_accession(annotations: List[Dict[str, Any]]) -> str:
     return "Unknown"
 
 
+def _sorted_values_from_counts(counts: Dict[str, int]) -> List[str]:
+    return [
+        value
+        for value, _ in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    ]
+
+
+def apply_gse_field_values_summary(
+    annotations: List[Dict[str, Any]],
+    cfg: dict,
+) -> Dict[str, Any] | None:
+    gse_cfg = _get_gse_consistency_cfg(cfg)
+    if not gse_cfg.get("enabled", True):
+        return None
+
+    fields = gse_cfg.get("fields")
+    if not isinstance(fields, list):
+        fields = []
+    ignore_values = gse_cfg.get("ignore_values")
+    if not isinstance(ignore_values, list):
+        ignore_values = []
+    ignore_set = set(value for value in ignore_values if isinstance(value, str))
+
+    report_fields: Dict[str, Any] = {}
+    for field in fields:
+        counts: Dict[str, int] = {}
+        for record in annotations:
+            value = record.get(field)
+            if not isinstance(value, str) or value in ignore_set:
+                continue
+            counts[value] = counts.get(value, 0) + 1
+        report_fields[field] = _sorted_values_from_counts(counts)
+
+    return {
+        "gse_accession": _resolve_gse_accession(annotations),
+        "n_total": len(annotations),
+        "ignore_values": ignore_values,
+        "fields": report_fields,
+    }
+
+
 def apply_gse_consistency_postpass(
     annotations: List[Dict[str, Any]],
     audits: List[Dict[str, Any]],

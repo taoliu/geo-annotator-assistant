@@ -139,6 +139,7 @@ def main(argv: list[str] | None = None) -> None:
         overrides = load_overrides(overrides_path) if overrides_path else {}
 
         gse_report = None
+        gse_values = None
         if args.gsm:
             annotation, audit, is_flagged = run_single_gsm(args.gsm, config)
             annotations = [annotation]
@@ -153,17 +154,32 @@ def main(argv: list[str] | None = None) -> None:
             gsm_ids = _read_gsm_file(args.gsm_file)
             annotations, audits, flagged, summary = run_batch(gsm_ids, config)
         elif args.jsonl:
-            annotations, audits, flagged, summary, gse_report = run_gse_from_jsonl(
-                args.jsonl, config
-            )
+            (
+                annotations,
+                audits,
+                flagged,
+                summary,
+                gse_report,
+                gse_values,
+            ) = run_gse_from_jsonl(args.jsonl, config)
         elif args.gse:
-            annotations, audits, flagged, summary, gse_report = run_gse_from_accession(
-                args.gse, config, args.output_dir
-            )
+            (
+                annotations,
+                audits,
+                flagged,
+                summary,
+                gse_report,
+                gse_values,
+            ) = run_gse_from_accession(args.gse, config, args.output_dir)
         elif args.gse_soft:
-            annotations, audits, flagged, summary, gse_report = run_gse_from_soft_file(
-                args.gse_soft, config, args.output_dir
-            )
+            (
+                annotations,
+                audits,
+                flagged,
+                summary,
+                gse_report,
+                gse_values,
+            ) = run_gse_from_soft_file(args.gse_soft, config, args.output_dir)
         else:
             raise ValueError("No input mode selected.")
 
@@ -181,8 +197,9 @@ def main(argv: list[str] | None = None) -> None:
                 )
             if overrides:
                 apply_overrides_to_outputs(overrides, annotations, audits, flagged)
-            extra_json = (
-                {"gse_consistency.json": gse_report} if gse_report else None
+            extra_json = {"gse_consistency.json": gse_report} if gse_report else None
+            extra_jsonl = (
+                {"gse_field_values.jsonl": [gse_values]} if gse_values else None
             )
             output_paths = write_run_outputs(
                 output_dir,
@@ -191,6 +208,7 @@ def main(argv: list[str] | None = None) -> None:
                 flagged,
                 suggestions=suggestions,
                 extra_json=extra_json,
+                extra_jsonl=extra_jsonl,
             )
 
         _print_summary(summary, output_paths, args.dry_run)

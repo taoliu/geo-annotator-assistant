@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from agent.gse_postpass import apply_gse_consistency_postpass
+from agent.gse_postpass import (
+    apply_gse_consistency_postpass,
+    apply_gse_field_values_summary,
+)
 from agent.run_single import run_single_from_context_record
 from llm.factory import create_llm_client
 from ingest.read_context_jsonl import iter_gsm_contexts
@@ -61,7 +64,7 @@ def _build_failure_audit(record: dict, error_message: str) -> Dict[str, str]:
 def run_gse_from_jsonl(
     jsonl_path: str,
     cfg: dict,
-) -> tuple[list[dict], list[dict], list[dict], dict, dict | None]:
+) -> tuple[list[dict], list[dict], list[dict], dict, dict | None, dict | None]:
     annotations: List[Dict[str, Any]] = []
     audits: List[Dict[str, Any]] = []
     flagged: List[Dict[str, Any]] = []
@@ -101,14 +104,15 @@ def run_gse_from_jsonl(
         "n_flagged": n_flagged,
     }
     gse_report = apply_gse_consistency_postpass(annotations, audits, cfg)
-    return annotations, audits, flagged, summary, gse_report
+    gse_values = apply_gse_field_values_summary(annotations, cfg)
+    return annotations, audits, flagged, summary, gse_report, gse_values
 
 
 def run_gse_from_accession(
     gse_accession: str,
     cfg: dict,
     work_dir: str,
-) -> tuple[list[dict], list[dict], list[dict], dict, dict | None]:
+) -> tuple[list[dict], list[dict], list[dict], dict, dict | None, dict | None]:
     paths_cfg = cfg.get("paths") if isinstance(cfg.get("paths"), dict) else {}
     jsonl_path = soft_to_context_jsonl(
         gse_accession=gse_accession,
@@ -122,7 +126,7 @@ def run_gse_from_soft_file(
     soft_path: str,
     cfg: dict,
     work_dir: str,
-) -> tuple[list[dict], list[dict], list[dict], dict, dict | None]:
+) -> tuple[list[dict], list[dict], list[dict], dict, dict | None, dict | None]:
     jsonl_path = soft_to_context_jsonl(
         soft_path=soft_path,
         work_dir=work_dir,

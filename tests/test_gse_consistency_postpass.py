@@ -9,7 +9,10 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from agent.config import load_config
-from agent.gse_postpass import apply_gse_consistency_postpass
+from agent.gse_postpass import (
+    apply_gse_consistency_postpass,
+    apply_gse_field_values_summary,
+)
 
 
 def _base_annotation(
@@ -98,3 +101,22 @@ def test_gse_consistency_requires_dominant_fraction() -> None:
     organism_report = report["fields"]["organism"]
     assert organism_report["outliers"] == []
     assert all("gse_outlier_organism" not in audit for audit in audits)
+
+
+def test_gse_field_values_summary_ordering() -> None:
+    cfg = load_config(str(ROOT / "config" / "example_config.yaml"))
+
+    annotations = [
+        _base_annotation("GSM1", "GSE4", tissue_type="Liver"),
+        _base_annotation("GSM2", "GSE4", tissue_type="Heart"),
+        _base_annotation("GSM3", "GSE4", tissue_type="Liver"),
+        _base_annotation("GSM4", "GSE4", tissue_type="Brain"),
+        _base_annotation("GSM5", "GSE4", tissue_type="Heart"),
+        _base_annotation("GSM6", "GSE4", tissue_type="Unknown"),
+    ]
+
+    report = apply_gse_field_values_summary(annotations, cfg)
+
+    assert report is not None
+    tissue_values = report["fields"]["tissue_type"]
+    assert tissue_values == ["Heart", "Liver", "Brain"]

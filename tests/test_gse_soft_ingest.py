@@ -47,7 +47,7 @@ def test_run_gse_from_soft_file_local_path(
 
     _patch_parser(monkeypatch, "GSE999", "GSM001")
     cfg = _load_stub_config()
-    annotations, audits, flagged, summary, report = run_gse_from_soft_file(
+    annotations, audits, flagged, summary, report, values = run_gse_from_soft_file(
         str(soft_path),
         cfg,
         str(tmp_path),
@@ -62,6 +62,7 @@ def test_run_gse_from_soft_file_local_path(
     assert flagged == []
     assert len(audits) == 1
     assert report is not None
+    assert values is not None
 
 
 def test_run_gse_from_accession_uses_cache(
@@ -83,7 +84,7 @@ def test_run_gse_from_accession_uses_cache(
 
     cfg = _load_stub_config()
     cfg.setdefault("paths", {})["soft_cache_dir"] = str(cache_dir)
-    annotations, _, flagged, summary, _ = run_gse_from_accession(
+    annotations, _, flagged, summary, _, _ = run_gse_from_accession(
         gse_accession,
         cfg,
         str(tmp_path),

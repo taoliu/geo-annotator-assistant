@@ -301,6 +301,7 @@ def write_run_outputs(
     flagged: List[Dict[str, Any]],
     suggestions: Optional[List[Dict[str, Any]]] = None,
     extra_json: Optional[Dict[str, Dict[str, Any]]] = None,
+    extra_jsonl: Optional[Dict[str, List[Dict[str, Any]]]] = None,
 ) -> Dict[str, str]:
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -337,6 +338,12 @@ def write_run_outputs(
         for name, payload in extra_json.items():
             extra_path = output_path / name
             write_json(str(extra_path), payload)
+            output_paths[name] = str(extra_path)
+
+    if extra_jsonl:
+        for name, records in extra_jsonl.items():
+            extra_path = output_path / name
+            write_jsonl(str(extra_path), records)
             output_paths[name] = str(extra_path)
 
     return output_paths
