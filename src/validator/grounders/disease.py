@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 import logging
+import re
 
 from rag.ontology_retrieve import OntologyIndexUnavailable, retrieve_ontology_candidates
 from validator.grounders.ontology_grounder import (
@@ -21,11 +22,63 @@ from validator.ontology_match import (
 
 _LOGGER = logging.getLogger(__name__)
 _NCIT_SOURCE = "NCI Thesaurus"
+_TRIGGER_TOKEN_RE = re.compile(r"[a-z0-9]+")
 
 
 def should_query_ncit(raw_label: str, trigger_terms: list[str]) -> bool:
-    s = (raw_label or "").lower()
-    return any(term in s for term in trigger_terms)
+    if not trigger_terms:
+        return False
+    normalized_label, _ = _normalize_trigger_text(raw_label)
+    if not normalized_label:
+        return False
+    for term in _expand_trigger_terms(trigger_terms):
+        if term and term in normalized_label:
+            return True
+    return False
+
+
+def _normalize_trigger_text(text: str) -> tuple[str, list[str]]:
+    normalized = " ".join(_TRIGGER_TOKEN_RE.findall((text or "").lower()))
+    tokens = normalized.split() if normalized else []
+    return normalized, tokens
+
+
+def _singularize_token(token: str) -> str:
+    if token.endswith("ies") and len(token) > 3:
+        return f"{token[:-3]}y"
+    if token.endswith("es") and len(token) > 2:
+        return token[:-2]
+    if token.endswith("s") and len(token) > 3:
+        return token[:-1]
+    return token
+
+
+def _pluralize_token(token: str) -> str:
+    if not token:
+        return token
+    if token.endswith("y") and len(token) > 2 and token[-2] not in "aeiou":
+        return f"{token[:-1]}ies"
+    if token.endswith(("s", "x", "z", "ch", "sh")):
+        return f"{token}es"
+    return f"{token}s"
+
+
+def _expand_trigger_terms(trigger_terms: list[str]) -> set[str]:
+    expanded: set[str] = set()
+    for term in trigger_terms:
+        normalized, tokens = _normalize_trigger_text(term)
+        if not normalized:
+            continue
+        expanded.add(normalized)
+        if not tokens:
+            continue
+        last = tokens[-1]
+        singular = _singularize_token(last)
+        plural = _pluralize_token(last)
+        for variant in {singular, plural}:
+            if variant and variant != last:
+                expanded.add(" ".join(tokens[:-1] + [variant]))
+    return expanded
 
 
 def _extract_ncit_config(config: Optional[Dict[str, Any]]) -> tuple[bool, list[str]]:

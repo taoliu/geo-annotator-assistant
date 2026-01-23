@@ -198,13 +198,53 @@ def normalize_exact_match_text(text: str) -> str:
     return normalized
 
 
-def _find_exact_synonym(normalized_raw: str, synonyms: List[str]) -> Optional[str]:
+def _singularize_token(token: str) -> str:
+    if token.endswith("ies") and len(token) > 3:
+        return f"{token[:-3]}y"
+    if token.endswith("es") and len(token) > 2:
+        return token[:-2]
+    if token.endswith("s") and len(token) > 3:
+        return token[:-1]
+    return token
+
+
+def _pluralize_token(token: str) -> str:
+    if not token:
+        return token
+    if token.endswith("y") and len(token) > 2 and token[-2] not in "aeiou":
+        return f"{token[:-1]}ies"
+    if token.endswith(("s", "x", "z", "ch", "sh")):
+        return f"{token}es"
+    return f"{token}s"
+
+
+def _expand_exact_variants(normalized_raw: str) -> set[str]:
+    variants: set[str] = set()
     if not normalized_raw:
+        return variants
+    variants.add(normalized_raw)
+    tokens = _tokenize(normalized_raw)
+    if not tokens:
+        return variants
+    last = tokens[-1]
+    singular = _singularize_token(last)
+    plural = _pluralize_token(last)
+    for variant in {singular, plural}:
+        if variant and variant != last:
+            variants.add(" ".join(tokens[:-1] + [variant]))
+    return variants
+
+
+def _find_exact_synonym(
+    normalized_raw_variants: set[str],
+    synonyms: List[str],
+) -> Optional[str]:
+    if not normalized_raw_variants:
         return None
     for synonym in synonyms:
         if not isinstance(synonym, str):
             continue
-        if normalize_exact_match_text(synonym) == normalized_raw:
+        if normalize_exact_match_text(synonym) in normalized_raw_variants:
             return synonym
     return None
 
@@ -237,6 +277,7 @@ def choose_best_ontology_candidate(
 
     cleaned_raw = clean_raw_value_for_ontology(raw_value)
     normalized_raw_exact = normalize_exact_match_text(cleaned_raw)
+    normalized_raw_variants = _expand_exact_variants(normalized_raw_exact)
     normalized_raw = _normalize_text(cleaned_raw)
     raw_tokens = _tokenize(normalized_raw)
 
@@ -262,12 +303,12 @@ def choose_best_ontology_candidate(
             confidence = 1.0
             match_type = "label_norm_exact"
             matched_via = "label_norm"
-        elif normalized_raw_exact and normalized_label_exact == normalized_raw_exact:
+        elif normalized_label_exact and normalized_label_exact in normalized_raw_variants:
             confidence = 1.0
             match_type = "label_exact"
             matched_via = "label"
         else:
-            matched_synonym = _find_exact_synonym(normalized_raw_exact, synonyms)
+            matched_synonym = _find_exact_synonym(normalized_raw_variants, synonyms)
             if matched_synonym is not None:
                 confidence = 1.0
                 match_type = "synonym_exact"
