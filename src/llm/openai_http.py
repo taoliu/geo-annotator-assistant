@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 
 from llm.base import LLMRequest, LLMResult
 from llm.http_utils import LLMTransportError, post_json_with_retries
-from llm.text_postprocess import apply_stop
+from llm.text_postprocess import apply_stop, remove_thinking
 
 
 class OpenAIHttpClient:
@@ -185,6 +185,7 @@ class OpenAIHttpClient:
             transport_meta["http_status"] = transport_meta.get("last_http_status")
 
         text = self._parse_text(data)
+        text = remove_thinking(text)
         text = apply_stop(text, request.stop)
         usage = data.get("usage") if isinstance(data, dict) else None
         return LLMResult(

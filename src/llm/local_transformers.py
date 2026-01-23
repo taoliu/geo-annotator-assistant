@@ -6,7 +6,7 @@ import time
 from typing import Any, Dict, Optional
 
 from llm.base import LLMRequest, LLMResult, compute_request_fingerprint
-from llm.text_postprocess import apply_stop
+from llm.text_postprocess import apply_stop, remove_thinking
 
 
 class LocalTransformersClient:
@@ -126,6 +126,10 @@ class LocalTransformersClient:
         return input_ids, attention_mask
 
     @staticmethod
+    def _remove_thinking(text: str) -> str:
+        return remove_thinking(text)
+
+    @staticmethod
     def _apply_stop(text: str, stop_list: list[str]) -> str:
         return apply_stop(text, stop_list)
 
@@ -178,6 +182,7 @@ class LocalTransformersClient:
         generated_ids = output_ids[0][input_ids.shape[-1] :]
         text = self._tokenizer.decode(generated_ids, skip_special_tokens=False)
 
+        text = self._remove_thinking(text)
         stop_list = request.stop if request.stop is not None else self._stop
         if stop_list:
             text = self._apply_stop(text, stop_list)

@@ -217,12 +217,8 @@ testing_data/
 gat_llama3_3b_it_qlora/
 ontology_chroma_db
 # 
-gat_llama3_3b_it_qlora_mlx/chat_template.jinja
-gat_llama3_3b_it_qlora_mlx/config.json
-gat_llama3_3b_it_qlora_mlx/generation_config.json
-gat_llama3_3b_it_qlora_mlx/model.safetensors
-gat_llama3_3b_it_qlora_mlx/model.safetensors.index.json
-gat_llama3_3b_it_qlora_mlx/README.md
-gat_llama3_3b_it_qlora_mlx/special_tokens_map.json
-gat_llama3_3b_it_qlora_mlx/tokenizer_config.json
-gat_llama3_3b_it_qlora_mlx/tokenizer.json
+gat_llama3_3b_it_qlora_mlx/
+gat_llama3_8b_it_qlora_r4_mlx/
+gat_llama3_3b_it_qlora_mlx_r4/
+gat_qwen3-14b_qlora_r4_mlx/
+
