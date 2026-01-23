@@ -213,6 +213,44 @@ def test_matched_synonym_serializes_cleanly(monkeypatch) -> None:
         assert isinstance(matched_synonym, str)
 
 
+def test_strip_leading_model_token_for_disease(monkeypatch) -> None:
+    calls: list[tuple[str, str]] = []
+
+    def _fake_retrieve(*, query, source, **kwargs):
+        calls.append((query, source))
+        return [
+            OntologyCandidate(
+                term_id="DOID:336",
+                label="multiple myeloma",
+                source="Human Disease Ontology",
+                definition=None,
+                synonyms=[],
+                ancestors=[],
+                distance=0.0,
+                doc_text=None,
+                retrieval_mode=None,
+                query_candidate=query,
+            )
+        ]
+
+    monkeypatch.setattr(
+        disease_grounder,
+        "retrieve_ontology_candidates",
+        _fake_retrieve,
+    )
+
+    config = _base_rag_config()
+    config["ontology"]["disease"]["ncit_fallback"]["enabled"] = False
+    match = disease_grounder.ground_disease("5TGM1 multiple myeloma", "", config)
+
+    assert calls[0][0] == "multiple myeloma"
+    assert match.status == "MATCHED"
+    assert match.score == 1.0
+    assert match.match_type in {"label_exact", "label_norm_exact"}
+    assert match.matched_label == "multiple myeloma"
+    assert match.query_used == "multiple myeloma"
+
+
 def test_disabled_fallback_never_queries_ncit(monkeypatch) -> None:
     calls: list[str] = []
     monkeypatch.setattr(

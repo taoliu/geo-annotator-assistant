@@ -102,6 +102,7 @@ class OntologyMatch:
     matched_via: Optional[str] = None
     matched_synonym: Optional[str] = None
     vector_fallback_skipped: Optional[bool] = None
+    query_used: Optional[str] = None
     ncit_fallback_enabled: Optional[bool] = None
     ncit_triggered: Optional[bool] = None
     ncit_trigger_terms_used: Optional[List[str]] = None
@@ -130,6 +131,7 @@ class OntologyMatch:
             "matched_via": self.matched_via,
             "matched_synonym": self.matched_synonym,
             "vector_fallback_skipped": self.vector_fallback_skipped,
+            "query_used": self.query_used,
             "ncit_fallback_enabled": self.ncit_fallback_enabled,
             "ncit_triggered": self.ncit_triggered,
             "ncit_trigger_terms_used": (

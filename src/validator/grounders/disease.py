@@ -23,6 +23,7 @@ from validator.ontology_match import (
 _LOGGER = logging.getLogger(__name__)
 _NCIT_SOURCE = "NCI Thesaurus"
 _TRIGGER_TOKEN_RE = re.compile(r"[a-z0-9]+")
+_LEADING_DIGIT_RE = re.compile(r"\d")
 
 
 def should_query_ncit(raw_label: str, trigger_terms: list[str]) -> bool:
@@ -79,6 +80,26 @@ def _expand_trigger_terms(trigger_terms: list[str]) -> set[str]:
             if variant and variant != last:
                 expanded.add(" ".join(tokens[:-1] + [variant]))
     return expanded
+
+
+def _strip_leading_model_token(raw_value: str) -> tuple[str, bool]:
+    tokens = (raw_value or "").strip().split()
+    if len(tokens) < 2:
+        return raw_value, False
+    if not _LEADING_DIGIT_RE.search(tokens[0]):
+        return raw_value, False
+    stripped = " ".join(tokens[1:]).strip()
+    if not stripped:
+        return raw_value, False
+    return stripped, True
+
+
+def _is_terminal_exact_match(match: OntologyMatch) -> bool:
+    return is_terminal_exact(
+        str(match.status or ""),
+        float(match.score or 0.0),
+        str(match.match_type or ""),
+    )
 
 
 def _extract_ncit_config(config: Optional[Dict[str, Any]]) -> tuple[bool, list[str]]:
@@ -155,35 +176,21 @@ def _ground_source(
     return result, terminal_exact, vector_fallback_used
 
 
-def ground_disease(
+def _ground_disease_with_query(
     raw_value: str,
-    context_text: str,
-    config: Optional[Dict[str, Any]],
+    query_value: str,
+    config: Dict[str, Any],
+    *,
+    doid_source: str,
+    ncit_enabled: bool,
+    trigger_terms: list[str],
 ) -> OntologyMatch:
-    del context_text
-    doid_source = _resolve_source("disease", config)
-    if not isinstance(config, dict):
-        return _make_index_unavailable_match(
-            "disease",
-            raw_value,
-            doid_source,
-        )
-    ontology_cfg = config.get("ontology") if isinstance(config.get("ontology"), dict) else {}
-    if not ontology_cfg.get("enabled", False):
-        return _make_index_unavailable_match(
-            "disease",
-            raw_value,
-            doid_source,
-        )
-
-    ncit_enabled, trigger_terms = _extract_ncit_config(config)
-    trigger_possible = bool(trigger_terms)
     attempted_sources = [doid_source]
     thresholds = thresholds_from_config(config)
 
     try:
         doid_result, doid_terminal_exact, doid_vector_fallback = _ground_source(
-            raw_value,
+            query_value,
             doid_source,
             config,
             thresholds,
@@ -199,9 +206,10 @@ def ground_disease(
             "disease",
             raw_value,
             doid_source,
+            query_used=query_value,
             ncit_fallback_enabled=ncit_enabled,
             ncit_triggered=False,
-            ncit_trigger_terms_used=trigger_terms if trigger_possible else [],
+            ncit_trigger_terms_used=trigger_terms if trigger_terms else [],
             attempted_sources=attempted_sources,
             selected_source=doid_source,
             selection_rule="doid_index_unavailable",
@@ -215,9 +223,10 @@ def ground_disease(
             doid_result,
             terminal_exact=doid_terminal_exact,
             vector_fallback_skipped=doid_terminal_exact and not doid_vector_fallback,
+            query_used=query_value,
             ncit_fallback_enabled=ncit_enabled,
             ncit_triggered=False,
-            ncit_trigger_terms_used=trigger_terms if trigger_possible else [],
+            ncit_trigger_terms_used=trigger_terms if trigger_terms else [],
             attempted_sources=attempted_sources,
             selected_source=doid_source,
             selection_rule="doid_terminal_exact",
@@ -231,15 +240,16 @@ def ground_disease(
             doid_result,
             terminal_exact=doid_terminal_exact,
             vector_fallback_skipped=doid_terminal_exact and not doid_vector_fallback,
+            query_used=query_value,
             ncit_fallback_enabled=ncit_enabled,
             ncit_triggered=False,
-            ncit_trigger_terms_used=trigger_terms if trigger_possible else [],
+            ncit_trigger_terms_used=trigger_terms if trigger_terms else [],
             attempted_sources=attempted_sources,
             selected_source=doid_source,
             selection_rule="ncit_disabled",
         )
 
-    if not trigger_possible:
+    if not trigger_terms:
         return _build_match_from_result(
             "disease",
             raw_value,
@@ -247,6 +257,7 @@ def ground_disease(
             doid_result,
             terminal_exact=doid_terminal_exact,
             vector_fallback_skipped=doid_terminal_exact and not doid_vector_fallback,
+            query_used=query_value,
             ncit_fallback_enabled=ncit_enabled,
             ncit_triggered=False,
             ncit_trigger_terms_used=[],
@@ -255,7 +266,7 @@ def ground_disease(
             selection_rule="ncit_trigger_terms_empty",
         )
 
-    if not should_query_ncit(raw_value, trigger_terms):
+    if not should_query_ncit(query_value, trigger_terms):
         return _build_match_from_result(
             "disease",
             raw_value,
@@ -263,6 +274,7 @@ def ground_disease(
             doid_result,
             terminal_exact=doid_terminal_exact,
             vector_fallback_skipped=doid_terminal_exact and not doid_vector_fallback,
+            query_used=query_value,
             ncit_fallback_enabled=ncit_enabled,
             ncit_triggered=False,
             ncit_trigger_terms_used=trigger_terms,
@@ -274,7 +286,7 @@ def ground_disease(
     attempted_sources.append(_NCIT_SOURCE)
     try:
         ncit_result, ncit_terminal_exact, ncit_vector_fallback = _ground_source(
-            raw_value,
+            query_value,
             _NCIT_SOURCE,
             config,
             thresholds,
@@ -293,6 +305,7 @@ def ground_disease(
             doid_result,
             terminal_exact=doid_terminal_exact,
             vector_fallback_skipped=doid_terminal_exact and not doid_vector_fallback,
+            query_used=query_value,
             ncit_fallback_enabled=ncit_enabled,
             ncit_triggered=True,
             ncit_trigger_terms_used=trigger_terms,
@@ -309,6 +322,7 @@ def ground_disease(
             ncit_result,
             terminal_exact=ncit_terminal_exact,
             vector_fallback_skipped=ncit_terminal_exact and not ncit_vector_fallback,
+            query_used=query_value,
             ncit_fallback_enabled=ncit_enabled,
             ncit_triggered=True,
             ncit_trigger_terms_used=trigger_terms,
@@ -327,6 +341,7 @@ def ground_disease(
             ncit_result,
             terminal_exact=ncit_terminal_exact,
             vector_fallback_skipped=ncit_terminal_exact and not ncit_vector_fallback,
+            query_used=query_value,
             ncit_fallback_enabled=ncit_enabled,
             ncit_triggered=True,
             ncit_trigger_terms_used=trigger_terms,
@@ -342,6 +357,7 @@ def ground_disease(
         doid_result,
         terminal_exact=doid_terminal_exact,
         vector_fallback_skipped=doid_terminal_exact and not doid_vector_fallback,
+        query_used=query_value,
         ncit_fallback_enabled=ncit_enabled,
         ncit_triggered=True,
         ncit_trigger_terms_used=trigger_terms,
@@ -349,3 +365,48 @@ def ground_disease(
         selected_source=doid_source,
         selection_rule="score_tie_prefer_doid",
     )
+
+
+def ground_disease(
+    raw_value: str,
+    context_text: str,
+    config: Optional[Dict[str, Any]],
+) -> OntologyMatch:
+    del context_text
+    doid_source = _resolve_source("disease", config)
+    if not isinstance(config, dict):
+        return _make_index_unavailable_match(
+            "disease",
+            raw_value,
+            doid_source,
+            query_used=raw_value,
+        )
+    ontology_cfg = config.get("ontology") if isinstance(config.get("ontology"), dict) else {}
+    if not ontology_cfg.get("enabled", False):
+        return _make_index_unavailable_match(
+            "disease",
+            raw_value,
+            doid_source,
+            query_used=raw_value,
+        )
+
+    ncit_enabled, trigger_terms = _extract_ncit_config(config)
+    query_value, stripped = _strip_leading_model_token(raw_value)
+    match = _ground_disease_with_query(
+        raw_value,
+        query_value,
+        config,
+        doid_source=doid_source,
+        ncit_enabled=ncit_enabled,
+        trigger_terms=trigger_terms,
+    )
+    if stripped and not _is_terminal_exact_match(match):
+        match = _ground_disease_with_query(
+            raw_value,
+            raw_value,
+            config,
+            doid_source=doid_source,
+            ncit_enabled=ncit_enabled,
+            trigger_terms=trigger_terms,
+        )
+    return match
