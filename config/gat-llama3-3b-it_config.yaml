@@ -65,6 +65,10 @@ rag:
           - glioblastoma
           - melanoma
           - blastoma
+    data_type:
+      fallback_allowlist_enabled: false
+      fallback_allowlist:
+        - Microarray
     embedding:
       provider: "langchain_huggingface"
       model_name: "BAAI/bge-base-en-v1.5"
