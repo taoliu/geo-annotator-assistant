@@ -2,31 +2,30 @@
 
 ## 1. Purpose and Scope
 
-The GEO GSM Annotator Agent is a semi-automated system for extracting,
-validating, repairing, and standardizing **sample-level (GSM)** metadata
-from the GEO database using:
+The GEO GSM Annotator Agent is a semi-automated system for extracting, validating, repairing, and standardizing **sample-level (GSM)** metadata from the GEO database.
 
-* large language models (LLMs),
-* deterministic validators,
-* ontology grounding,
-* bounded repair loops,
-* and explicit human overrides.
+The system combines:
 
-This document defines the **long-term architectural intent, invariants,
-and governance rules** of the project.
+* large language models (LLMs) for proposal generation,
+* deterministic validators and decision logic,
+* ontology grounding for normalization and confidence assessment,
+* bounded, field-scoped repair loops,
+* and explicit, auditable human overrides.
+
+This document defines the **long-term architectural invariants and governance rules** of the project.
 
 It is explicitly **not**:
 
 * an implementation guide,
-* an API reference,
 * a UI specification,
+* an API reference,
 * or a configuration manual.
 
 The whitepaper is intended to remain valid across:
 
-* multiple implementation iterations,
+* multiple milestones,
 * multiple AI-assisted development sessions,
-* and multiple contributors (human or AI).
+* and multiple contributors.
 
 ---
 
@@ -35,24 +34,22 @@ The whitepaper is intended to remain valid across:
 The system is governed by the following principles:
 
 1. **LLMs propose; deterministic logic decides**
-   LLMs generate candidate annotations only.
-   All acceptance, repair, fallback, and escalation decisions are deterministic.
+   LLMs may suggest candidate annotations, but all acceptance, repair, fallback, and escalation decisions are deterministic.
 
 2. **Evidence over fluency**
-   A fluent answer without explicit support is worse than an incomplete answer.
-   Unsupported inferences must be detected and resolved.
+   Unsupported inferences are strictly disallowed, regardless of how fluent they appear.
 
 3. **Repair over rejection**
-   Errors are routed to targeted, field-scoped repair whenever possible.
+   Errors are resolved via bounded, field-scoped repair whenever possible.
 
 4. **Auditability over optimization**
-   Every decision must be explainable post hoc through structured audit artifacts.
+   Every decision must be explainable through structured audit artifacts.
 
 5. **Separation of time scales**
 
    * Whitepaper: architectural law
-   * Milestones: system state
-   * Tickets: permitted work
+   * Milestones: medium-term system state
+   * Tickets: permitted short-term work
 
 ---
 
@@ -72,17 +69,17 @@ The agent produces **exactly eight output fields** per GSM record:
 This schema is **immutable** within v0.x.
 
 No additional fields may appear in final outputs.
-Any extra information must be recorded in **audit artifacts** only.
+All auxiliary information must be recorded only in **audit artifacts**.
 
 ---
 
 ## 4. End-to-End Processing Contract (Invariant)
 
-The canonical pipeline is:
+The canonical pipeline order is:
 
 1. Context ingestion
 2. Prompt construction
-3. LLM generation
+3. LLM proposal generation
 4. Format validation
 5. Semantic validation
 6. Ontology grounding
@@ -97,18 +94,18 @@ This ordering is mandatory and must not be altered.
 
 ## 5. Validation and Repair Model (Invariant)
 
-Failures are categorized into deterministic classes:
+Failures are categorized deterministically into:
 
 * format violations
 * semantic inconsistencies
-* unsupported inferences
+* unsupported inference
 * ontology grounding failures
 * cross-field consistency violations
 
 At each iteration:
 
-* **Exactly one primary failure** is selected deterministically
-* A decision table maps it to:
+* exactly one primary failure is selected deterministically,
+* a decision table maps it to one of:
 
   * `ACCEPT`
   * `REPAIR`
@@ -129,21 +126,19 @@ At each iteration:
 
 The system enforces an **evidence-first rule**:
 
-> Unsupported inference must be resolved before ontology confidence
-> or normalization is considered.
+> Unsupported inference must be resolved before ontology confidence or normalization is considered.
 
 Consequences:
 
 * Ontology grounding must never legitimize hallucinated values
 * Repair may neutralize values before ontology is consulted
-* Failure prioritization is deterministic, not prompt-driven
+* Failure prioritization is deterministic and not prompt-driven
 
 ---
 
 ## 7. Ontology Grounding Model (Invariant)
 
-Ontology grounding is a **validation and normalization step**, not a
-generative step.
+Ontology grounding is a **validation and normalization step**, not a generative step.
 
 Invariants:
 
@@ -152,23 +147,19 @@ Invariants:
 * Grounding yields structured outcomes:
 
   * confident match
+  * ambiguous match
   * no match
-  * ambiguous
   * low confidence
 
 ### Terminal exact matches
 
-Grounding may produce **terminal exact matches**, defined as deterministic
-matches with full confidence.
+A terminal exact match is defined as a deterministic match with full confidence.
 
-When a terminal exact match is identified:
+When identified:
 
-* The ontology’s canonical label **may be used to normalize the output value**
-* Normalization is deterministic and auditable
-* Normalization does not constitute inference or decision-making
-
-Canonicalization and any associated safeguards must not violate the
-core output schema or decision ordering.
+* The ontology’s canonical label may be used to normalize the output value
+* Canonicalization is deterministic and auditable
+* Canonicalization does not constitute inference
 
 ---
 
@@ -182,16 +173,8 @@ Retrieval-Augmented Generation (RAG):
 * never makes decisions
 * never learns or mutates state
 
-### Deterministic-first retrieval
-
-Ontology retrieval must prioritize **deterministic exact matches**
-before any approximate or vector-based methods.
-
-Consequences:
-
-* Exact metadata or identifier matches must short-circuit further retrieval
-* Vector similarity search is **fallback-only**
-* Retrieval optimizations must preserve determinism and ordering
+Exact matches must be prioritized over approximate retrieval.
+Vector similarity search is **fallback-only**.
 
 ---
 
@@ -201,64 +184,46 @@ Consequences:
 * GSE processing expands into GSMs
 * No label propagation is permitted across GSMs
 
-Cross-GSM analysis may exist only as **diagnostic, advisory information**.
+Cross-GSM signals may exist only as advisory diagnostics.
 
 ---
 
 ## 10. Human Overrides as First-Class Inputs (Invariant)
 
-Human judgment may override automated outputs, but must never silently alter
-system behavior.
+Human judgment may override automated outputs, but must never silently alter system behavior.
 
-Architectural guarantees:
+Guarantees:
 
 * Overrides are explicit input artifacts
 * Overrides apply only after automated processing completes
-* Overrides do not trigger:
-
-  * re-inference
-  * repair
-  * ontology grounding
-  * cross-GSM propagation
+* Overrides do not trigger re-inference, repair, or grounding
 * Overrides are fully auditable and replayable
-
-Human involvement is therefore **governed**, not implicit.
 
 ---
 
 ## 11. Review Artifacts and Diagnostics (Invariant)
 
-The system emits structured, machine-readable artifacts exposing decisions
-without altering them.
+The system emits structured artifacts exposing decisions without altering them.
 
 These include:
 
 * lossless output mirrors
-* structural diagnostic evidence
-* advisory cross-GSM signals
+* diagnostic evidence records
+* advisory cross-GSM summaries
 * mandatory audit logs
 
 No free-text rationale is generated.
-No new inference is introduced.
 
 ---
 
 ## 12. Performance as an Architectural Requirement (Invariant)
 
-Performance stability is a first-class architectural concern.
-
-Requirements:
+Performance stability is required:
 
 * GSE-scale processing must be feasible on a single accelerator
-* Performance optimizations must preserve:
+* Optimizations must preserve determinism and semantics
 
-  * inference semantics
-  * decision ordering
-  * determinism
-
-Avoiding unnecessary computation (for example, redundant retrieval or
-embedding calls) is a valid and encouraged optimization when behavior is
-preserved.
+Avoid unnecessary computation when behavior can be preserved.
 
 ---
 
@@ -271,18 +236,17 @@ rag.*
 rag.ontology.*
 ```
 
-* New namespaces for retrieval or grounding are prohibited
-* Config changes require tests and example updates
+* New namespaces are prohibited
+* Config changes require tests and examples
 
 ---
 
 ## 14. Development Governance (Invariant)
 
-* All work is tracked via numbered tickets
-* Code changes without a ticket are invalid
+* All work is ticketed
 * Whitepaper defines law
-* Milestones define state
-* Tickets define work
+* Milestones define system state
+* Tickets define permitted work
 
 ---
 
@@ -296,20 +260,10 @@ The following are intentionally excluded from architectural governance:
 * collaboration features
 * learning from human edits
 
-These may exist but must not violate architectural invariants.
-
 ---
 
 ## 16. Summary
 
-This whitepaper defines **what must remain true** regardless of
-implementation changes.
-
-It prioritizes:
-
-* determinism
-* auditability
-* explicit human control
-* strict separation of concerns
+This whitepaper defines **what must remain true** regardless of implementation changes.
 
 As long as these invariants hold, the system may evolve safely.

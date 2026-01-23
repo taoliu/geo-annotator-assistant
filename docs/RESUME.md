@@ -1,112 +1,161 @@
-# GEO GSM Annotator Agent — Project Resume
+# GEO GSM Annotator Agent — Project RESUME
 
 ## Project Overview
 
-The GEO GSM Annotator Agent is a semi-automated system for extracting, validating,
-and standardizing **sample-level (GSM)** metadata from the Gene Expression Omnibus (GEO).
+**GEO GSM Annotator Agent** is a deterministic, audit-first system for annotating and standardizing GEO sample-level (GSM) metadata.
 
-The system combines:
+It combines large language models for proposal generation with strict deterministic validation, ontology grounding, and bounded repair loops, followed by explicit human override.
 
-* large language models (LLMs) for proposal generation,
-* deterministic validators and decision logic,
-* ontology grounding for normalization and confidence assessment,
-* bounded, field-scoped repair loops,
-* and explicit, auditable human overrides.
+The system is designed for correctness, transparency, and curator trust, not end-to-end automation.
 
-The project is designed for **determinism, auditability, and controlled extensibility**.
+---
+
+## Problem Addressed
+
+GEO GSM metadata is:
+
+* heterogeneous and inconsistently labeled
+* partially free-text
+* often ambiguous or incomplete
+
+Purely rule-based systems fail to generalize, while unconstrained LLM systems hallucinate.
+
+This project bridges the gap by separating:
+
+* **proposal generation** (LLMs)
+* **decision making** (deterministic logic)
+* **normalization and confidence assessment** (ontologies)
+* **final judgment** (human curator)
+
+---
+
+## Core Capabilities
+
+### Deterministic Annotation Pipeline
+
+* Exactly **8 output fields** per GSM:
+
+  * `gse_accession`
+  * `gsm_accession`
+  * `data_type`
+  * `organism`
+  * `tissue_type`
+  * `cell_line`
+  * `disease`
+  * `treatment`
+* Fixed pipeline ordering
+* Deterministic decision routing
+* Bounded, field-scoped repair loops
+
+---
+
+### Ontology Grounding (Validation-Only)
+
+* Read-only ontologies
+* Deterministic matching
+* Canonicalization for terminal exact matches
+* Ambiguous and no-match cases surfaced explicitly
+* Ontology confidence does not imply correctness
+
+---
+
+### Retrieval-Augmented Generation (RAG)
+
+* Deterministic and auditable
+* Read-only
+* Fallback-only
+* Never decisive
+
+---
+
+### Audit and Diagnostics
+
+* Structured audit artifacts for every GSM
+* No free-text rationale
+* Fully explainable decisions
+
+---
+
+### Human-in-the-Loop Overrides
+
+* Curator overrides are first-class inputs
+* Overrides are explicit and session-only
+* Overrides do not retrigger backend logic
+* Full diff and revert support in UI
+
+---
+
+## Curator UI (v0.7)
+
+* Table-first interface for large GSEs
+* Modal-based GSM detail inspection
+* Field status dashboard (locked, canonicalized, ambiguous, overridden)
+* Structured evidence panels
+* Safe override ergonomics
+* Table-level triage and filters
+
+UI is strictly non-authoritative and never alters backend semantics.
+
+---
+
+## Architectural Invariants
+
+The following are treated as law:
+
+* 8-field output schema
+* Deterministic decision routing
+* Ontology grounding as validation only
+* RAG as fallback-only
+* No persistence or learning
+* Explicit auditability
+
+These invariants are defined in `docs/whitepaper.md`.
 
 ---
 
 ## Current Status
 
-**Backend:** Stable and frozen (post-v0.6)
-**UI:** Local curator UI implemented (v0.5), further improvements planned
-**Persistence / Learning:** Not implemented by design
-
-The backend is considered **production-stable** for further UI-focused development.
+* Backend stable and frozen after v0.6
+* Curator UI refined and closed in v0.7
+* Ready for end-to-end robustness review and incremental fixes
 
 ---
 
-## Latest Completed Milestone
+## Intended Users
 
-### v0.6 — RAG & Validation Robustness (CLOSED)
-
-Milestone v0.6 strengthened correctness, determinism, and performance of the backend
-without changing architectural invariants.
-
-Key outcomes:
-
-* Deterministic-first ontology retrieval (exact match before vector fallback)
-* Formalized terminal exact match semantics
-* Canonicalization to ontology labels for exact matches (config-gated)
-* Field locking to prevent repair overwrites on exact matches (config-gated)
-* Controlled disease ontology fallback (DOID → NCIT) with lexical gating
-* Elimination of unnecessary embedding calls
-* Explicit embedding device control (`cpu`, `cuda`, `mps`)
-
-No changes were made to the 8-field output schema or pipeline ordering.
+* Bioinformatics curators
+* Data integration teams
+* AI-assisted curation pipelines
 
 ---
 
-## Backend Guarantees
+## Non-Goals
 
-The backend guarantees the following properties:
-
-* Exactly 8 output fields per GSM
-* Deterministic decision routing
-* Bounded repair loops
-* Read-only, non-decisional RAG
-* Fully auditable execution
-
-Ontology grounding:
-
-* Is validation and normalization only
-* Never performs inference
-* May deterministically canonicalize labels on terminal exact matches
-
----
-
-## Curator UI (v0.5)
-
-A local curator UI is available with the following properties:
-
-* Read-only by default
-* Evidence-driven field highlighting
-* Session-only editing
-* Deterministic export of backend-compatible `overrides.jsonl`
-
-The UI introduces no persistence, learning, or inference.
-
----
-
-## Documentation Map
-
-* `docs/whitepaper.md` — long-term architectural invariants (authoritative)
-* `docs/milestones/` — milestone-level system evolution
-* `docs/checkpoints/` — session reset and handoff anchors
-* `docs/tickets/` — short-term implementation tasks
-
----
-
-## Next Planned Milestone
-
-### v0.7 — Curator UI Refinement
-
-Planned focus:
-
-* UI usability improvements
-* Better visualization of ontology grounding and evidence
-* Safer and clearer override workflows
-
-Backend semantics introduced in v0.6 are considered **locked** unless explicitly revised.
+* Fully autonomous annotation
+* Learning from human edits
+* Schema expansion
+* Ontology mutation
 
 ---
 
 ## Development Model
 
-* Architectural decisions are defined in the whitepaper
-* Work is executed strictly via tickets
-* ChatGPT acts as architect and reviewer
-* Codex CLI handles implementation
+* All work is ticketed
+* Milestones define medium-term state
+* Whitepaper defines architectural law
+* Checkpoints define session reset anchors
 
-This resume reflects the authoritative project state as of **post-v0.6**.
+---
+
+## Repository Entry Points
+
+* Backend CLI: `geo-gsm-annotate`
+* Curator UI: `geo-gsm-ui`
+
+---
+
+## Summary
+
+The GEO GSM Annotator Agent prioritizes **correctness, determinism, and trust** over automation.
+
+It is designed to scale across datasets while remaining auditable, explainable, and human-governed.
