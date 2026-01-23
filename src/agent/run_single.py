@@ -89,6 +89,17 @@ def _normalize_stop_list(value: Any) -> list[str] | None:
     return [str(value)]
 
 
+def _resolve_format_salvage_limit(cfg: dict) -> Optional[int]:
+    limits = cfg.get("limits", {}) if isinstance(cfg, dict) else {}
+    raw_limit = limits.get("format_salvage_max_chars")
+    if raw_limit is None:
+        return None
+    try:
+        return int(raw_limit)
+    except (TypeError, ValueError):
+        return None
+
+
 def _make_llm_request_builder(cfg: dict, state: PipelineState):
     llm_cfg = cfg.get("llm", {}) if isinstance(cfg, dict) else {}
     stop_list = _normalize_stop_list(llm_cfg.get("stop"))
@@ -258,6 +269,10 @@ def _generate_with_format_repairs(
 ) -> tuple[Optional[Dict[str, str]], List[str]]:
     last_errors: List[str] = []
     word_limits = cfg.get("limits", {}).get("field_word_limits")
+    salvage_limit = _resolve_format_salvage_limit(cfg)
+
+    def _record_salvage(meta: Dict[str, int | str]) -> None:
+        state.repair_history.append(dict(meta))
     label_prompt = _load_label_prompt(cfg)
     final_prompt = f"{label_prompt}\n\n{context_text}"
     request = request_builder(final_prompt, "label")
@@ -269,6 +284,8 @@ def _generate_with_format_repairs(
         raw_output,
         REQUIRED_KEYS,
         word_limits=word_limits,
+        salvage_limit=salvage_limit,
+        repair_recorder=_record_salvage,
     )
     if parsed_output is not None:
         parsed_output = override_accessions(
@@ -296,6 +313,8 @@ def _generate_with_format_repairs(
             raw_output,
             REQUIRED_KEYS,
             word_limits=word_limits,
+            salvage_limit=salvage_limit,
+            repair_recorder=_record_salvage,
         )
         if parsed_output is not None:
             parsed_output = override_accessions(
@@ -507,6 +526,7 @@ def _run_llm_pipeline(
         max_total_repairs=cfg.get("limits", {}).get("max_total_repairs"),
         request_builder=request_builder,
         validation_callback=_refresh_validation,
+        format_salvage_limit=_resolve_format_salvage_limit(cfg),
     )
 
     state.final_output = _normalize_output(

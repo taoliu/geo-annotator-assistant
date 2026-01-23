@@ -50,6 +50,21 @@ def _make_output(**overrides: str) -> str:
     return json.dumps(base, ensure_ascii=True)
 
 
+def _make_truncated_treatment_output(treatment_value: str) -> str:
+    base = {
+        "gse_accession": "GSE000111",
+        "gsm_accession": "GSM000222",
+        "data_type": "RNA-seq",
+        "organism": "Homo sapiens",
+        "tissue_type": "Blood",
+        "cell_line": "No",
+        "disease": "Healthy",
+        "treatment": "",
+    }
+    raw = json.dumps(base, ensure_ascii=True)
+    return raw.replace('"treatment": ""}', f'"treatment": "{treatment_value}')
+
+
 def test_validator_extracts_fenced_json() -> None:
     raw = (
         "Here is JSON:\n```json\n"
@@ -110,3 +125,46 @@ def test_run_single_accepts_long_treatment_without_repair(monkeypatch) -> None:
     assert flagged is False
     assert audit_record["validation"]["format_errors"] == []
     assert len(audit_record["llm_raw_outputs"]) == 1
+
+
+def test_format_salvage_truncated_treatment(monkeypatch) -> None:
+    cfg = load_config(str(ROOT / "config" / "example_config.yaml"))
+    cfg.setdefault("llm", {})["transport"] = "stub"
+    cfg.setdefault("limits", {})["format_salvage_max_chars"] = 32
+
+    record = {
+        "gsm_accession": "GSM000333",
+        "gse_accession": "GSE000444",
+        "context_text": "Control samples profiled with RNA-seq.",
+    }
+
+    long_treatment = "compoundX-" * 100
+    raw_output = _make_truncated_treatment_output(long_treatment)
+    fake_client = FakeLLMClient([raw_output])
+    monkeypatch.setattr(
+        run_single_module,
+        "create_llm_client",
+        lambda _cfg: fake_client,
+    )
+
+    output, audit_record, flagged = run_single_from_context_record(record, cfg)
+
+    assert flagged is False
+    assert audit_record["validation"]["format_errors"] == []
+    assert output["treatment"] == long_treatment[:32]
+    expected = json.loads(_make_output())
+    expected["gse_accession"] = record["gse_accession"]
+    expected["gsm_accession"] = record["gsm_accession"]
+    for key, value in expected.items():
+        if key == "treatment":
+            continue
+        assert output[key] == value
+    salvage_entries = [
+        entry
+        for entry in audit_record["repair_history"]
+        if entry.get("repair_type") == "format_salvage_truncated_treatment"
+    ]
+    assert salvage_entries
+    salvage = salvage_entries[0]
+    assert salvage["original_length"] == len(long_treatment)
+    assert salvage["truncated_length"] == 32

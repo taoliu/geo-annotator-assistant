@@ -98,5 +98,6 @@ limits:
   max_repairs_per_field: 2
   max_format_repairs: 2
   max_total_repairs: 5
+  format_salvage_max_chars: 512
   field_word_limits:
     treatment: 0

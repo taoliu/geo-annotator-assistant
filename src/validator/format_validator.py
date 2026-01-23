@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 ERROR_INVALID_JSON = "invalid_json"
 ERROR_NOT_OBJECT = "not_object"
@@ -11,6 +11,9 @@ ERROR_EXTRA_KEYS = "extra_keys"
 ERROR_NON_STRING = "non_string_value"
 ERROR_EMPTY_VALUE = "empty_value"
 ERROR_WORD_LIMIT = "word_limit_violation"
+FORMAT_SALVAGE_TRUNCATED_TREATMENT = "format_salvage_truncated_treatment"
+
+_DEFAULT_SALVAGE_LIMIT = 512
 
 _ERROR_ORDER = [
     ERROR_INVALID_JSON,
@@ -73,6 +76,97 @@ def extract_json_candidate(text: str) -> Optional[str]:
     return None
 
 
+def _find_unescaped_quote(text: str) -> Optional[int]:
+    escape = False
+    for idx, ch in enumerate(text):
+        if escape:
+            escape = False
+            continue
+        if ch == "\\":
+            escape = True
+            continue
+        if ch == '"':
+            return idx
+    return None
+
+
+def _salvage_truncated_treatment(
+    raw_output: str,
+    expected_keys: List[str],
+    max_chars: Optional[int],
+) -> Optional[tuple[str, Dict[str, int | str]]]:
+    if not raw_output or not expected_keys or expected_keys[-1] != "treatment":
+        return None
+
+    start = raw_output.find("{")
+    if start == -1:
+        return None
+
+    treatment_match = re.search(r'"treatment"\s*:', raw_output[start:])
+    if not treatment_match:
+        return None
+    treatment_key_start = start + treatment_match.start()
+    prefix = raw_output[start:treatment_key_start]
+
+    for key in expected_keys:
+        if key == "treatment":
+            continue
+        if re.search(rf'"{re.escape(key)}"\s*:', prefix) is None:
+            return None
+
+    suffix = raw_output[treatment_key_start + treatment_match.end() :]
+    for key in expected_keys:
+        if key == "treatment":
+            continue
+        if re.search(rf'"{re.escape(key)}"\s*:', suffix):
+            return None
+
+    value_match = re.search(r'"treatment"\s*:\s*"', raw_output[start:])
+    if not value_match:
+        return None
+    value_start = start + value_match.end()
+    remainder = raw_output[value_start:]
+    end_quote = _find_unescaped_quote(remainder)
+    if end_quote is None:
+        raw_value = remainder
+    else:
+        raw_value = remainder[:end_quote]
+
+    original_length = len(raw_value)
+    limit = max_chars if max_chars is not None else _DEFAULT_SALVAGE_LIMIT
+    if limit <= 0:
+        limit = original_length
+    truncated_value = raw_value[:limit]
+
+    prefix_clean = prefix.rstrip()
+    if prefix_clean.endswith(","):
+        prefix_clean = prefix_clean[:-1].rstrip()
+
+    if not prefix_clean:
+        return None
+
+    needs_comma = not prefix_clean.endswith("{")
+    separator = "," if needs_comma else ""
+    candidate = f"{prefix_clean}{separator}\"treatment\": {json.dumps(truncated_value)}"
+    candidate = f"{candidate}}}"
+
+    try:
+        obj = json.loads(candidate)
+    except Exception:
+        return None
+    if not isinstance(obj, dict):
+        return None
+
+    meta = {
+        "repair_type": FORMAT_SALVAGE_TRUNCATED_TREATMENT,
+        "field": "treatment",
+        "original_length": original_length,
+        "truncated_length": len(truncated_value),
+        "max_length": limit,
+    }
+    return candidate, meta
+
+
 def _ordered_errors(seen: set[str]) -> List[str]:
     return [code for code in _ERROR_ORDER if code in seen]
 
@@ -82,6 +176,8 @@ def validate_format(
     expected_keys: List[str],
     *,
     word_limits: Optional[Dict[str, int]] = None,
+    salvage_limit: Optional[int] = None,
+    repair_recorder: Optional[Callable[[Dict[str, int | str]], None]] = None,
 ) -> Tuple[Optional[Dict[str, str]], List[str]]:
     """Validate raw LLM output format; returns (parsed_output, errors)."""
     errors: set[str] = set()
@@ -89,12 +185,28 @@ def validate_format(
         obj = json.loads(raw_output)
     except Exception:
         candidate = extract_json_candidate(raw_output)
-        if candidate is None:
-            return None, [ERROR_INVALID_JSON]
-        try:
-            obj = json.loads(candidate)
-        except Exception:
-            return None, [ERROR_INVALID_JSON]
+        if candidate is not None:
+            try:
+                obj = json.loads(candidate)
+            except Exception:
+                obj = None
+        else:
+            obj = None
+        if obj is None:
+            salvage = _salvage_truncated_treatment(
+                raw_output,
+                expected_keys,
+                salvage_limit,
+            )
+            if salvage is None:
+                return None, [ERROR_INVALID_JSON]
+            candidate, meta = salvage
+            try:
+                obj = json.loads(candidate)
+            except Exception:
+                return None, [ERROR_INVALID_JSON]
+            if repair_recorder is not None:
+                repair_recorder(meta)
     if not isinstance(obj, dict):
         return None, [ERROR_NOT_OBJECT]
 

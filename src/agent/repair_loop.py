@@ -148,10 +148,14 @@ def apply_repairs(
     max_total_repairs: Optional[int] = None,
     request_builder: Optional[Callable[[str, str], LLMRequest]] = None,
     validation_callback: Optional[Callable[[PipelineState], None]] = None,
+    format_salvage_limit: Optional[int] = None,
 ) -> PipelineState:
     if not _has_failures(state):
         state.final_decision = "ACCEPT"
         return state
+
+    def _record_salvage(meta: Dict[str, int | str]) -> None:
+        state.repair_history.append(dict(meta))
 
     while True:
         if not _has_failures(state):
@@ -322,6 +326,8 @@ def apply_repairs(
             parsed_output, format_errors = validate_format(
                 raw_output,
                 _REQUIRED_KEYS,
+                salvage_limit=format_salvage_limit,
+                repair_recorder=_record_salvage,
             )
             state.format_errors = format_errors
             if parsed_output is not None:

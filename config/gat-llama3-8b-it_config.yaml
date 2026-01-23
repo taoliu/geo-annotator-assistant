@@ -29,7 +29,7 @@ llm:
   transport: "openai_http"
   openai_http:
     base_url: "http://127.0.0.1:8941"
-    model: "gat_llama3_3b_it_qlora_mlx"
+    model: "gat_llama3_8b_it_qlora_r4_mlx"
     timeout_s: 30
     endpoint: "chat_completions"
     default_max_tokens: 1024
