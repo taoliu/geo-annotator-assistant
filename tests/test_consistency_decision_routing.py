@@ -31,12 +31,11 @@ def test_healthy_disease_conflict_fallback() -> None:
     state = PipelineState(
         gsm_accession="GSM000",
         final_output={"disease": "Healthy"},
-        semantic_errors={"disease": ["healthy_disease_conflict"]},
         consistency_flags=["healthy_disease_conflict"],
     )
     result = apply_repairs(state, _decision_table())
     assert result.final_decision == "ACCEPT"
-    assert result.final_output["disease"] == "Unknown"
+    assert result.final_output["disease"] == "Healthy"
 
 
 def test_organism_context_conflict_escalates() -> None:
@@ -69,5 +68,5 @@ def test_jsonl_stub_does_not_auto_flag_consistency(tmp_path: Path) -> None:
     assert summary["n_flagged"] == 0
     assert summary["n_accepted"] == 1
     assert flagged == []
-    assert annotations[0]["disease"] == "Unknown"
+    assert annotations[0]["disease"] == "Healthy"
     assert audits[0]["final_decision"] == "ACCEPT"

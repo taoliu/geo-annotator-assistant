@@ -11,6 +11,7 @@ from agent.state import PipelineState
 from llm.base import LLMRequest
 from validator.format_validator import validate_format
 from validator.decision_engine import decide_next_action
+from validator.consistency_validator import HEALTHY_DISEASE_CONFLICT
 
 _FORMAT_FIELD = "__format__"
 _CONSISTENCY_FIELD = "__consistency__"
@@ -65,7 +66,11 @@ def _build_failures_by_field(state: PipelineState) -> Dict[str, List[str]]:
     if state.format_errors:
         failures[_FORMAT_FIELD] = list(state.format_errors)
     if state.consistency_flags:
-        failures[_CONSISTENCY_FIELD] = list(state.consistency_flags)
+        failures[_CONSISTENCY_FIELD] = [
+            flag
+            for flag in state.consistency_flags
+            if flag != HEALTHY_DISEASE_CONFLICT
+        ]
     return failures
 
 

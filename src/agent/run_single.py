@@ -225,6 +225,8 @@ def _build_failures_by_field(
         if failure_code:
             failures.setdefault(field, []).append(failure_code)
     for flag in consistency_flags:
+        if flag == HEALTHY_DISEASE_CONFLICT:
+            continue
         field = _CONSISTENCY_FIELD_MAP.get(flag)
         if field:
             failures.setdefault(field, []).append(flag)

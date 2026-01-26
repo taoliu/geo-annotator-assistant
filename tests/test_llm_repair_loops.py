@@ -119,15 +119,19 @@ def test_decision_repair_updates_disease(monkeypatch) -> None:
     record = {
         "gsm_accession": "GSM123456",
         "gse_accession": "GSE123456",
-        "context_text": "Cancer samples were profiled using RNA-seq.",
+        "context_text": "Control samples profiled with RNA-seq.",
     }
 
     outputs = [
-        _make_output(gse_accession="GSE123456", gsm_accession="GSM123456"),
         _make_output(
             gse_accession="GSE123456",
             gsm_accession="GSM123456",
             disease="Cancer",
+        ),
+        _make_output(
+            gse_accession="GSE123456",
+            gsm_accession="GSM123456",
+            disease="Healthy",
         ),
     ]
     fake_client = FakeLLMClient(outputs)
@@ -141,7 +145,8 @@ def test_decision_repair_updates_disease(monkeypatch) -> None:
 
     assert flagged is False
     assert audit_record["final_decision"] == "ACCEPT"
-    assert output["disease"] == "Cancer"
+    assert output["disease"] == "Healthy"
+    assert len(audit_record["llm_raw_outputs"]) == 2
 
 
 def test_unrepaired_format_flags(monkeypatch) -> None:
