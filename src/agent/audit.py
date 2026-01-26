@@ -102,4 +102,6 @@ def build_audit_record(state: PipelineState) -> Dict[str, Any]:
         record["llm_cache_hit"] = bool(hits[0]) if hits else False
         if state_dict.get("validation_cache_hit"):
             record["validation_cache_hit"] = True
+        if state_dict.get("grounding_cache_hit"):
+            record["grounding_cache_hit"] = True
     return record

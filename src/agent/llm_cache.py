@@ -22,6 +22,11 @@ class LLMCacheEntry:
     ontology_failures: Dict[str, str] = field(default_factory=dict)
     canonicalizations: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     locked_fields: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    final_output: Dict[str, str] | None = None
+    final_decision: str | None = None
+    flags: list[str] = field(default_factory=list)
+    attempts_by_field: Dict[str, int] = field(default_factory=dict)
+    terminal_fallback_fields: list[str] = field(default_factory=list)
 
 
 @dataclass

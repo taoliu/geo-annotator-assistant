@@ -295,7 +295,9 @@ def _generate_with_format_repairs(
                 state.gsm_accession,
             )
             state.llm_parsed_outputs.append(parsed_copy)
-        state.repair_history.extend([dict(item) for item in entry.repair_history])
+        state.repair_history = [dict(item) for item in entry.repair_history]
+        state.attempts_by_field = dict(entry.attempts_by_field)
+        state.terminal_fallback_fields = set(entry.terminal_fallback_fields)
         state.semantic_errors = {
             field: list(errors) for field, errors in entry.semantic_errors.items()
         }
@@ -304,7 +306,16 @@ def _generate_with_format_repairs(
         state.ontology_failures = dict(entry.ontology_failures)
         state.canonicalizations = copy.deepcopy(entry.canonicalizations)
         state.locked_fields = copy.deepcopy(entry.locked_fields)
+        state.flags = list(entry.flags)
+        if entry.final_output is not None:
+            state.final_output = override_accessions(
+                dict(entry.final_output),
+                state.gse_accession,
+                state.gsm_accession,
+            )
+        state.final_decision = entry.final_decision
         state.validation_cache_hit = True
+        state.grounding_cache_hit = True
         parsed_output = None
         if entry.parsed_outputs:
             parsed_output = override_accessions(
@@ -568,35 +579,15 @@ def _run_llm_pipeline(
         audit_record = build_audit_record(state)
         return state.final_output, audit_record, True
 
-    state.final_output = dict(parsed_output)
+    if state.final_output is None:
+        state.final_output = dict(parsed_output)
     state.format_errors = []
     if not state.validation_cache_hit:
         _update_validation_state(state, state.final_output, context_text, cfg)
-
-    if (
-        llm_cache is not None
-        and cache_key
-        and not cache_hit
-        and not state.validation_cache_hit
-    ):
-        entry = LLMCacheEntry(
-            raw_outputs=list(state.llm_raw_outputs[raw_start:]),
-            parsed_outputs=[
-                dict(item) for item in state.llm_parsed_outputs[parsed_start:]
-            ],
-            format_errors=list(state.format_errors),
-            repair_history=[dict(item) for item in state.repair_history[repair_start:]],
-            semantic_errors={
-                field: list(errors)
-                for field, errors in state.semantic_errors.items()
-            },
-            consistency_flags=list(state.consistency_flags),
-            ontology_matches=copy.deepcopy(state.ontology_matches),
-            ontology_failures=dict(state.ontology_failures),
-            canonicalizations=copy.deepcopy(state.canonicalizations),
-            locked_fields=copy.deepcopy(state.locked_fields),
-        )
-        llm_cache.set(cache_key, entry)
+    elif state.final_output is not None and state.final_decision is not None:
+        audit_record = build_audit_record(state)
+        flagged = state.final_decision != "ACCEPT"
+        return state.final_output, audit_record, flagged
 
     decision_table = load_decision_table(
         str(_repo_root() / "spec" / "decision_table.yaml")
@@ -635,6 +626,30 @@ def _run_llm_pipeline(
 
     audit_record = build_audit_record(state)
     flagged = state.final_decision != "ACCEPT"
+    if llm_cache is not None and cache_key and not cache_hit:
+        entry = LLMCacheEntry(
+            raw_outputs=list(state.llm_raw_outputs[raw_start:]),
+            parsed_outputs=[
+                dict(item) for item in state.llm_parsed_outputs[parsed_start:]
+            ],
+            format_errors=list(state.format_errors),
+            repair_history=[dict(item) for item in state.repair_history[repair_start:]],
+            semantic_errors={
+                field: list(errors)
+                for field, errors in state.semantic_errors.items()
+            },
+            consistency_flags=list(state.consistency_flags),
+            ontology_matches=copy.deepcopy(state.ontology_matches),
+            ontology_failures=dict(state.ontology_failures),
+            canonicalizations=copy.deepcopy(state.canonicalizations),
+            locked_fields=copy.deepcopy(state.locked_fields),
+            final_output=dict(state.final_output) if state.final_output else None,
+            final_decision=state.final_decision,
+            flags=list(state.flags),
+            attempts_by_field=dict(state.attempts_by_field),
+            terminal_fallback_fields=sorted(state.terminal_fallback_fields),
+        )
+        llm_cache.set(cache_key, entry)
     return state.final_output, audit_record, flagged
 
 
