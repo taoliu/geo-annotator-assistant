@@ -12,6 +12,8 @@ from agent.ontology_canonicalization import apply_terminal_exact_canonicalizatio
 from agent.prompts import load_prompt
 from agent.repair_loop import apply_repairs, merge_repair_output
 from agent.state import PipelineState
+from agent.context_fingerprint import compute_context_fingerprint
+from agent.llm_cache import LLMCache, LLMCacheEntry, build_llm_cache_key
 from validator.consistency_validator import (
     ASSAY_PLATFORM_CONFLICT,
     HEALTHY_DISEASE_CONFLICT,
@@ -236,6 +238,12 @@ def _total_attempts(state: PipelineState) -> int:
     return sum(state.attempts_by_field.values())
 
 
+def _record_llm_output(state: PipelineState, raw_output: str, *, cache_hit: bool) -> None:
+    state.llm_raw_outputs.append(raw_output)
+    if state.llm_cache_enabled:
+        state.llm_cache_hits.append(bool(cache_hit))
+
+
 def _update_validation_state(
     state: PipelineState,
     parsed_output: Dict[str, str],
@@ -266,19 +274,78 @@ def _generate_with_format_repairs(
     cfg: dict,
     prompt_loader,
     request_builder,
+    llm_cache: LLMCache | None = None,
 ) -> tuple[Optional[Dict[str, str]], List[str]]:
     last_errors: List[str] = []
     word_limits = cfg.get("limits", {}).get("field_word_limits")
     salvage_limit = _resolve_format_salvage_limit(cfg)
+    raw_start = len(state.llm_raw_outputs)
+    parsed_start = len(state.llm_parsed_outputs)
+    repair_start = len(state.repair_history)
 
     def _record_salvage(meta: Dict[str, int | str]) -> None:
         state.repair_history.append(dict(meta))
+
+    def _maybe_store_cache(
+        parsed_output: Optional[Dict[str, str]],
+        format_errors: List[str],
+        cache_key: Optional[str],
+    ) -> None:
+        if llm_cache is None or not cache_key:
+            return
+        if parsed_output is None or format_errors:
+            return
+        entry = LLMCacheEntry(
+            raw_outputs=list(state.llm_raw_outputs[raw_start:]),
+            parsed_outputs=[
+                dict(item) for item in state.llm_parsed_outputs[parsed_start:]
+            ],
+            format_errors=list(format_errors),
+            repair_history=[dict(item) for item in state.repair_history[repair_start:]],
+        )
+        llm_cache.set(cache_key, entry)
+
+    def _apply_cached_entry(entry: LLMCacheEntry) -> tuple[Optional[Dict[str, str]], List[str]]:
+        for raw_output in entry.raw_outputs:
+            _record_llm_output(state, raw_output, cache_hit=True)
+        for parsed in entry.parsed_outputs:
+            parsed_copy = override_accessions(
+                dict(parsed),
+                state.gse_accession,
+                state.gsm_accession,
+            )
+            state.llm_parsed_outputs.append(parsed_copy)
+        state.repair_history.extend([dict(item) for item in entry.repair_history])
+        parsed_output = None
+        if entry.parsed_outputs:
+            parsed_output = override_accessions(
+                dict(entry.parsed_outputs[-1]),
+                state.gse_accession,
+                state.gsm_accession,
+            )
+        return parsed_output, list(entry.format_errors)
+
     label_prompt = _load_label_prompt(cfg)
     final_prompt = f"{label_prompt}\n\n{context_text}"
     request = request_builder(final_prompt, "label")
+    cache_key = None
+    if llm_cache is not None and state.gse_accession:
+        prompt_version = cfg.get("versions", {}).get("prompt_version", "v1")
+        prompt_name = _PROMPT_VERSION_MAP.get(prompt_version) or str(prompt_version)
+        cache_key = build_llm_cache_key(
+            gse_accession=state.gse_accession,
+            context_fingerprint=compute_context_fingerprint(context_text),
+            request=request,
+            versions=dict(cfg.get("versions", {})),
+            prompt_name=prompt_name,
+        )
+        cached_entry = llm_cache.get(cache_key)
+        if cached_entry is not None:
+            return _apply_cached_entry(cached_entry)
+
     raw_result = client.generate(request)
     raw_output = raw_result.text
-    state.llm_raw_outputs.append(raw_output)
+    _record_llm_output(state, raw_output, cache_hit=False)
 
     parsed_output, format_errors = validate_format(
         raw_output,
@@ -295,6 +362,7 @@ def _generate_with_format_repairs(
         )
         state.llm_parsed_outputs.append(parsed_output)
     if not format_errors:
+        _maybe_store_cache(parsed_output, format_errors, cache_key)
         return parsed_output, []
     last_errors = format_errors
 
@@ -308,7 +376,7 @@ def _generate_with_format_repairs(
         request = request_builder(repair_prompt, "repair_format")
         raw_result = client.generate(request)
         raw_output = raw_result.text
-        state.llm_raw_outputs.append(raw_output)
+        _record_llm_output(state, raw_output, cache_hit=False)
         parsed_output, format_errors = validate_format(
             raw_output,
             REQUIRED_KEYS,
@@ -324,6 +392,7 @@ def _generate_with_format_repairs(
             )
             state.llm_parsed_outputs.append(parsed_output)
         if not format_errors:
+            _maybe_store_cache(parsed_output, format_errors, cache_key)
             return parsed_output, []
         last_errors = format_errors
 
@@ -439,7 +508,7 @@ def _run_decision_repairs(
             request = request_builder(repair_prompt, "repair_field")
             raw_result = llm_client.generate(request)
             raw_output = raw_result.text
-            state.llm_raw_outputs.append(raw_output)
+            _record_llm_output(state, raw_output, cache_hit=False)
             parsed_output, format_errors = validate_format(raw_output, REQUIRED_KEYS)
             state.format_errors = format_errors
             if parsed_output is not None:
@@ -467,6 +536,7 @@ def _run_llm_pipeline(
     state: PipelineState,
     cfg: dict,
     llm_client: Optional[Any] = None,
+    llm_cache: LLMCache | None = None,
 ) -> tuple[dict, dict, bool]:
     context_text = state.context_text
     if not context_text:
@@ -487,6 +557,7 @@ def _run_llm_pipeline(
         cfg,
         prompt_loader,
         request_builder,
+        llm_cache=llm_cache,
     )
     state.format_errors = format_errors
     if parsed_output is None or format_errors:
@@ -549,11 +620,13 @@ def run_single_gsm(
     gsm_accession: str,
     cfg: dict,
     llm_client: Optional[Any] = None,
+    llm_cache: LLMCache | None = None,
 ) -> tuple[dict, dict, bool]:
     state = PipelineState(
         gsm_accession=gsm_accession,
         versions=dict(cfg.get("versions", {})),
     )
+    state.llm_cache_enabled = llm_cache is not None
 
     parser_cfg = cfg.get("parser", {})
     if parser_cfg.get("mode") == "stub":
@@ -564,13 +637,14 @@ def run_single_gsm(
     state.context_text = context_text
     state.parsed_jsonl = parsed_jsonl
     state.gse_accession = gse_accession
-    return _run_llm_pipeline(state, cfg, llm_client=llm_client)
+    return _run_llm_pipeline(state, cfg, llm_client=llm_client, llm_cache=llm_cache)
 
 
 def run_single_from_context_record(
     record: dict,
     cfg: dict,
     llm_client: Optional[Any] = None,
+    llm_cache: LLMCache | None = None,
 ) -> tuple[dict, dict, bool]:
     gsm_accession = record["gsm_accession"]
     gse_accession = record["gse_accession"]
@@ -581,5 +655,6 @@ def run_single_from_context_record(
         gse_accession=gse_accession,
         versions=dict(cfg.get("versions", {})),
     )
+    state.llm_cache_enabled = llm_cache is not None
     state.context_text = context_text
-    return _run_llm_pipeline(state, cfg, llm_client=llm_client)
+    return _run_llm_pipeline(state, cfg, llm_client=llm_client, llm_cache=llm_cache)

@@ -9,6 +9,7 @@ from agent.gse_postpass import (
     apply_gse_field_values_summary,
 )
 from agent.run_single import run_single_from_context_record
+from agent.llm_cache import LLMCache
 from llm.factory import create_llm_client
 from ingest.read_context_jsonl import iter_gsm_contexts
 from ingest.soft_to_context_jsonl import soft_to_context_jsonl
@@ -73,6 +74,12 @@ def run_gse_from_jsonl(
     reuse_logged = False
     llm_cfg = cfg.get("llm", {}) if isinstance(cfg.get("llm"), dict) else {}
     llm_transport = llm_cfg.get("transport") or llm_cfg.get("mode", "stub")
+    cache_cfg = cfg.get("llm_cache")
+    if isinstance(cache_cfg, dict):
+        cache_enabled = bool(cache_cfg.get("enabled", False))
+    else:
+        cache_enabled = bool(cache_cfg) if isinstance(cache_cfg, bool) else False
+    llm_cache = LLMCache() if cache_enabled else None
 
     for record in iter_gsm_contexts(jsonl_path):
         try:
@@ -86,6 +93,7 @@ def run_gse_from_jsonl(
                 record,
                 cfg,
                 llm_client=llm_client,
+                llm_cache=llm_cache,
             )
         except Exception as exc:
             annotation = _build_failure_annotation(record)
@@ -103,6 +111,10 @@ def run_gse_from_jsonl(
         "n_accepted": len(annotations) - n_flagged,
         "n_flagged": n_flagged,
     }
+    if llm_cache is not None:
+        cache_stats = {"hits": llm_cache.hits, "misses": llm_cache.misses}
+        for audit in audits:
+            audit["llm_cache_stats"] = dict(cache_stats)
     gse_report = apply_gse_consistency_postpass(annotations, audits, cfg)
     gse_values = apply_gse_field_values_summary(annotations, cfg)
     return annotations, audits, flagged, summary, gse_report, gse_values

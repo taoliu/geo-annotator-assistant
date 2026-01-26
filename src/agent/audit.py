@@ -72,7 +72,7 @@ def build_audit_record(state: PipelineState) -> Dict[str, Any]:
         "ontology_status_by_field": _ontology_status_by_field(state_dict),
         "flags": list(state_dict.get("flags", [])),
     }
-    return {
+    record = {
         "gsm_accession": state_dict["gsm_accession"],
         "gse_accession": state_dict["gse_accession"],
         "input_hash": state_dict["input_hash"],
@@ -96,3 +96,6 @@ def build_audit_record(state: PipelineState) -> Dict[str, Any]:
         "rationale": rationale,
         "timestamp": _utc_timestamp(),
     }
+    if state_dict.get("llm_cache_enabled"):
+        record["llm_cache_hits"] = list(state_dict.get("llm_cache_hits") or [])
+    return record

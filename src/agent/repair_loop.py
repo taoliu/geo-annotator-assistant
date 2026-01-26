@@ -323,6 +323,8 @@ def apply_repairs(
             raw_result = llm_client.generate(request)
             raw_output = raw_result.text
             state.llm_raw_outputs.append(raw_output)
+            if state.llm_cache_enabled:
+                state.llm_cache_hits.append(False)
             parsed_output, format_errors = validate_format(
                 raw_output,
                 _REQUIRED_KEYS,
