@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -275,37 +276,16 @@ def _generate_with_format_repairs(
     prompt_loader,
     request_builder,
     llm_cache: LLMCache | None = None,
-) -> tuple[Optional[Dict[str, str]], List[str]]:
+) -> tuple[Optional[Dict[str, str]], List[str], str | None, bool]:
     last_errors: List[str] = []
     word_limits = cfg.get("limits", {}).get("field_word_limits")
     salvage_limit = _resolve_format_salvage_limit(cfg)
-    raw_start = len(state.llm_raw_outputs)
-    parsed_start = len(state.llm_parsed_outputs)
-    repair_start = len(state.repair_history)
-
     def _record_salvage(meta: Dict[str, int | str]) -> None:
         state.repair_history.append(dict(meta))
 
-    def _maybe_store_cache(
-        parsed_output: Optional[Dict[str, str]],
-        format_errors: List[str],
-        cache_key: Optional[str],
-    ) -> None:
-        if llm_cache is None or not cache_key:
-            return
-        if parsed_output is None or format_errors:
-            return
-        entry = LLMCacheEntry(
-            raw_outputs=list(state.llm_raw_outputs[raw_start:]),
-            parsed_outputs=[
-                dict(item) for item in state.llm_parsed_outputs[parsed_start:]
-            ],
-            format_errors=list(format_errors),
-            repair_history=[dict(item) for item in state.repair_history[repair_start:]],
-        )
-        llm_cache.set(cache_key, entry)
-
-    def _apply_cached_entry(entry: LLMCacheEntry) -> tuple[Optional[Dict[str, str]], List[str]]:
+    def _apply_cached_entry(
+        entry: LLMCacheEntry,
+    ) -> tuple[Optional[Dict[str, str]], List[str]]:
         for raw_output in entry.raw_outputs:
             _record_llm_output(state, raw_output, cache_hit=True)
         for parsed in entry.parsed_outputs:
@@ -316,6 +296,15 @@ def _generate_with_format_repairs(
             )
             state.llm_parsed_outputs.append(parsed_copy)
         state.repair_history.extend([dict(item) for item in entry.repair_history])
+        state.semantic_errors = {
+            field: list(errors) for field, errors in entry.semantic_errors.items()
+        }
+        state.consistency_flags = list(entry.consistency_flags)
+        state.ontology_matches = copy.deepcopy(entry.ontology_matches)
+        state.ontology_failures = dict(entry.ontology_failures)
+        state.canonicalizations = copy.deepcopy(entry.canonicalizations)
+        state.locked_fields = copy.deepcopy(entry.locked_fields)
+        state.validation_cache_hit = True
         parsed_output = None
         if entry.parsed_outputs:
             parsed_output = override_accessions(
@@ -329,19 +318,24 @@ def _generate_with_format_repairs(
     final_prompt = f"{label_prompt}\n\n{context_text}"
     request = request_builder(final_prompt, "label")
     cache_key = None
+    cache_hit = False
     if llm_cache is not None and state.gse_accession:
         prompt_version = cfg.get("versions", {}).get("prompt_version", "v1")
         prompt_name = _PROMPT_VERSION_MAP.get(prompt_version) or str(prompt_version)
+        rag_cfg = cfg.get("rag", {}) if isinstance(cfg.get("rag"), dict) else {}
         cache_key = build_llm_cache_key(
             gse_accession=state.gse_accession,
             context_fingerprint=compute_context_fingerprint(context_text),
             request=request,
             versions=dict(cfg.get("versions", {})),
             prompt_name=prompt_name,
+            validation_config=rag_cfg,
         )
         cached_entry = llm_cache.get(cache_key)
         if cached_entry is not None:
-            return _apply_cached_entry(cached_entry)
+            parsed_output, format_errors = _apply_cached_entry(cached_entry)
+            cache_hit = True
+            return parsed_output, format_errors, cache_key, cache_hit
 
     raw_result = client.generate(request)
     raw_output = raw_result.text
@@ -362,8 +356,7 @@ def _generate_with_format_repairs(
         )
         state.llm_parsed_outputs.append(parsed_output)
     if not format_errors:
-        _maybe_store_cache(parsed_output, format_errors, cache_key)
-        return parsed_output, []
+        return parsed_output, [], cache_key, cache_hit
     last_errors = format_errors
 
     max_repairs = cfg.get("limits", {}).get("max_format_repairs", 2)
@@ -392,11 +385,10 @@ def _generate_with_format_repairs(
             )
             state.llm_parsed_outputs.append(parsed_output)
         if not format_errors:
-            _maybe_store_cache(parsed_output, format_errors, cache_key)
-            return parsed_output, []
+            return parsed_output, [], cache_key, cache_hit
         last_errors = format_errors
 
-    return parsed_output, last_errors
+    return parsed_output, last_errors, cache_key, cache_hit
 
 
 def _run_decision_repairs(
@@ -550,7 +542,11 @@ def _run_llm_pipeline(
         client = llm_client
 
     request_builder = _make_llm_request_builder(cfg, state)
-    parsed_output, format_errors = _generate_with_format_repairs(
+    raw_start = len(state.llm_raw_outputs)
+    parsed_start = len(state.llm_parsed_outputs)
+    repair_start = len(state.repair_history)
+
+    parsed_output, format_errors, cache_key, cache_hit = _generate_with_format_repairs(
         state,
         client,
         context_text,
@@ -574,7 +570,33 @@ def _run_llm_pipeline(
 
     state.final_output = dict(parsed_output)
     state.format_errors = []
-    _update_validation_state(state, state.final_output, context_text, cfg)
+    if not state.validation_cache_hit:
+        _update_validation_state(state, state.final_output, context_text, cfg)
+
+    if (
+        llm_cache is not None
+        and cache_key
+        and not cache_hit
+        and not state.validation_cache_hit
+    ):
+        entry = LLMCacheEntry(
+            raw_outputs=list(state.llm_raw_outputs[raw_start:]),
+            parsed_outputs=[
+                dict(item) for item in state.llm_parsed_outputs[parsed_start:]
+            ],
+            format_errors=list(state.format_errors),
+            repair_history=[dict(item) for item in state.repair_history[repair_start:]],
+            semantic_errors={
+                field: list(errors)
+                for field, errors in state.semantic_errors.items()
+            },
+            consistency_flags=list(state.consistency_flags),
+            ontology_matches=copy.deepcopy(state.ontology_matches),
+            ontology_failures=dict(state.ontology_failures),
+            canonicalizations=copy.deepcopy(state.canonicalizations),
+            locked_fields=copy.deepcopy(state.locked_fields),
+        )
+        llm_cache.set(cache_key, entry)
 
     decision_table = load_decision_table(
         str(_repo_root() / "spec" / "decision_table.yaml")

@@ -97,5 +97,9 @@ def build_audit_record(state: PipelineState) -> Dict[str, Any]:
         "timestamp": _utc_timestamp(),
     }
     if state_dict.get("llm_cache_enabled"):
-        record["llm_cache_hits"] = list(state_dict.get("llm_cache_hits") or [])
+        hits = list(state_dict.get("llm_cache_hits") or [])
+        record["llm_cache_hits"] = hits
+        record["llm_cache_hit"] = bool(hits[0]) if hits else False
+        if state_dict.get("validation_cache_hit"):
+            record["validation_cache_hit"] = True
     return record

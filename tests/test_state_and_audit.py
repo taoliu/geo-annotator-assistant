@@ -24,6 +24,7 @@ def test_pipeline_state_defaults() -> None:
     assert state.llm_parsed_outputs == []
     assert state.llm_cache_hits == []
     assert state.llm_cache_enabled is False
+    assert state.validation_cache_hit is False
     assert state.format_errors == []
     assert state.semantic_errors == {}
     assert state.consistency_flags == []

@@ -28,6 +28,7 @@ class PipelineState:
     llm_parsed_outputs: List[Dict[str, Any]] = field(default_factory=list)
     llm_cache_hits: List[bool] = field(default_factory=list)
     llm_cache_enabled: bool = False
+    validation_cache_hit: bool = False
 
     format_errors: List[str] = field(default_factory=list)
     semantic_errors: Dict[str, List[str]] = field(default_factory=dict)
@@ -58,6 +59,7 @@ class PipelineState:
             "llm_parsed_outputs": list(self.llm_parsed_outputs),
             "llm_cache_hits": list(self.llm_cache_hits),
             "llm_cache_enabled": self.llm_cache_enabled,
+            "validation_cache_hit": self.validation_cache_hit,
             "format_errors": list(self.format_errors),
             "semantic_errors": {
                 field_name: list(errors)

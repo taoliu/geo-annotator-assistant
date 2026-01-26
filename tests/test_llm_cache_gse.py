@@ -140,3 +140,66 @@ def test_llm_cache_isolated_by_gse(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
     assert client.calls == 2
     assert audits[0]["llm_cache_hits"] == [False]
     assert audits[1]["llm_cache_hits"] == [False]
+
+
+def test_validation_skipped_on_cache_hit(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    cfg = _load_stub_config()
+    records = [
+        {
+            "context_text": (
+                "Series Accession: GSE333\n"
+                "Sample ID: GSM030\n"
+                "Sample Title: patient_01\n"
+                "Sample Characteristics: disease=healthy\n"
+            ),
+            "gsm_accession": "GSM030",
+            "gse_accession": "GSE333",
+        },
+        {
+            "context_text": (
+                "Series Accession: GSE333\n"
+                "Sample ID: GSM031\n"
+                "Sample Title: patient_02\n"
+                "Sample Characteristics: disease=healthy\n"
+            ),
+            "gsm_accession": "GSM031",
+            "gse_accession": "GSE333",
+        },
+    ]
+    jsonl_path = tmp_path / "contexts.jsonl"
+    _write_jsonl(jsonl_path, records)
+
+    calls = {"semantic": 0, "consistency": 0, "ground": 0}
+
+    import agent.run_single as run_single_module
+
+    def _fake_semantic(parsed_output, context_text):
+        calls["semantic"] += 1
+        return {}
+
+    def _fake_consistency(parsed_output, context_text):
+        calls["consistency"] += 1
+        return []
+
+    def _fake_ground(parsed_output, context_text, rag_cfg):
+        calls["ground"] += 1
+        return {}, {}
+
+    monkeypatch.setattr(run_single_module, "semantic_validate", _fake_semantic)
+    monkeypatch.setattr(run_single_module, "consistency_validate", _fake_consistency)
+    monkeypatch.setattr(run_single_module, "ground_all_fields", _fake_ground)
+    monkeypatch.setattr(
+        run_single_module,
+        "apply_terminal_exact_canonicalization_and_lock",
+        lambda state, cfg: None,
+    )
+
+    _, audits, _, _, _, _ = run_gse_from_jsonl(str(jsonl_path), cfg)
+
+    assert calls["semantic"] == 1
+    assert calls["consistency"] == 1
+    assert calls["ground"] == 1
+    assert audits[1]["llm_cache_hit"] is True

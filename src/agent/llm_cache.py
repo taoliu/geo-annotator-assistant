@@ -16,6 +16,12 @@ class LLMCacheEntry:
     parsed_outputs: list[Dict[str, Any]]
     format_errors: list[str]
     repair_history: list[Dict[str, Any]]
+    semantic_errors: Dict[str, list[str]] = field(default_factory=dict)
+    consistency_flags: list[str] = field(default_factory=list)
+    ontology_matches: Dict[str, Any] = field(default_factory=dict)
+    ontology_failures: Dict[str, str] = field(default_factory=dict)
+    canonicalizations: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    locked_fields: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
 
 @dataclass
@@ -43,6 +49,7 @@ def build_llm_cache_key(
     request: LLMRequest,
     versions: Dict[str, str],
     prompt_name: str,
+    validation_config: Dict[str, Any] | None = None,
 ) -> str:
     payload = {
         "gse_accession": gse_accession,
@@ -58,6 +65,8 @@ def build_llm_cache_key(
         "seed": request.seed,
         "tags": request.tags,
     }
+    if validation_config is not None:
+        payload["validation_config"] = validation_config
     serialized = json.dumps(
         payload,
         sort_keys=True,
