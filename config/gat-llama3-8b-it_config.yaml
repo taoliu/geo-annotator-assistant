@@ -115,5 +115,6 @@ limits:
   max_total_repairs: 6
   format_salvage_max_chars: 512
   field_word_limits:
+    tissue_type: 10
     disease: 10
     treatment: 0
