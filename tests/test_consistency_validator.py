@@ -37,6 +37,28 @@ def test_healthy_with_disease_cues_flags() -> None:
     assert flags == [HEALTHY_DISEASE_CONFLICT]
 
 
+def test_healthy_with_disease_label_value_flags() -> None:
+    flags = consistency_validate({"disease": "Healthy"}, "disease: diabetes")
+    assert flags == [HEALTHY_DISEASE_CONFLICT]
+
+
+def test_healthy_with_ontology_match_flags() -> None:
+    matches = {
+        "disease": {
+            "status": "MATCHED",
+            "matched_label": "cancer",
+            "match_type": "label_exact",
+            "score": 1.0,
+        }
+    }
+    flags = consistency_validate(
+        {"disease": "Healthy"},
+        "No disease terms provided.",
+        ontology_matches=matches,
+    )
+    assert flags == [HEALTHY_DISEASE_CONFLICT]
+
+
 def test_organism_mismatch_flags() -> None:
     flags = consistency_validate({"organism": "Mus musculus"}, "Study of Homo sapiens tissue.")
     assert flags == [ORGANISM_CONTEXT_CONFLICT]

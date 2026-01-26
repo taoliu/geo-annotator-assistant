@@ -252,8 +252,6 @@ def _update_validation_state(
     cfg: dict,
 ) -> None:
     state.semantic_errors = semantic_validate(parsed_output, context_text)
-    state.consistency_flags = consistency_validate(parsed_output, context_text)
-
     rag_cfg = cfg.get("rag", {}) if isinstance(cfg, dict) else {}
     matches, ontology_failures = ground_all_fields(
         parsed_output,
@@ -265,6 +263,11 @@ def _update_validation_state(
         for field, match in matches.items()
     }
     state.ontology_failures = _filter_missing_grounders(ontology_failures)
+    state.consistency_flags = consistency_validate(
+        parsed_output,
+        context_text,
+        ontology_matches=state.ontology_matches,
+    )
     apply_terminal_exact_canonicalization_and_lock(state, cfg)
 
 

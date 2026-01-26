@@ -180,7 +180,7 @@ def test_validation_skipped_on_cache_hit(
         calls["semantic"] += 1
         return {}
 
-    def _fake_consistency(parsed_output, context_text):
+    def _fake_consistency(parsed_output, context_text, **_kwargs):
         calls["consistency"] += 1
         return []
 

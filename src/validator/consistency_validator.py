@@ -1,5 +1,6 @@
 from __future__ import annotations
-from typing import Dict, List
+from typing import Dict, List, Optional, Any
+import re
 
 from validator.heuristics import get_heuristics
 
@@ -18,8 +19,57 @@ _SEQUENCING_KEYWORDS = [kw.lower() for kw in _CONSISTENCY["sequencing_keywords"]
 _HEALTHY_VALUE = _CONSISTENCY["healthy_value"].lower()
 _DISEASE_KEYWORDS = [kw.lower() for kw in _CONSISTENCY["disease_keywords"]]
 _ORGANISM_CONFLICTS = _CONSISTENCY["organism_conflicts"]
+_DISEASE_LABEL_RE = re.compile(r"\bdisease(?:\s*state)?\b\s*[:=]\s*([^\n;]+)", re.IGNORECASE)
+_DISEASE_LABEL_IGNORE = {
+    "healthy",
+    "none",
+    "normal",
+    "control",
+    "vehicle",
+    "na",
+    "n/a",
+    "unknown",
+}
 
-def consistency_validate(parsed_output: Dict[str, str], context_text: str) -> List[str]:
+
+def _has_explicit_disease_terms(ctx: str) -> bool:
+    for keyword in _DISEASE_KEYWORDS:
+        if keyword == "disease:":
+            continue
+        if keyword in ctx:
+            return True
+    match = _DISEASE_LABEL_RE.search(ctx)
+    if match:
+        value = match.group(1).strip().lower()
+        if value and not any(token in value for token in _DISEASE_LABEL_IGNORE):
+            return True
+    return False
+
+
+def _has_ontology_disease_match(ontology_matches: Optional[Dict[str, Any]]) -> bool:
+    if not isinstance(ontology_matches, dict):
+        return False
+    match = ontology_matches.get("disease")
+    if not match:
+        return False
+    if isinstance(match, dict):
+        status = match.get("status")
+        label = match.get("matched_label")
+    else:
+        status = getattr(match, "status", None)
+        label = getattr(match, "matched_label", None)
+    if str(status or "").upper() != "MATCHED":
+        return False
+    if label is None:
+        return False
+    return str(label).strip().lower() != _HEALTHY_VALUE
+
+def consistency_validate(
+    parsed_output: Dict[str, str],
+    context_text: str,
+    *,
+    ontology_matches: Optional[Dict[str, Any]] = None,
+) -> List[str]:
     """Keyword-based cross-field consistency checks."""
     flags: List[str] = []
     ctx = context_text.lower()
@@ -35,7 +85,7 @@ def consistency_validate(parsed_output: Dict[str, str], context_text: str) -> Li
 
     disease = parsed_output.get("disease", "").lower()
     if disease == _HEALTHY_VALUE:
-        if any(k in ctx for k in _DISEASE_KEYWORDS):
+        if _has_explicit_disease_terms(ctx) or _has_ontology_disease_match(ontology_matches):
             flags.append(HEALTHY_DISEASE_CONFLICT)
 
     org = parsed_output.get("organism", "").lower()
