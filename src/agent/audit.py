@@ -7,6 +7,7 @@ from typing import Any, Dict
 
 from .state import PipelineState
 from validator.failure_codes import select_primary_failure_across_fields
+from validator.consistency_validator import HEALTHY_DISEASE_CONFLICT
 
 _FORMAT_FIELD = "__format__"
 _CONSISTENCY_FIELD = "__consistency__"
@@ -31,7 +32,11 @@ def _build_failures_by_field(state_dict: Dict[str, Any]) -> Dict[str, list[str]]
         failures[_FORMAT_FIELD] = list(format_errors)
     consistency_flags = state_dict.get("consistency_flags") or []
     if consistency_flags:
-        failures[_CONSISTENCY_FIELD] = list(consistency_flags)
+        filtered_flags = [
+            flag for flag in consistency_flags if flag != HEALTHY_DISEASE_CONFLICT
+        ]
+        if filtered_flags:
+            failures[_CONSISTENCY_FIELD] = filtered_flags
     return failures
 
 

@@ -181,6 +181,10 @@ def test_inferred_without_evidence_escalates_after_repair(monkeypatch) -> None:
     assert audit_record["final_decision"] == "FLAGGED"
     assert DISEASE_INFERRED_WITHOUT_EVIDENCE in audit_record["flags"]
     assert audit_record["attempts_by_field"]["disease"] == 1
+    assert (
+        audit_record.get("rationale", {}).get("primary_failure")
+        == DISEASE_INFERRED_WITHOUT_EVIDENCE
+    )
 
 
 def test_cell_line_cell_type_fallback(monkeypatch) -> None:

@@ -42,8 +42,10 @@ class _HealthyMouseClient:
         )
 
 
-def test_healthy_vehicle_control_no_conflict() -> None:
+def test_healthy_vehicle_control_no_conflict(monkeypatch) -> None:
     cfg = _load_stub_config()
+    import agent.run_single as run_single_module
+    monkeypatch.setattr(run_single_module, "ground_all_fields", lambda *_a, **_k: ({}, {}))
     record = {
         "context_text": (
             "Series Accession: GSE123\n"
@@ -67,11 +69,14 @@ def test_healthy_vehicle_control_no_conflict() -> None:
     assert audit["rationale"]["n_llm_calls"] == 1
     assert "disease" not in audit["rationale"]["terminal_fallback_fields"]
     assert not any(entry.get("field") == "disease" for entry in audit["repair_history"])
+    assert audit["rationale"]["primary_failure"] is None
     assert flagged is False
 
 
-def test_healthy_with_disease_cue_does_not_trigger_repair() -> None:
+def test_healthy_with_disease_cue_does_not_trigger_repair(monkeypatch) -> None:
     cfg = _load_stub_config()
+    import agent.run_single as run_single_module
+    monkeypatch.setattr(run_single_module, "ground_all_fields", lambda *_a, **_k: ({}, {}))
     record = {
         "context_text": (
             "Series Accession: GSE123\n"
@@ -94,6 +99,7 @@ def test_healthy_with_disease_cue_does_not_trigger_repair() -> None:
     assert audit["rationale"]["n_llm_calls"] == 1
     assert audit["validation"]["consistency_flags"] == ["healthy_disease_conflict"]
     assert not any(entry.get("field") == "disease" for entry in audit["repair_history"])
+    assert audit["rationale"]["primary_failure"] is None
     assert flagged is False
 
 
