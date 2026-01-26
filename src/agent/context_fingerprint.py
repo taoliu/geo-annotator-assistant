@@ -6,13 +6,16 @@ import hashlib
 import re
 
 _SAMPLE_ID_PREFIX = "Sample ID:"
+_SAMPLE_FILENAME_PREFIX = "Sample Filename:"
 _SAMPLE_TITLE_PREFIX = "Sample Title:"
 _SAMPLE_TITLE_PATTERN = re.compile(r"^(Sample Title:\s*)(.*)$")
 _NUMERIC_SUFFIX_PATTERN = re.compile(r"(\b[^\s]+?)([_-])(\d+)\b")
+_REPLICATE_PATTERN = re.compile(r"\b(rep(?:licate)?)(?:[\s_-]*)(\d+)\b", re.IGNORECASE)
 
 
 def _normalize_sample_title(title: str) -> str:
-    return _NUMERIC_SUFFIX_PATTERN.sub(r"\1\2<N>", title)
+    normalized = _REPLICATE_PATTERN.sub(r"replicate <N>", title)
+    return _NUMERIC_SUFFIX_PATTERN.sub(r"\1\2<N>", normalized)
 
 
 def normalize_context_text(context_text: str) -> str:
@@ -38,6 +41,8 @@ def normalize_context_text(context_text: str) -> str:
             stripped = line[:-1]
 
         if stripped.startswith(_SAMPLE_ID_PREFIX):
+            continue
+        if stripped.startswith(_SAMPLE_FILENAME_PREFIX):
             continue
 
         title_match = _SAMPLE_TITLE_PATTERN.match(stripped)

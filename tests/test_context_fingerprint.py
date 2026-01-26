@@ -43,3 +43,48 @@ def test_context_fingerprint_changes_on_semantic_context() -> None:
     )
 
     assert compute_context_fingerprint(context_a) != compute_context_fingerprint(context_b)
+
+
+def test_context_fingerprint_normalizes_replicate_variants() -> None:
+    base_lines = [
+        "Series Accession: GSE123",
+        "Sample Organism: Homo sapiens",
+        "Sample Characteristics: disease=healthy",
+    ]
+    variants = [
+        "Sample Title: rep 1",
+        "Sample Title: replicate-1",
+        "Sample Title: Rep1",
+        "Sample Title: rep_1",
+        "Sample Title: Replicate1",
+    ]
+    fingerprints = set()
+    for idx, title in enumerate(variants, start=1):
+        context = "\n".join(
+            [
+                *base_lines,
+                f"Sample ID: GSM00{idx}",
+                f"Sample Filename: GSM00{idx}_sample.txt",
+                title,
+            ]
+        )
+        fingerprints.add(compute_context_fingerprint(context))
+
+    assert len(fingerprints) == 1
+
+
+def test_context_fingerprint_changes_on_treatment_change() -> None:
+    context_a = (
+        "Series Accession: GSE123\n"
+        "Sample ID: GSM010\n"
+        "Sample Title: replicate 1\n"
+        "Sample Characteristics: treatment=vehicle\n"
+    )
+    context_b = (
+        "Series Accession: GSE123\n"
+        "Sample ID: GSM011\n"
+        "Sample Title: replicate 2\n"
+        "Sample Characteristics: treatment=drug\n"
+    )
+
+    assert compute_context_fingerprint(context_a) != compute_context_fingerprint(context_b)
