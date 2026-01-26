@@ -9,13 +9,50 @@ _SAMPLE_ID_PREFIX = "Sample ID:"
 _SAMPLE_FILENAME_PREFIX = "Sample Filename:"
 _SAMPLE_TITLE_PREFIX = "Sample Title:"
 _SAMPLE_TITLE_PATTERN = re.compile(r"^(Sample Title:\s*)(.*)$")
-_NUMERIC_SUFFIX_PATTERN = re.compile(r"(\b[^\s]+?)([_-])(\d+)\b")
-_REPLICATE_PATTERN = re.compile(r"\b(rep(?:licate)?)(?:[\s_-]*)(\d+)\b", re.IGNORECASE)
+_ID_KEYWORD_PATTERN = re.compile(
+    r"(^|[^A-Za-z0-9])"
+    r"(patient|donor|subject)([\s_-]+)([A-Za-z0-9-]*\d+[A-Za-z0-9-]*)",
+    re.IGNORECASE,
+)
+_REPLICATE_MARKER_PATTERN = re.compile(
+    r"\b(techrep(?:licate)?|biorep(?:licate)?|rep(?:licate)?)"
+    r"(?:[\s_-]*)(\d+)\b",
+    re.IGNORECASE,
+)
+_REPLICATE_INDEX_PATTERN = re.compile(
+    r"\b(sample|animal)(?:[\s_-]*)(\d+)\b",
+    re.IGNORECASE,
+)
+_TRAILING_HASH_PATTERN = re.compile(r"(#)(\d+)(\s*)$", re.IGNORECASE)
 
 
 def _normalize_sample_title(title: str) -> str:
-    normalized = _REPLICATE_PATTERN.sub(r"replicate <N>", title)
-    return _NUMERIC_SUFFIX_PATTERN.sub(r"\1\2<N>", normalized)
+    def _replace_id(match: re.Match) -> str:
+        prefix = match.group(1)
+        keyword = match.group(2)
+        separator = match.group(3)
+        return f"{prefix}{keyword}{separator}<ID>"
+
+    def _replace_replicate_marker(match: re.Match) -> str:
+        keyword = match.group(1).lower()
+        number = match.group(2)
+        if keyword.startswith("bio"):
+            label = "biorep"
+        elif keyword.startswith("tech"):
+            label = "techrep"
+        else:
+            label = "replicate"
+        return f"{label} <N>"
+
+    def _replace_replicate_index(match: re.Match) -> str:
+        keyword = match.group(1).lower()
+        return f"{keyword} <N>"
+
+    normalized = _ID_KEYWORD_PATTERN.sub(_replace_id, title)
+    normalized = _REPLICATE_MARKER_PATTERN.sub(_replace_replicate_marker, normalized)
+    normalized = _REPLICATE_INDEX_PATTERN.sub(_replace_replicate_index, normalized)
+    normalized = _TRAILING_HASH_PATTERN.sub(r"#<N>\3", normalized)
+    return normalized
 
 
 def normalize_context_text(context_text: str) -> str:
@@ -23,7 +60,7 @@ def normalize_context_text(context_text: str) -> str:
 
     Rules:
     - Drop the line starting with "Sample ID:".
-    - Normalize numeric-only suffixes in the "Sample Title:" line.
+    - Normalize anchored identifier/replicate patterns in the "Sample Title:" line.
     - Leave all other lines unchanged.
     """
     if not context_text:
