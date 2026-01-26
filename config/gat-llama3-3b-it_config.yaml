@@ -37,6 +37,9 @@ llm:
   # stopping
   stop: ["\nCONTEXT:", "\nPREVIOUS_OUTPUT:", "<|eot_id|>", "<|end_of_text|>", "<end_of_turn>"]
 
+llm_cache:
+  enabled: false
+
 rag:
   persist_path: "ontology_chroma_db"
   collection_name: "ontology_rag"

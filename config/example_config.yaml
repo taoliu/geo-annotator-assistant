@@ -29,6 +29,9 @@ llm:
   #   endpoint: "chat_completions"
   #   default_max_tokens: 256
 
+llm_cache:
+  enabled: false
+
 rag:
   persist_path: "ontology_chroma_db"
   collection_name: "ontology_rag"
