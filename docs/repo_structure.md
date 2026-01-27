@@ -1,8 +1,11 @@
 .
 ├── AGENTS.md
+├── audit.jsonl
 ├── config
 │   ├── example_config.yaml
-│   └── gat-llama3-3b-it_config.yaml
+│   ├── gat-llama3-3b-it_config.yaml
+│   ├── gat-llama3-8b-it_config.yaml
+│   └── gat-qwen3-14b-it_config.yaml
 ├── docs
 │   ├── checkpoints
 │   │   ├── 2026-01-02_checkpoint.md
@@ -11,14 +14,16 @@
 │   │   ├── 2026-01-06_checkpoint.md
 │   │   ├── 2026-01-07_checkpoint.md
 │   │   ├── 2026-01-08_checkpoint.md
-│   │   └── 2026-01-09_checkpoint.md
+│   │   ├── 2026-01-09_checkpoint.md
+│   │   └── 2026-01-14_checkpoint.md
 │   ├── milestones
 │   │   ├── v0.1-llm.md
 │   │   ├── v0.2-ontology-grounding.md
 │   │   ├── v0.3-real-world-refinement.md
 │   │   ├── v0.4-curation-backend.md
 │   │   ├── v0.5-curator-ui.md
-│   │   └── v0.6-rag-validation.md
+│   │   ├── v0.6-rag-validation.md
+│   │   └── v0.7-curator-ui.md
 │   ├── repo_structure.md
 │   ├── RESUME.md
 │   ├── tickets
@@ -80,8 +85,28 @@
 │   │   ├── ticket-53.md
 │   │   ├── ticket-54.md
 │   │   ├── ticket-55.md
+│   │   ├── ticket-56.md
+│   │   ├── ticket-57.md
+│   │   ├── ticket-58.md
+│   │   ├── ticket-59.md
 │   │   ├── ticket-6.md
+│   │   ├── ticket-60.md
+│   │   ├── ticket-61.md
+│   │   ├── ticket-62.md
+│   │   ├── ticket-63.md
+│   │   ├── ticket-64.md
+│   │   ├── ticket-65.md
+│   │   ├── ticket-66.md
+│   │   ├── ticket-67.md
+│   │   ├── ticket-68.md
+│   │   ├── ticket-69.md
 │   │   ├── ticket-7.md
+│   │   ├── ticket-70.md
+│   │   ├── ticket-71.md
+│   │   ├── ticket-72.md
+│   │   ├── ticket-73.md
+│   │   ├── ticket-75.md
+│   │   ├── ticket-76.md
 │   │   ├── ticket-8.md
 │   │   └── ticket-9.md
 │   ├── ui.md
@@ -108,7 +133,9 @@
 │   │   ├── audit.py
 │   │   ├── cli.py
 │   │   ├── config.py
+│   │   ├── context_fingerprint.py
 │   │   ├── gse_postpass.py
+│   │   ├── llm_cache.py
 │   │   ├── ontology_canonicalization.py
 │   │   ├── overrides.py
 │   │   ├── prompts.py
@@ -116,6 +143,8 @@
 │   │   ├── run_batch.py
 │   │   ├── run_gse.py
 │   │   ├── run_single.py
+│   │   ├── standardize_cli.py
+│   │   ├── standardize_terms.py
 │   │   ├── state.py
 │   │   ├── suggestions.py
 │   │   └── writer.py
@@ -146,13 +175,18 @@
 │   │   ├── __init__.py
 │   │   ├── app_streamlit.py
 │   │   ├── cli.py
+│   │   ├── dashboard.py
+│   │   ├── evidence.py
 │   │   ├── flags.py
+│   │   ├── help_text.py
 │   │   ├── loaders.py
+│   │   ├── override_safety.py
 │   │   ├── overrides.py
 │   │   ├── paths.py
 │   │   ├── schema.py
 │   │   ├── state.py
-│   │   └── styling.py
+│   │   ├── styling.py
+│   │   └── triage.py
 │   └── validator
 │       ├── __init__.py
 │       ├── cell_line_rules.py
@@ -182,6 +216,7 @@
 │   ├── test_config_rag_schema.py
 │   ├── test_consistency_decision_routing.py
 │   ├── test_consistency_validator.py
+│   ├── test_context_fingerprint.py
 │   ├── test_decision_engine.py
 │   ├── test_disease_ncit_trigger_configurable.py
 │   ├── test_failure_codes_evidence_first.py
@@ -192,6 +227,7 @@
 │   ├── test_gse_soft_ingest.py
 │   ├── test_heuristics_loading.py
 │   ├── test_http_retry_policy.py
+│   ├── test_llm_cache_gse.py
 │   ├── test_llm_interface_stubbed.py
 │   ├── test_llm_repair_loops.py
 │   ├── test_llm_reuse.py
@@ -214,6 +250,8 @@
 │   ├── test_repair_loop.py
 │   ├── test_run_single_stub.py
 │   ├── test_semantic_validator.py
+│   ├── test_standardize_cli.py
+│   ├── test_standardize_terms.py
 │   ├── test_state_and_audit.py
 │   ├── test_suggestions.py
 │   ├── test_terminal_exact_short_circuit.py
@@ -221,10 +259,16 @@
 │   ├── test_writer.py
 │   └── ui
 │       ├── test_cli.py
+│       ├── test_dashboard.py
+│       ├── test_evidence.py
 │       ├── test_flags.py
+│       ├── test_guidance.py
 │       ├── test_loaders.py
+│       ├── test_modal.py
+│       ├── test_override_safety.py
 │       ├── test_overrides.py
-│       └── test_state.py
+│       ├── test_state.py
+│       └── test_triage.py
 └── uv.lock
 
-18 directories, 210 files
+18 directories, 254 files
