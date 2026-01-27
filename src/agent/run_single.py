@@ -26,7 +26,13 @@ from validator.consistency_validator import (
     consistency_validate,
 )
 from validator.decision_engine import decide_next_action, load_decision_table
-from validator.format_validator import validate_format
+from validator.format_validator import (
+    ERROR_EMPTY_VALUE,
+    ERROR_MISSING_KEYS,
+    ERROR_NON_STRING,
+    ERROR_WORD_LIMIT,
+    validate_format,
+)
 from validator.ontology_validator import ground_all_fields
 from validator.semantic_validator import semantic_validate
 from llm.base import LLMRequest
@@ -180,6 +186,65 @@ def _normalize_output(
             value = _PLACEHOLDERS[key]
         normalized[key] = value
     return normalized
+
+
+def _word_count(value: str) -> int:
+    return len([token for token in value.strip().split() if token])
+
+
+def _format_error_fields(
+    parsed_output: Dict[str, str],
+    format_errors: List[str],
+    cfg: dict,
+) -> set[str]:
+    fields: set[str] = set()
+    error_set = set(format_errors)
+    if error_set.intersection({ERROR_MISSING_KEYS, ERROR_NON_STRING, ERROR_EMPTY_VALUE}):
+        for key in REQUIRED_KEYS:
+            if key not in parsed_output:
+                fields.add(key)
+
+    if ERROR_WORD_LIMIT in error_set:
+        word_limits = cfg.get("limits", {}).get("field_word_limits")
+        for key, value in parsed_output.items():
+            if key not in REQUIRED_KEYS:
+                continue
+            limit = 5
+            if isinstance(word_limits, dict):
+                limit = word_limits.get(key, limit)
+            try:
+                limit = int(limit)
+            except (TypeError, ValueError):
+                limit = 5
+            if limit > 0 and _word_count(value) > limit:
+                fields.add(key)
+
+    return fields
+
+
+def _finalize_unrepaired_format_errors(
+    state: PipelineState,
+    parsed_output: Dict[str, str],
+    context_text: str,
+    cfg: dict,
+) -> None:
+    error_fields = _format_error_fields(parsed_output, state.format_errors, cfg)
+    final_output = dict(parsed_output)
+    for field in error_fields:
+        if field in state.locked_fields:
+            continue
+        fallback = _PLACEHOLDERS.get(field)
+        if fallback is not None:
+            final_output[field] = fallback
+    state.final_output = _normalize_output(
+        final_output,
+        state.gsm_accession,
+        state.gse_accession,
+    )
+    _update_validation_state(state, state.final_output, context_text, cfg)
+    state.final_decision = "FLAGGED"
+    if "format_unrepaired" not in state.flags:
+        state.flags.append("format_unrepaired")
 
 
 def _grounder_available(field: str) -> bool:
@@ -582,7 +647,7 @@ def _run_llm_pipeline(
         llm_cache=llm_cache,
     )
     state.format_errors = format_errors
-    if parsed_output is None or format_errors:
+    if parsed_output is None:
         state.final_decision = "FLAGGED"
         if "format_unrepaired" not in state.flags:
             state.flags.append("format_unrepaired")
@@ -590,6 +655,15 @@ def _run_llm_pipeline(
             {},
             state.gsm_accession,
             state.gse_accession,
+        )
+        audit_record = build_audit_record(state)
+        return state.final_output, audit_record, True
+    if format_errors:
+        _finalize_unrepaired_format_errors(
+            state,
+            parsed_output,
+            context_text,
+            cfg,
         )
         audit_record = build_audit_record(state)
         return state.final_output, audit_record, True
