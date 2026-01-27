@@ -15,7 +15,8 @@
 │   │   ├── 2026-01-07_checkpoint.md
 │   │   ├── 2026-01-08_checkpoint.md
 │   │   ├── 2026-01-09_checkpoint.md
-│   │   └── 2026-01-14_checkpoint.md
+│   │   ├── 2026-01-14_checkpoint.md
+│   │   └── 2026-01-26_checkpoint.md
 │   ├── milestones
 │   │   ├── v0.1-llm.md
 │   │   ├── v0.2-ontology-grounding.md
@@ -23,7 +24,8 @@
 │   │   ├── v0.4-curation-backend.md
 │   │   ├── v0.5-curator-ui.md
 │   │   ├── v0.6-rag-validation.md
-│   │   └── v0.7-curator-ui.md
+│   │   ├── v0.7-curator-ui.md
+│   │   └── v0.8-backend-robustness.md
 │   ├── repo_structure.md
 │   ├── RESUME.md
 │   ├── tickets
@@ -107,7 +109,14 @@
 │   │   ├── ticket-73.md
 │   │   ├── ticket-75.md
 │   │   ├── ticket-76.md
+│   │   ├── ticket-77.md
+│   │   ├── ticket-78.md
+│   │   ├── ticket-79.md
 │   │   ├── ticket-8.md
+│   │   ├── ticket-80.md
+│   │   ├── ticket-81.md
+│   │   ├── ticket-82.md
+│   │   ├── ticket-83.md
 │   │   └── ticket-9.md
 │   ├── ui.md
 │   └── whitepaper.md
@@ -225,6 +234,7 @@
 │   ├── test_gse_consistency_postpass.py
 │   ├── test_gse_jsonl_path.py
 │   ├── test_gse_soft_ingest.py
+│   ├── test_healthy_disease_conflict.py
 │   ├── test_heuristics_loading.py
 │   ├── test_http_retry_policy.py
 │   ├── test_llm_cache_gse.py
@@ -271,4 +281,4 @@
 │       └── test_triage.py
 └── uv.lock
 
-18 directories, 254 files
+18 directories, 264 files
