@@ -33,3 +33,5 @@ The codebase is stable and suitable for:
 - Improving ontology alias handling (for example Cellosaurus short names)
 
 No blocking technical debt remains from v0.2.
+
+**Checkpoint status:** ARCHIVED

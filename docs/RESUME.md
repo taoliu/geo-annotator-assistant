@@ -117,7 +117,12 @@ These invariants are defined in `docs/whitepaper.md`.
 
 * Backend stable and frozen after v0.6
 * Curator UI refined and closed in v0.7
-* Ready for end-to-end robustness review and incremental fixes
+* v0.8 backend robustness sweep completed (no schema changes)
+* Clarified canonical output: `annotations.jsonl` is the 8-field source of truth
+* Stabilized “Healthy” disease handling as terminal when appropriate
+* Added deterministic per-GSE LLM caching (config-gated; conservative fingerprinting)
+* Improved audit consistency (`primary_failure` reflects repair-triggering failures)
+* Strengthened disease grounding and Microarray allowlist gating
 
 ---
 

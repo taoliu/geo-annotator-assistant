@@ -147,4 +147,4 @@ To start a new session:
 
 ---
 
-**Checkpoint status:** ACTIVE
+**Checkpoint status:** ARCHIVED

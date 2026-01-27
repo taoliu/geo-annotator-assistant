@@ -89,3 +89,5 @@ This checkpoint marks the end of milestone v0.2 and the transition to milestone 
 
 ## Validation status
 - All unit tests passing:
+
+**Checkpoint status:** ARCHIVED

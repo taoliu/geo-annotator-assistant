@@ -77,6 +77,12 @@ The pipeline emits multiple artifacts, but only one is **canonical** and schema-
   * Advisory cross-GSM diagnostics
   * Must not influence GSM-level decisions
 
+* **`gse_field_values.jsonl`**
+  * Per-GSE field value summaries for diagnostics
+  * Derived, non-authoritative
+
+LLM caching exists, is deterministic, and is **disabled by default** (enable via config).
+
 ---
 
 ## High-level pipeline

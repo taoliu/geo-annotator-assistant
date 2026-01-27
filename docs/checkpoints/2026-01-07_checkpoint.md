@@ -36,11 +36,13 @@ This checkpoint marks the logical close of backend work for v0.4.
 
 * **Deterministic override application**
 
-  * Overrides applied after inference and repair.
-  * No re-inference or ontology re-grounding.
+* Overrides applied after inference and repair.
+* No re-inference or ontology re-grounding.
   * All applied overrides recorded in audit with old/new values.
 
 ---
+
+**Checkpoint status:** ARCHIVED
 
 ### Curator-facing review artifacts
 

@@ -78,6 +78,8 @@ Resolution:
 
 ## Status
 
+**Checkpoint status:** ARCHIVED
+
 - Pipeline is stable
 - All samples in test GSEs annotate successfully
 - No false FLAGGED results due to formatting noise

@@ -5,6 +5,8 @@
 
 ---
 
+**Checkpoint status:** ARCHIVED
+
 ## Scope of This Checkpoint
 
 This checkpoint records the completion of **v0.3: Real-World Refinement and Deterministic Repair**.
