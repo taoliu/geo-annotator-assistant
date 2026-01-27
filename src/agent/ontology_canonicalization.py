@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 from typing import Any, Dict, Optional
+import re
 
 from agent.state import PipelineState
 from validator.ontology_match import is_terminal_exact
+
+_DISEASE_GENERALIZATION_FLAG = "disease_generalized_for_ontology"
+_DISEASE_PARENT_SOURCES = {"human disease ontology", "nci thesaurus"}
+_DISEASE_SUBSTRING_RE = re.compile(r"[-\s]+")
 
 
 def _extract_match_values(match: Any) -> tuple[Optional[str], float, Optional[str], Optional[str], Optional[str], Optional[str]]:
@@ -96,3 +101,83 @@ def apply_terminal_exact_canonicalization_and_lock(
 
     state.canonicalizations = canonicalizations
     state.locked_fields = locked_fields
+
+
+def _normalize_substring_text(text: str) -> str:
+    if not text:
+        return ""
+    normalized = _DISEASE_SUBSTRING_RE.sub(" ", text.lower())
+    return " ".join(normalized.split())
+
+
+def _extract_match_attr(match: Any, attr: str) -> Any:
+    if isinstance(match, dict):
+        return match.get(attr)
+    return getattr(match, attr, None)
+
+
+def apply_disease_modifier_generalization(
+    state: PipelineState,
+    config: Optional[Dict[str, Any]],
+) -> None:
+    del config
+    if state.final_output is None:
+        return
+    match = state.ontology_matches.get("disease")
+    if not match:
+        return
+    if state.locked_fields.get("disease", {}).get("reason") == _DISEASE_GENERALIZATION_FLAG:
+        return
+    status = _extract_match_attr(match, "status")
+    if status != "LOW_CONFIDENCE":
+        return
+    alternates = _extract_match_attr(match, "alternates")
+    if not isinstance(alternates, list) or not alternates:
+        return
+
+    top = alternates[0] if alternates else None
+    if not isinstance(top, dict):
+        return
+    label = top.get("label")
+    term_id = top.get("term_id")
+    source = top.get("source")
+    if not isinstance(label, str) or not label.strip():
+        return
+    if not isinstance(source, str) or source.strip().lower() not in _DISEASE_PARENT_SOURCES:
+        return
+
+    raw_value = _extract_match_attr(match, "raw_value") or state.final_output.get("disease") or ""
+    if not isinstance(raw_value, str):
+        raw_value = str(raw_value)
+    raw_norm = _normalize_substring_text(raw_value)
+    label_norm = _normalize_substring_text(label)
+    if not raw_norm or not label_norm or label_norm not in raw_norm:
+        return
+
+    original_value = state.final_output.get("disease")
+    state.final_output["disease"] = label
+
+    canonicalizations = dict(state.canonicalizations)
+    canonicalizations["disease"] = {
+        "field": "disease",
+        "original_value": original_value,
+        "canonical_value": label,
+        "term_id": term_id,
+        "source": source,
+        "match_type": "parent_substring",
+    }
+    state.canonicalizations = canonicalizations
+
+    locked_fields = dict(state.locked_fields)
+    locked_fields["disease"] = {
+        "term_id": term_id,
+        "label": label,
+        "source": source,
+        "reason": _DISEASE_GENERALIZATION_FLAG,
+    }
+    state.locked_fields = locked_fields
+
+    state.semantic_errors.pop("disease", None)
+    state.ontology_failures.pop("disease", None)
+    if _DISEASE_GENERALIZATION_FLAG not in state.flags:
+        state.flags.append(_DISEASE_GENERALIZATION_FLAG)

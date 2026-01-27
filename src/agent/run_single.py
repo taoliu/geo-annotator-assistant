@@ -9,7 +9,10 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from agent.accession import override_accessions
 from agent.audit import build_audit_record
-from agent.ontology_canonicalization import apply_terminal_exact_canonicalization_and_lock
+from agent.ontology_canonicalization import (
+    apply_disease_modifier_generalization,
+    apply_terminal_exact_canonicalization_and_lock,
+)
 from agent.prompts import load_prompt
 from agent.repair_loop import apply_repairs, merge_repair_output
 from agent.state import PipelineState
@@ -253,6 +256,9 @@ def _update_validation_state(
     context_text: str,
     cfg: dict,
 ) -> None:
+    preserved_disease_match = None
+    if state.locked_fields.get("disease", {}).get("reason") == "disease_generalized_for_ontology":
+        preserved_disease_match = state.ontology_matches.get("disease")
     state.semantic_errors = semantic_validate(parsed_output, context_text)
     rag_cfg = cfg.get("rag", {}) if isinstance(cfg, dict) else {}
     matches, ontology_failures = ground_all_fields(
@@ -260,6 +266,9 @@ def _update_validation_state(
         context_text,
         rag_cfg,
     )
+    if preserved_disease_match is not None:
+        matches["disease"] = preserved_disease_match
+        ontology_failures.pop("disease", None)
     state.ontology_matches = {
         field: match.to_dict() if hasattr(match, "to_dict") else match
         for field, match in matches.items()
@@ -271,6 +280,7 @@ def _update_validation_state(
         ontology_matches=state.ontology_matches,
     )
     apply_terminal_exact_canonicalization_and_lock(state, cfg)
+    apply_disease_modifier_generalization(state, cfg)
 
 
 def _generate_with_format_repairs(
