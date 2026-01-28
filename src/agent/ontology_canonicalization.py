@@ -13,6 +13,8 @@ _DISEASE_PARENT_SOURCES = {"human disease ontology", "nci thesaurus"}
 _DISEASE_SUBSTRING_RE = re.compile(r"[-\s]+")
 _TISSUE_PLACEHOLDER_FLAG = "tissue_type_non_anatomical_placeholder"
 _TISSUE_PLACEHOLDER_MATCHED_VIA = "non_anatomical_placeholder"
+_DISEASE_MODEL_FLAG = "disease_model_identifier_not_ontology"
+_DISEASE_MODEL_MATCHED_VIA = "model_identifier"
 
 
 def _extract_match_values(match: Any) -> tuple[Optional[str], float, Optional[str], Optional[str], Optional[str], Optional[str]]:
@@ -218,3 +220,38 @@ def apply_tissue_placeholder_fallback(
     state.ontology_failures.pop("tissue_type", None)
     if _TISSUE_PLACEHOLDER_FLAG not in state.flags:
         state.flags.append(_TISSUE_PLACEHOLDER_FLAG)
+
+
+def apply_disease_model_fallback(
+    state: PipelineState,
+    config: Optional[Dict[str, Any]],
+) -> None:
+    del config
+    if state.final_output is None:
+        return
+    match = state.ontology_matches.get("disease")
+    if not match:
+        return
+    if state.locked_fields.get("disease", {}).get("reason") == _DISEASE_MODEL_FLAG:
+        return
+    matched_via = _extract_match_attr(match, "matched_via")
+    if matched_via != _DISEASE_MODEL_MATCHED_VIA:
+        return
+
+    original_value = state.final_output.get("disease")
+    state.final_output["disease"] = "Unknown"
+
+    locked_fields = dict(state.locked_fields)
+    locked_fields["disease"] = {
+        "term_id": None,
+        "label": "Unknown",
+        "source": None,
+        "reason": _DISEASE_MODEL_FLAG,
+        "original_value": original_value,
+    }
+    state.locked_fields = locked_fields
+
+    state.semantic_errors.pop("disease", None)
+    state.ontology_failures.pop("disease", None)
+    if _DISEASE_MODEL_FLAG not in state.flags:
+        state.flags.append(_DISEASE_MODEL_FLAG)

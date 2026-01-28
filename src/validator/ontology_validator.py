@@ -65,6 +65,31 @@ _NON_ANATOMICAL_TISSUE_PLACEHOLDERS = {
     "tumour samples",
 }
 _PLACEHOLDER_NORMALIZE_RE = re.compile(r"[^a-z0-9]+")
+_DISEASE_MODEL_IDENTIFIERS = {
+    "ct26",
+    "mc38",
+    "b16",
+    "4t1",
+    "llc",
+}
+_DISEASE_MODEL_PHRASES = {
+    "mouse tumor model",
+    "syngeneic tumor model",
+    "xenograft model",
+}
+_DISEASE_EXPLICIT_TERMS = {
+    "cancer",
+    "carcinoma",
+    "adenocarcinoma",
+    "leukemia",
+    "lymphoma",
+    "melanoma",
+    "sarcoma",
+    "glioma",
+    "glioblastoma",
+    "myeloma",
+    "blastoma",
+}
 
 _FIELD_FAILURE_CODES = {
     "tissue_type": {
@@ -160,6 +185,27 @@ def _is_non_anatomical_tissue_placeholder(raw_value: str) -> bool:
     return _normalize_placeholder_value(raw_value) in _NON_ANATOMICAL_TISSUE_PLACEHOLDERS
 
 
+def _contains_explicit_disease_term(normalized_value: str) -> bool:
+    if not normalized_value:
+        return False
+    tokens = set(normalized_value.split())
+    return any(term in tokens for term in _DISEASE_EXPLICIT_TERMS)
+
+
+def _is_disease_model_identifier(raw_value: str) -> bool:
+    normalized = _normalize_placeholder_value(raw_value)
+    if not normalized:
+        return False
+    tokens = set(normalized.split())
+    has_identifier = any(token in _DISEASE_MODEL_IDENTIFIERS for token in tokens)
+    has_phrase = any(phrase in normalized for phrase in _DISEASE_MODEL_PHRASES)
+    if not (has_identifier or has_phrase):
+        return False
+    if _contains_explicit_disease_term(normalized):
+        return False
+    return True
+
+
 def _make_placeholder_match(field: str, raw_value: str, ontology: str) -> OntologyMatch:
     return OntologyMatch(
         field=field,
@@ -173,6 +219,22 @@ def _make_placeholder_match(field: str, raw_value: str, ontology: str) -> Ontolo
         score=None,
         alternates=[],
         matched_via="non_anatomical_placeholder",
+    )
+
+
+def _make_disease_model_match(field: str, raw_value: str, ontology: str) -> OntologyMatch:
+    return OntologyMatch(
+        field=field,
+        raw_value=raw_value,
+        ontology=ontology,
+        status="FALLBACK",
+        matched_term_id=None,
+        matched_label=None,
+        matched_source=None,
+        match_type="fallback",
+        score=None,
+        alternates=[],
+        matched_via="model_identifier",
     )
 
 
@@ -257,6 +319,8 @@ def ground_all_fields(
             match = _make_none_match(field, raw_value, ontology)
         elif field == "tissue_type" and _is_non_anatomical_tissue_placeholder(raw_value):
             match = _make_placeholder_match(field, raw_value, ontology)
+        elif field == "disease" and _is_disease_model_identifier(raw_value):
+            match = _make_disease_model_match(field, raw_value, ontology)
         elif _is_fallback_value(field, raw_value):
             match = _make_fallback_match(field, raw_value, ontology)
         elif field == "data_type" and _is_data_type_allowlisted(raw_value, ontology_config):
