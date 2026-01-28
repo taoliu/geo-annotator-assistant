@@ -371,6 +371,8 @@ def ground_disease(
     raw_value: str,
     context_text: str,
     config: Optional[Dict[str, Any]],
+    *,
+    query_override: Optional[str] = None,
 ) -> OntologyMatch:
     del context_text
     doid_source = _resolve_source("disease", config)
@@ -379,7 +381,7 @@ def ground_disease(
             "disease",
             raw_value,
             doid_source,
-            query_used=raw_value,
+            query_used=query_override or raw_value,
         )
     ontology_cfg = config.get("ontology") if isinstance(config.get("ontology"), dict) else {}
     if not ontology_cfg.get("enabled", False):
@@ -387,11 +389,12 @@ def ground_disease(
             "disease",
             raw_value,
             doid_source,
-            query_used=raw_value,
+            query_used=query_override or raw_value,
         )
 
     ncit_enabled, trigger_terms = _extract_ncit_config(config)
-    query_value, stripped = _strip_leading_model_token(raw_value)
+    base_query = query_override or raw_value
+    query_value, stripped = _strip_leading_model_token(base_query)
     match = _ground_disease_with_query(
         raw_value,
         query_value,
@@ -400,7 +403,7 @@ def ground_disease(
         ncit_enabled=ncit_enabled,
         trigger_terms=trigger_terms,
     )
-    if stripped and not _is_terminal_exact_match(match):
+    if stripped and query_override is None and not _is_terminal_exact_match(match):
         match = _ground_disease_with_query(
             raw_value,
             raw_value,

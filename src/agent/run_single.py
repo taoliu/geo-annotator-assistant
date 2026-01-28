@@ -12,6 +12,7 @@ from agent.audit import build_audit_record
 from agent.ontology_canonicalization import (
     apply_disease_modifier_generalization,
     apply_disease_model_fallback,
+    apply_sloppy_tumor_disease_generalization,
     apply_tissue_placeholder_fallback,
     apply_terminal_exact_canonicalization_and_lock,
 )
@@ -342,6 +343,11 @@ def _update_validation_state(
         preserved_disease_match = state.ontology_matches.get("disease")
     if state.locked_fields.get("disease", {}).get("reason") == "disease_model_identifier_not_ontology":
         preserved_disease_match = state.ontology_matches.get("disease")
+    if (
+        state.locked_fields.get("disease", {}).get("reason")
+        == "disease_generalized_from_sloppy_tumor_label"
+    ):
+        preserved_disease_match = state.ontology_matches.get("disease")
     preserved_tissue_match = None
     if state.locked_fields.get("tissue_type", {}).get("reason") == "tissue_type_non_anatomical_placeholder":
         preserved_tissue_match = state.ontology_matches.get("tissue_type")
@@ -372,6 +378,7 @@ def _update_validation_state(
     apply_disease_modifier_generalization(state, cfg)
     apply_tissue_placeholder_fallback(state, cfg)
     apply_disease_model_fallback(state, cfg)
+    apply_sloppy_tumor_disease_generalization(state, cfg)
 
 
 def _apply_non_accept_flags(state: PipelineState) -> None:

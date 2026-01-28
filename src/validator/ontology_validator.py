@@ -18,7 +18,7 @@ from validator.failure_codes import (
     ONTOLOGY_NO_MATCH_DISEASE,
     ONTOLOGY_NO_MATCH_TISSUE_TYPE,
 )
-from validator.ontology_match import OntologyMatch
+from validator.ontology_match import OntologyMatch, is_terminal_exact
 from validator.cell_line_rules import is_cell_line_cell_type
 
 try:
@@ -77,6 +77,7 @@ _DISEASE_MODEL_PHRASES = {
     "syngeneic tumor model",
     "xenograft model",
 }
+_DISEASE_SLOPPY_TUMOR_SUFFIXES = ("tumor", "tumour")
 _DISEASE_EXPLICIT_TERMS = {
     "cancer",
     "carcinoma",
@@ -206,6 +207,65 @@ def _is_disease_model_identifier(raw_value: str) -> bool:
     return True
 
 
+def _is_human_organism(value: str) -> bool:
+    return value.strip().lower() == "homo sapiens"
+
+
+def _normalize_site_label(value: str) -> str:
+    return _normalize_placeholder_value(value)
+
+
+def _matches_sloppy_tumor_pattern(
+    normalized_disease: str,
+    normalized_site: str,
+) -> bool:
+    if not normalized_disease or not normalized_site:
+        return False
+    return normalized_disease in {
+        f"{normalized_site} tumor",
+        f"{normalized_site} tumour",
+        f"tumor of {normalized_site}",
+        f"tumour of {normalized_site}",
+    }
+
+
+def _sloppy_tumor_generalization(
+    raw_disease: str,
+    organism_value: str,
+    tissue_match: OntologyMatch | None,
+) -> Optional[str]:
+    if not raw_disease or not organism_value:
+        return None
+    if not _is_human_organism(organism_value):
+        return None
+    if tissue_match is None:
+        return None
+    status = getattr(tissue_match, "status", None)
+    match_type = getattr(tissue_match, "match_type", None)
+    score = getattr(tissue_match, "score", None)
+    label = getattr(tissue_match, "matched_label", None)
+    source = getattr(tissue_match, "matched_source", None)
+    try:
+        score_value = float(score) if score is not None else 0.0
+    except (TypeError, ValueError):
+        score_value = 0.0
+    if not is_terminal_exact(str(status or ""), score_value, str(match_type or "")):
+        return None
+    if not isinstance(label, str) or not label.strip():
+        return None
+    if isinstance(source, str) and source.strip().lower() not in {"uberon ontology"}:
+        return None
+    if _is_disease_model_identifier(raw_disease):
+        return None
+    normalized_site = _normalize_site_label(label)
+    normalized_disease = _normalize_site_label(raw_disease)
+    if not _matches_sloppy_tumor_pattern(normalized_disease, normalized_site):
+        return None
+    if not normalized_site:
+        return None
+    return f"{normalized_site} cancer"
+
+
 def _make_placeholder_match(field: str, raw_value: str, ontology: str) -> OntologyMatch:
     return OntologyMatch(
         field=field,
@@ -311,6 +371,7 @@ def ground_all_fields(
     matches_by_field: Dict[str, OntologyMatch] = {}
     failures_by_field: Dict[str, str] = {}
 
+    tissue_match: OntologyMatch | None = None
     for field in ("data_type", "tissue_type", "cell_line", "disease"):
         raw_value = (llm_output.get(field) or "").strip()
         ontology = _resolve_ontology_source(field, ontology_config)
@@ -329,18 +390,45 @@ def ground_all_fields(
             match = _make_fallback_match(field, raw_value, ontology)
         else:
             grounder_fn = _get_grounder(field)
-            result = _call_grounder(
-                grounder_fn,
-                raw_value,
-                context_text,
-                ontology_config,
-            )
+            if field == "disease":
+                query_override = _sloppy_tumor_generalization(
+                    raw_value,
+                    (llm_output.get("organism") or "").strip(),
+                    tissue_match,
+                )
+                try:
+                    result = (
+                        grounder_fn(
+                            raw_value,
+                            context_text,
+                            ontology_config,
+                            query_override=query_override,
+                        )
+                        if grounder_fn is not None
+                        else None
+                    )
+                except TypeError:
+                    result = _call_grounder(
+                        grounder_fn,
+                        raw_value,
+                        context_text,
+                        ontology_config,
+                    )
+            else:
+                result = _call_grounder(
+                    grounder_fn,
+                    raw_value,
+                    context_text,
+                    ontology_config,
+                )
             if isinstance(result, OntologyMatch):
                 match = result
             else:
                 match = _make_none_match(field, raw_value, ontology)
 
         matches_by_field[field] = match
+        if field == "tissue_type" and isinstance(match, OntologyMatch):
+            tissue_match = match
 
         failure_code = _failure_code_for_match(field, match)
         if failure_code:

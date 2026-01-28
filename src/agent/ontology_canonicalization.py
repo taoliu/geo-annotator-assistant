@@ -15,6 +15,14 @@ _TISSUE_PLACEHOLDER_FLAG = "tissue_type_non_anatomical_placeholder"
 _TISSUE_PLACEHOLDER_MATCHED_VIA = "non_anatomical_placeholder"
 _DISEASE_MODEL_FLAG = "disease_model_identifier_not_ontology"
 _DISEASE_MODEL_MATCHED_VIA = "model_identifier"
+_SLOPPY_TUMOR_FLAG = "disease_generalized_from_sloppy_tumor_label"
+_SLOPPY_TUMOR_RE = re.compile(r"[^a-z0-9]+")
+_DISEASE_MODEL_IDENTIFIERS = {"ct26", "mc38", "b16", "4t1", "llc"}
+_DISEASE_MODEL_PHRASES = {
+    "mouse tumor model",
+    "syngeneic tumor model",
+    "xenograft model",
+}
 
 
 def _extract_match_values(match: Any) -> tuple[Optional[str], float, Optional[str], Optional[str], Optional[str], Optional[str]]:
@@ -118,6 +126,36 @@ def _extract_match_attr(match: Any, attr: str) -> Any:
     if isinstance(match, dict):
         return match.get(attr)
     return getattr(match, attr, None)
+
+
+def _normalize_sloppy_text(value: str) -> str:
+    normalized = _SLOPPY_TUMOR_RE.sub(" ", (value or "").lower())
+    return " ".join(normalized.split())
+
+
+def _is_human_organism(value: str) -> bool:
+    return (value or "").strip().lower() == "homo sapiens"
+
+
+def _is_model_identifier(value: str) -> bool:
+    normalized = _normalize_sloppy_text(value)
+    if not normalized:
+        return False
+    tokens = set(normalized.split())
+    if any(token in _DISEASE_MODEL_IDENTIFIERS for token in tokens):
+        return True
+    return any(phrase in normalized for phrase in _DISEASE_MODEL_PHRASES)
+
+
+def _matches_sloppy_tumor(normalized_disease: str, normalized_site: str) -> bool:
+    if not normalized_disease or not normalized_site:
+        return False
+    return normalized_disease in {
+        f"{normalized_site} tumor",
+        f"{normalized_site} tumour",
+        f"tumor of {normalized_site}",
+        f"tumour of {normalized_site}",
+    }
 
 
 def apply_disease_modifier_generalization(
@@ -255,3 +293,76 @@ def apply_disease_model_fallback(
     state.ontology_failures.pop("disease", None)
     if _DISEASE_MODEL_FLAG not in state.flags:
         state.flags.append(_DISEASE_MODEL_FLAG)
+
+
+def apply_sloppy_tumor_disease_generalization(
+    state: PipelineState,
+    config: Optional[Dict[str, Any]],
+) -> None:
+    del config
+    if state.final_output is None:
+        return
+    if state.locked_fields.get("disease"):
+        return
+    organism = state.final_output.get("organism", "")
+    if not _is_human_organism(organism):
+        return
+
+    tissue_match = state.ontology_matches.get("tissue_type")
+    if not tissue_match:
+        return
+    t_status, t_score, t_match_type, t_label, _, t_source = _extract_match_values(
+        tissue_match
+    )
+    if not t_label:
+        return
+    if t_source and str(t_source).strip().lower() != "uberon ontology":
+        return
+    if not is_terminal_exact(str(t_status or ""), float(t_score or 0.0), str(t_match_type or "")):
+        return
+
+    disease_match = state.ontology_matches.get("disease")
+    raw_disease = ""
+    query_used = None
+    if disease_match:
+        raw_disease = _extract_match_attr(disease_match, "raw_value") or ""
+        query_used = _extract_match_attr(disease_match, "query_used")
+    if not raw_disease:
+        raw_disease = state.final_output.get("disease") or ""
+    if not raw_disease:
+        return
+    if _is_model_identifier(raw_disease):
+        return
+
+    normalized_site = _normalize_sloppy_text(str(t_label))
+    normalized_disease = _normalize_sloppy_text(str(raw_disease))
+    if not _matches_sloppy_tumor(normalized_disease, normalized_site):
+        return
+
+    generalized_label = (
+        str(query_used)
+        if isinstance(query_used, str) and query_used.strip()
+        else f"{normalized_site} cancer"
+    )
+    if generalized_label:
+        state.final_output["disease"] = generalized_label
+
+    if _SLOPPY_TUMOR_FLAG not in state.flags:
+        state.flags.append(_SLOPPY_TUMOR_FLAG)
+
+    if disease_match:
+        d_status, d_score, d_match_type, d_label, d_term_id, d_source = _extract_match_values(
+            disease_match
+        )
+        if is_terminal_exact(str(d_status or ""), float(d_score or 0.0), str(d_match_type or "")):
+            locked_fields = dict(state.locked_fields)
+            locked_fields["disease"] = {
+                "term_id": d_term_id,
+                "label": d_label or generalized_label,
+                "source": d_source,
+                "reason": _SLOPPY_TUMOR_FLAG,
+                "original_value": raw_disease,
+            }
+            state.locked_fields = locked_fields
+            state.semantic_errors.pop("disease", None)
+            state.ontology_failures.pop("disease", None)
