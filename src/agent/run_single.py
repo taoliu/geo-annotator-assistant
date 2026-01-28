@@ -242,10 +242,24 @@ def _finalize_unrepaired_format_errors(
         state.gsm_accession,
         state.gse_accession,
     )
+    _apply_locked_field_values(state)
     _update_validation_state(state, state.final_output, context_text, cfg)
     state.final_decision = "FLAGGED"
     if "format_unrepaired" not in state.flags:
         state.flags.append("format_unrepaired")
+
+
+def _apply_locked_field_values(state: PipelineState) -> None:
+    if state.final_output is None:
+        return
+    if not state.locked_fields:
+        return
+    for field, info in state.locked_fields.items():
+        if not isinstance(info, dict):
+            continue
+        label = info.get("label")
+        if isinstance(label, str) and label:
+            state.final_output[field] = label
 
 
 def _grounder_available(field: str) -> bool:
@@ -687,6 +701,7 @@ def _run_llm_pipeline(
     if not state.validation_cache_hit:
         _update_validation_state(state, state.final_output, context_text, cfg)
     elif state.final_output is not None and state.final_decision is not None:
+        _apply_locked_field_values(state)
         _apply_non_accept_flags(state)
         audit_record = build_audit_record(state)
         flagged = state.final_decision != "ACCEPT"
@@ -721,6 +736,7 @@ def _run_llm_pipeline(
         state.gsm_accession,
         state.gse_accession,
     )
+    _apply_locked_field_values(state)
     if state.final_decision is None:
         unresolved = bool(state.semantic_errors) or bool(state.ontology_failures) or bool(
             state.consistency_flags
