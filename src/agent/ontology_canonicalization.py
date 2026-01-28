@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 import re
 
 from agent.state import PipelineState
+from validator.failure_codes import TREATMENT_IDENTITY_LEAKAGE
 from validator.ontology_match import is_terminal_exact
 
 _DISEASE_GENERALIZATION_FLAG = "disease_generalized_for_ontology"
@@ -23,6 +24,9 @@ _DISEASE_MODEL_PHRASES = {
     "syngeneic tumor model",
     "xenograft model",
 }
+_TREATMENT_IDENTITY_FLAG = "treatment_not_an_intervention"
+_HEALTHY_CONTROL_FLAG = "disease_normalized_to_healthy"
+_HEALTHY_CONTROL_MATCHED_VIA = "healthy_control_normalized"
 
 
 def _extract_match_values(match: Any) -> tuple[Optional[str], float, Optional[str], Optional[str], Optional[str], Optional[str]]:
@@ -366,3 +370,66 @@ def apply_sloppy_tumor_disease_generalization(
             state.locked_fields = locked_fields
             state.semantic_errors.pop("disease", None)
             state.ontology_failures.pop("disease", None)
+
+
+def apply_treatment_identity_fallback(
+    state: PipelineState,
+    config: Optional[Dict[str, Any]],
+) -> None:
+    del config
+    if state.final_output is None:
+        return
+    errors = state.semantic_errors.get("treatment")
+    if not errors or TREATMENT_IDENTITY_LEAKAGE not in errors:
+        return
+
+    state.final_output["treatment"] = "None"
+    locked_fields = dict(state.locked_fields)
+    locked_fields["treatment"] = {
+        "term_id": None,
+        "label": "None",
+        "source": None,
+        "reason": _TREATMENT_IDENTITY_FLAG,
+    }
+    state.locked_fields = locked_fields
+
+    remaining = [err for err in errors if err != TREATMENT_IDENTITY_LEAKAGE]
+    if remaining:
+        state.semantic_errors["treatment"] = remaining
+    else:
+        state.semantic_errors.pop("treatment", None)
+
+    if _TREATMENT_IDENTITY_FLAG not in state.flags:
+        state.flags.append(_TREATMENT_IDENTITY_FLAG)
+
+
+def apply_healthy_control_disease_normalization(
+    state: PipelineState,
+    config: Optional[Dict[str, Any]],
+) -> None:
+    del config
+    if state.final_output is None:
+        return
+    match = state.ontology_matches.get("disease")
+    if not match:
+        return
+    if state.locked_fields.get("disease", {}).get("reason") == _HEALTHY_CONTROL_FLAG:
+        return
+    matched_via = _extract_match_attr(match, "matched_via")
+    if matched_via != _HEALTHY_CONTROL_MATCHED_VIA:
+        return
+
+    state.final_output["disease"] = "Healthy"
+    locked_fields = dict(state.locked_fields)
+    locked_fields["disease"] = {
+        "term_id": None,
+        "label": "Healthy",
+        "source": None,
+        "reason": _HEALTHY_CONTROL_FLAG,
+    }
+    state.locked_fields = locked_fields
+
+    state.semantic_errors.pop("disease", None)
+    state.ontology_failures.pop("disease", None)
+    if _HEALTHY_CONTROL_FLAG not in state.flags:
+        state.flags.append(_HEALTHY_CONTROL_FLAG)

@@ -78,6 +78,16 @@ _DISEASE_MODEL_PHRASES = {
     "xenograft model",
 }
 _DISEASE_SLOPPY_TUMOR_SUFFIXES = ("tumor", "tumour")
+_HEALTHY_CONTROL_DISEASES = {
+    "healthy donor",
+    "healthy donors",
+    "healthy control",
+    "healthy controls",
+    "normal donor",
+    "normal donors",
+    "normal control",
+    "normal controls",
+}
 _DISEASE_EXPLICIT_TERMS = {
     "cancer",
     "carcinoma",
@@ -207,6 +217,13 @@ def _is_disease_model_identifier(raw_value: str) -> bool:
     return True
 
 
+def _is_healthy_control_disease(raw_value: str) -> bool:
+    normalized = _normalize_placeholder_value(raw_value)
+    if not normalized:
+        return False
+    return normalized in _HEALTHY_CONTROL_DISEASES
+
+
 def _is_human_organism(value: str) -> bool:
     return value.strip().lower() == "homo sapiens"
 
@@ -298,6 +315,22 @@ def _make_disease_model_match(field: str, raw_value: str, ontology: str) -> Onto
     )
 
 
+def _make_healthy_control_match(field: str, raw_value: str, ontology: str) -> OntologyMatch:
+    return OntologyMatch(
+        field=field,
+        raw_value=raw_value,
+        ontology=ontology,
+        status="FALLBACK",
+        matched_term_id=None,
+        matched_label=None,
+        matched_source=None,
+        match_type="fallback",
+        score=None,
+        alternates=[],
+        matched_via="healthy_control_normalized",
+    )
+
+
 def _normalize_allowlist_values(values: object) -> set[str]:
     if values is None:
         return set()
@@ -382,6 +415,8 @@ def ground_all_fields(
             match = _make_placeholder_match(field, raw_value, ontology)
         elif field == "disease" and _is_disease_model_identifier(raw_value):
             match = _make_disease_model_match(field, raw_value, ontology)
+        elif field == "disease" and _is_healthy_control_disease(raw_value):
+            match = _make_healthy_control_match(field, raw_value, ontology)
         elif _is_fallback_value(field, raw_value):
             match = _make_fallback_match(field, raw_value, ontology)
         elif field == "data_type" and _is_data_type_allowlisted(raw_value, ontology_config):

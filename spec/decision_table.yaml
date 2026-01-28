@@ -146,12 +146,12 @@ tissue_type_is_cell_type:
   severity: medium
 
 treatment_identity_leakage:
-  action: REPAIR
+  action: ACCEPT
   field: treatment
-  repair_template: repair_treatment_v1
-  max_attempts: 2
-  fallback_value: "None"
-  severity: medium
+  repair_template: null
+  max_attempts: 0
+  fallback_value: null
+  severity: low
 
 assay_platform_conflict:
   action: REPAIR
