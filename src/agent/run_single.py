@@ -11,6 +11,7 @@ from agent.accession import override_accessions
 from agent.audit import build_audit_record
 from agent.ontology_canonicalization import (
     apply_disease_modifier_generalization,
+    apply_tissue_placeholder_fallback,
     apply_terminal_exact_canonicalization_and_lock,
 )
 from agent.prompts import load_prompt
@@ -324,6 +325,9 @@ def _update_validation_state(
     preserved_disease_match = None
     if state.locked_fields.get("disease", {}).get("reason") == "disease_generalized_for_ontology":
         preserved_disease_match = state.ontology_matches.get("disease")
+    preserved_tissue_match = None
+    if state.locked_fields.get("tissue_type", {}).get("reason") == "tissue_type_non_anatomical_placeholder":
+        preserved_tissue_match = state.ontology_matches.get("tissue_type")
     state.semantic_errors = semantic_validate(parsed_output, context_text)
     rag_cfg = cfg.get("rag", {}) if isinstance(cfg, dict) else {}
     matches, ontology_failures = ground_all_fields(
@@ -334,6 +338,9 @@ def _update_validation_state(
     if preserved_disease_match is not None:
         matches["disease"] = preserved_disease_match
         ontology_failures.pop("disease", None)
+    if preserved_tissue_match is not None:
+        matches["tissue_type"] = preserved_tissue_match
+        ontology_failures.pop("tissue_type", None)
     state.ontology_matches = {
         field: match.to_dict() if hasattr(match, "to_dict") else match
         for field, match in matches.items()
@@ -346,6 +353,12 @@ def _update_validation_state(
     )
     apply_terminal_exact_canonicalization_and_lock(state, cfg)
     apply_disease_modifier_generalization(state, cfg)
+    apply_tissue_placeholder_fallback(state, cfg)
+
+
+def _apply_non_accept_flags(state: PipelineState) -> None:
+    if state.final_decision == "ACCEPT" and "tissue_type_non_anatomical_placeholder" in state.flags:
+        state.final_decision = "FLAGGED"
 
 
 def _generate_with_format_repairs(
@@ -674,6 +687,7 @@ def _run_llm_pipeline(
     if not state.validation_cache_hit:
         _update_validation_state(state, state.final_output, context_text, cfg)
     elif state.final_output is not None and state.final_decision is not None:
+        _apply_non_accept_flags(state)
         audit_record = build_audit_record(state)
         flagged = state.final_decision != "ACCEPT"
         return state.final_output, audit_record, flagged
@@ -712,6 +726,7 @@ def _run_llm_pipeline(
             state.consistency_flags
         )
         state.final_decision = "FLAGGED" if unresolved else "ACCEPT"
+    _apply_non_accept_flags(state)
 
     audit_record = build_audit_record(state)
     flagged = state.final_decision != "ACCEPT"

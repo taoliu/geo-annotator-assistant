@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Dict, Optional
+import re
 
 from validator.failure_codes import (
     ONTOLOGY_AMBIGUOUS_CELL_LINE,
@@ -52,6 +53,18 @@ _FALLBACK_VALUES = {
     "cell_line": {"No"},
     "disease": {"Healthy", "Unknown"},
 }
+
+_NON_ANATOMICAL_TISSUE_PLACEHOLDERS = {
+    "tumor",
+    "tumour",
+    "tumor tissue",
+    "tumour tissue",
+    "tumor sample",
+    "tumour sample",
+    "tumor samples",
+    "tumour samples",
+}
+_PLACEHOLDER_NORMALIZE_RE = re.compile(r"[^a-z0-9]+")
 
 _FIELD_FAILURE_CODES = {
     "tissue_type": {
@@ -136,6 +149,33 @@ def _is_fallback_value(field: str, raw_value: str) -> bool:
     }
 
 
+def _normalize_placeholder_value(value: str) -> str:
+    normalized = _PLACEHOLDER_NORMALIZE_RE.sub(" ", (value or "").lower())
+    return " ".join(normalized.split())
+
+
+def _is_non_anatomical_tissue_placeholder(raw_value: str) -> bool:
+    if not raw_value:
+        return False
+    return _normalize_placeholder_value(raw_value) in _NON_ANATOMICAL_TISSUE_PLACEHOLDERS
+
+
+def _make_placeholder_match(field: str, raw_value: str, ontology: str) -> OntologyMatch:
+    return OntologyMatch(
+        field=field,
+        raw_value=raw_value,
+        ontology=ontology,
+        status="FALLBACK",
+        matched_term_id=None,
+        matched_label=None,
+        matched_source=None,
+        match_type="fallback",
+        score=None,
+        alternates=[],
+        matched_via="non_anatomical_placeholder",
+    )
+
+
 def _normalize_allowlist_values(values: object) -> set[str]:
     if values is None:
         return set()
@@ -215,6 +255,8 @@ def ground_all_fields(
 
         if not raw_value:
             match = _make_none_match(field, raw_value, ontology)
+        elif field == "tissue_type" and _is_non_anatomical_tissue_placeholder(raw_value):
+            match = _make_placeholder_match(field, raw_value, ontology)
         elif _is_fallback_value(field, raw_value):
             match = _make_fallback_match(field, raw_value, ontology)
         elif field == "data_type" and _is_data_type_allowlisted(raw_value, ontology_config):
