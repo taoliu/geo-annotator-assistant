@@ -19,10 +19,6 @@ Rules:
 5. The output must be a single JSON object.
 6. The JSON object must contain exactly the keys shown below.
 
-Important clarification for tissue_type:
-- tissue_type MUST represent the anatomical tissue or organ associated with the disease or experimental context.
-- Do NOT use cell lineage, developmental origin, or cell source as tissue_type.
-- Do NOT use disease name, such as "Tumor" or "Cancer", as tissue_type.
 
 Required output format (return exactly this structure):
 
