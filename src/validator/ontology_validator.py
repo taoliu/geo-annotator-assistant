@@ -88,6 +88,20 @@ _HEALTHY_CONTROL_DISEASES = {
     "normal control",
     "normal controls",
 }
+_TISSUE_DISEASE_KEYWORDS = {
+    "tumor",
+    "tumour",
+    "cancer",
+    "lymphoma",
+    "leukemia",
+    "myeloma",
+    "carcinoma",
+    "sarcoma",
+    "melanoma",
+    "glioma",
+    "glioblastoma",
+    "blastoma",
+}
 _HEALTHY_GENOTYPE_INDICATORS = {"healthy", "normal", "control"}
 _HEALTHY_GENOTYPE_EXCLUDE_TERMS = {
     "tumor",
@@ -292,6 +306,28 @@ def _is_healthy_genotype_disease(raw_value: str, organism_value: str) -> bool:
     return True
 
 
+def _is_disease_label_used_as_tissue(raw_tissue: str, raw_disease: str) -> bool:
+    if not raw_tissue or not raw_disease:
+        return False
+    normalized_tissue = _normalize_placeholder_value(raw_tissue)
+    normalized_disease = _normalize_placeholder_value(raw_disease)
+    if not normalized_tissue or not normalized_disease:
+        return False
+    if _is_disease_model_identifier(raw_disease):
+        return False
+    tissue_tokens = set(normalized_tissue.split())
+    disease_tokens = set(normalized_disease.split())
+    if not tissue_tokens or not disease_tokens:
+        return False
+    if not tissue_tokens.issubset(_TISSUE_DISEASE_KEYWORDS):
+        return False
+    if not tissue_tokens.intersection(disease_tokens):
+        return False
+    if not (tissue_tokens == disease_tokens or tissue_tokens.issubset(disease_tokens)):
+        return False
+    return True
+
+
 def _is_human_organism(value: str) -> bool:
     return value.strip().lower() == "homo sapiens"
 
@@ -415,6 +451,22 @@ def _make_healthy_genotype_match(field: str, raw_value: str, ontology: str) -> O
     )
 
 
+def _make_tissue_disease_label_match(field: str, raw_value: str, ontology: str) -> OntologyMatch:
+    return OntologyMatch(
+        field=field,
+        raw_value=raw_value,
+        ontology=ontology,
+        status="FALLBACK",
+        matched_term_id=None,
+        matched_label=None,
+        matched_source=None,
+        match_type="fallback",
+        score=None,
+        alternates=[],
+        matched_via="disease_label_used_as_tissue",
+    )
+
+
 def _normalize_allowlist_values(values: object) -> set[str]:
     if values is None:
         return set()
@@ -495,6 +547,10 @@ def ground_all_fields(
 
         if not raw_value:
             match = _make_none_match(field, raw_value, ontology)
+        elif field == "tissue_type" and _is_disease_label_used_as_tissue(
+            raw_value, (llm_output.get("disease") or "").strip()
+        ):
+            match = _make_tissue_disease_label_match(field, raw_value, ontology)
         elif field == "tissue_type" and _is_non_anatomical_tissue_placeholder(raw_value):
             match = _make_placeholder_match(field, raw_value, ontology)
         elif field == "disease" and _is_disease_model_identifier(raw_value):
