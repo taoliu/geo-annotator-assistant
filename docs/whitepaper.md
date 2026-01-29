@@ -120,6 +120,18 @@ At each iteration:
 * Terminal fallback values are respected
 * Anti-cycling constraints are enforced
 
+### Repair vs Fallback Semantics
+
+Repair is only attempted when:
+
+* a field violates semantic constraints, or
+* ontology validation fails in a **non-terminal** way.
+
+Some values are treated as **terminal fallbacks by policy** and are never repaired.
+These include values that are explicitly underspecified, non-anatomical, or curator-ambiguous.
+
+Terminal fallback values are surfaced via explicit flags for human review rather than forced normalization.
+
 ---
 
 ## 6. Evidence-First Semantics (Invariant)
@@ -150,6 +162,12 @@ Invariants:
   * ambiguous match
   * no match
   * low confidence
+
+Ontology grounding never forces normalization.
+
+A high-confidence ontology match may still be flagged if semantic intent is ambiguous, underspecified, or inconsistent with curator expectations.
+
+Ontologies are used to assess confidence and surface ambiguity, not to overwrite curator-relevant meaning.
 
 ### Terminal exact matches
 
@@ -250,7 +268,30 @@ rag.ontology.*
 
 ---
 
-## 15. Explicitly Non-Architectural Concerns
+## 15. Policy Layer (Explicit and Versioned)
+
+The system includes an explicit **policy layer** that governs:
+
+* validation rules
+* repair triggering conditions
+* terminal vs non-terminal fallbacks
+* flagging and reporting semantics
+
+Policies are **deterministic, versioned, and documented separately from implementation**.
+
+Policies may evolve across milestones without changing:
+
+* the output schema
+* architectural invariants
+* or backend execution order
+
+The policy layer exists to make real-world behavior explicit, reviewable, and curator-trustworthy.
+
+Detailed validation, repair, and reporting rules are defined in `docs/policies/` and are treated as authoritative within architectural constraints.
+
+---
+
+## 16. Explicitly Non-Architectural Concerns
 
 The following are intentionally excluded from architectural governance:
 
@@ -262,7 +303,7 @@ The following are intentionally excluded from architectural governance:
 
 ---
 
-## 16. Summary
+## 17. Summary
 
 This whitepaper defines **what must remain true** regardless of implementation changes.
 

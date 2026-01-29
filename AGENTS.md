@@ -24,6 +24,7 @@ Responsibilities:
 * Ensure determinism, auditability, and schema stability
 * Review designs for unintended semantic changes
 * Update whitepaper, milestones, checkpoints, and handoff docs
+* Maintain `docs/policies/policy-spec.md` as the authoritative backend policy spec
 
 ChatGPT **does not**:
 
@@ -123,6 +124,12 @@ superseded by ticketed v0.6 decisions.
 Tickets are stored under `docs/tickets/` and are the
 **only permitted mechanism** for altering code behavior.
 
+### Policy-aware tickets
+
+If a ticket changes validation, repair, fallback, flags, or audit semantics, the agent must:
+1) read `docs/policies/policy-spec.md` first, and
+2) update it in the same ticket if the behavior is new or modified.
+
 ### Testing requirement
 
 Unless a ticket explicitly says otherwise, Codex must run unit tests with:
@@ -140,10 +147,11 @@ If tests fail, fix them within the same ticket scope before reporting completion
 Agents must respect the following authority order:
 
 1. `docs/whitepaper.md` — architectural law
-2. `docs/milestones/v*.md` — system state
-3. `docs/checkpoints/xxxx-xx-xx_checkpoint.md`— handoff anchors
-4. `docs/tickets/ticket-xx.md` — permitted work
-5. code — implementation
+2. `docs/policies/policy-spec.md` — authoritative policy layer (validation/repair/reporting semantics)
+3. `docs/milestones/v*.md` — system state
+4. `docs/checkpoints/xxxx-xx-xx_checkpoint.md`— handoff anchors
+5. `docs/tickets/ticket-xx.md` — permitted work
+6. code — implementation
 
 Conflicts must be resolved by updating the **higher-level document**,
 not by local code changes.

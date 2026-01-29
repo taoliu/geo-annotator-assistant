@@ -47,4 +47,4 @@ uv run pytest -q
 
 ## Status
 
-**Checkpoint status:** ACTIVE
+**Checkpoint status:** CLOSED
