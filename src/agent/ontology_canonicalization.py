@@ -29,8 +29,6 @@ _HEALTHY_CONTROL_FLAG = "disease_normalized_to_healthy"
 _HEALTHY_CONTROL_MATCHED_VIA = "healthy_control_normalized"
 _HEALTHY_GENOTYPE_FLAG = "disease_contains_genotype_context"
 _HEALTHY_GENOTYPE_MATCHED_VIA = "healthy_genotype_normalized"
-_TISSUE_DISEASE_LABEL_FLAG = "tissue_type_disease_label_used_as_tissue"
-_TISSUE_DISEASE_LABEL_MATCHED_VIA = "disease_label_used_as_tissue"
 
 
 def _extract_match_values(match: Any) -> tuple[Optional[str], float, Optional[str], Optional[str], Optional[str], Optional[str]]:
@@ -470,36 +468,3 @@ def apply_healthy_genotype_disease_normalization(
     if _HEALTHY_GENOTYPE_FLAG not in state.flags:
         state.flags.append(_HEALTHY_GENOTYPE_FLAG)
 
-
-def apply_tissue_disease_label_fallback(
-    state: PipelineState,
-    config: Optional[Dict[str, Any]],
-) -> None:
-    del config
-    if state.final_output is None:
-        return
-    match = state.ontology_matches.get("tissue_type")
-    if not match:
-        return
-    if state.locked_fields.get("tissue_type", {}).get("reason") == _TISSUE_DISEASE_LABEL_FLAG:
-        return
-    matched_via = _extract_match_attr(match, "matched_via")
-    if matched_via != _TISSUE_DISEASE_LABEL_MATCHED_VIA:
-        return
-
-    original_value = state.final_output.get("tissue_type")
-    state.final_output["tissue_type"] = "Unknown"
-    locked_fields = dict(state.locked_fields)
-    locked_fields["tissue_type"] = {
-        "term_id": None,
-        "label": "Unknown",
-        "source": None,
-        "reason": _TISSUE_DISEASE_LABEL_FLAG,
-        "original_value": original_value,
-    }
-    state.locked_fields = locked_fields
-
-    state.semantic_errors.pop("tissue_type", None)
-    state.ontology_failures.pop("tissue_type", None)
-    if _TISSUE_DISEASE_LABEL_FLAG not in state.flags:
-        state.flags.append(_TISSUE_DISEASE_LABEL_FLAG)

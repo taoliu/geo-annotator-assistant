@@ -8,7 +8,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from agent.ontology_canonicalization import apply_tissue_disease_label_fallback
+from agent.ontology_canonicalization import apply_tissue_placeholder_fallback
 from agent.state import PipelineState
 from validator.ontology_validator import ground_all_fields
 import validator.grounders.tissue_type as tissue_grounder
@@ -23,7 +23,7 @@ def _disease_label_match(raw: str) -> dict:
         "matched_term_id": None,
         "matched_source": None,
         "raw_value": raw,
-        "matched_via": "disease_label_used_as_tissue",
+        "matched_via": "non_anatomical_placeholder",
     }
 
 
@@ -50,10 +50,10 @@ def test_tissue_disease_label_fallback_applies() -> None:
         ontology_matches={"tissue_type": _disease_label_match("Lymphoma")},
     )
 
-    apply_tissue_disease_label_fallback(state, {})
+    apply_tissue_placeholder_fallback(state, {})
 
     assert state.final_output["tissue_type"] == "Unknown"
-    assert "tissue_type_disease_label_used_as_tissue" in state.flags
+    assert "tissue_type_non_anatomical_placeholder" in state.flags
     assert state.locked_fields["tissue_type"]["label"] == "Unknown"
 
 
@@ -75,7 +75,7 @@ def test_tissue_disease_label_detection_skips_grounder(monkeypatch) -> None:
 
     assert "tissue_type" not in failures
     assert matches["tissue_type"].status == "FALLBACK"
-    assert matches["tissue_type"].matched_via == "disease_label_used_as_tissue"
+    assert matches["tissue_type"].matched_via == "non_anatomical_placeholder"
 
 
 def test_tissue_disease_label_detection_skips_non_disease_terms(monkeypatch) -> None:
@@ -94,4 +94,4 @@ def test_tissue_disease_label_detection_skips_non_disease_terms(monkeypatch) -> 
 
     matches, _ = ground_all_fields(llm_output, "", {})
 
-    assert matches["tissue_type"].matched_via != "disease_label_used_as_tissue"
+    assert matches["tissue_type"].matched_via != "non_anatomical_placeholder"

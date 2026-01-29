@@ -15,7 +15,6 @@ from agent.ontology_canonicalization import (
     apply_sloppy_tumor_disease_generalization,
     apply_healthy_control_disease_normalization,
     apply_healthy_genotype_disease_normalization,
-    apply_tissue_disease_label_fallback,
     apply_treatment_identity_fallback,
     apply_tissue_placeholder_fallback,
     apply_terminal_exact_canonicalization_and_lock,
@@ -359,8 +358,6 @@ def _update_validation_state(
     preserved_tissue_match = None
     if state.locked_fields.get("tissue_type", {}).get("reason") == "tissue_type_non_anatomical_placeholder":
         preserved_tissue_match = state.ontology_matches.get("tissue_type")
-    if state.locked_fields.get("tissue_type", {}).get("reason") == "tissue_type_disease_label_used_as_tissue":
-        preserved_tissue_match = state.ontology_matches.get("tissue_type")
     state.semantic_errors = semantic_validate(parsed_output, context_text)
     rag_cfg = cfg.get("rag", {}) if isinstance(cfg, dict) else {}
     matches, ontology_failures = ground_all_fields(
@@ -387,7 +384,6 @@ def _update_validation_state(
     apply_terminal_exact_canonicalization_and_lock(state, cfg)
     apply_disease_modifier_generalization(state, cfg)
     apply_tissue_placeholder_fallback(state, cfg)
-    apply_tissue_disease_label_fallback(state, cfg)
     apply_disease_model_fallback(state, cfg)
     apply_sloppy_tumor_disease_generalization(state, cfg)
     apply_treatment_identity_fallback(state, cfg)
