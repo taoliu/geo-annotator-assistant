@@ -16,7 +16,8 @@
 │   │   ├── 2026-01-08_checkpoint.md
 │   │   ├── 2026-01-09_checkpoint.md
 │   │   ├── 2026-01-14_checkpoint.md
-│   │   └── 2026-01-26_checkpoint.md
+│   │   ├── 2026-01-26_checkpoint.md
+│   │   └── 2026-01-29_checkpoint.md
 │   ├── milestones
 │   │   ├── v0.1-llm.md
 │   │   ├── v0.2-ontology-grounding.md
@@ -25,11 +26,14 @@
 │   │   ├── v0.5-curator-ui.md
 │   │   ├── v0.6-rag-validation.md
 │   │   ├── v0.7-curator-ui.md
-│   │   └── v0.8-backend-robustness.md
+│   │   ├── v0.8-backend-robustness.md
+│   │   └── v0.9-validation-repair-reporting.md
+│   ├── policies
+│   │   └── policy-spec.md
 │   ├── repo_structure.md
 │   ├── RESUME.md
 │   ├── tickets
-│   │   ├── README.md
+│   │   ├── TICKET_INSTRUCTIONS.md
 │   │   ├── ticket-1.md
 │   │   ├── ticket-10.md
 │   │   ├── ticket-11.md
@@ -117,7 +121,23 @@
 │   │   ├── ticket-81.md
 │   │   ├── ticket-82.md
 │   │   ├── ticket-83.md
-│   │   └── ticket-9.md
+│   │   ├── ticket-84.md
+│   │   ├── ticket-85.md
+│   │   ├── ticket-86.md
+│   │   ├── ticket-87.md
+│   │   ├── ticket-88.md
+│   │   ├── ticket-89.md
+│   │   ├── ticket-9.md
+│   │   ├── ticket-90.md
+│   │   ├── ticket-91.md
+│   │   ├── ticket-92.md
+│   │   ├── ticket-93.md
+│   │   ├── ticket-94.md
+│   │   ├── ticket-95.md
+│   │   ├── ticket-96.md
+│   │   ├── ticket-97.md
+│   │   ├── ticket-98.md
+│   │   └── ticket-99.md
 │   ├── ui.md
 │   └── whitepaper.md
 ├── LICENSE
@@ -211,12 +231,14 @@
 │       │   ├── ontology_grounder.py
 │       │   └── tissue_type.py
 │       ├── heuristics.py
+│       ├── non_answer_placeholders.py
 │       ├── ontology_match.py
 │       ├── ontology_validator.py
 │       ├── semantic_validator.py
 │       └── thresholds.py
 ├── tests
 │   ├── README.md
+│   ├── test_cell_line_tie_breaker.py
 │   ├── test_cell_line_type_guard.py
 │   ├── test_chroma_embedding_device_config.py
 │   ├── test_cli_and_batch.py
@@ -227,9 +249,16 @@
 │   ├── test_consistency_validator.py
 │   ├── test_context_fingerprint.py
 │   ├── test_decision_engine.py
+│   ├── test_disease_generalization.py
+│   ├── test_disease_healthy_genotype_normalization.py
+│   ├── test_disease_healthy_normalization.py
+│   ├── test_disease_model_identifier_fallback.py
 │   ├── test_disease_ncit_trigger_configurable.py
+│   ├── test_disease_sloppy_tumor_generalization.py
+│   ├── test_disease_token_equiv_matching.py
 │   ├── test_failure_codes_evidence_first.py
 │   ├── test_format_repair_extraction.py
+│   ├── test_format_unrepaired_local_fallback.py
 │   ├── test_format_validator.py
 │   ├── test_gse_consistency_postpass.py
 │   ├── test_gse_jsonl_path.py
@@ -239,11 +268,13 @@
 │   ├── test_http_retry_policy.py
 │   ├── test_llm_cache_gse.py
 │   ├── test_llm_interface_stubbed.py
+│   ├── test_llm_non_answer_placeholders.py
 │   ├── test_llm_repair_loops.py
 │   ├── test_llm_reuse.py
 │   ├── test_llm_stop_trimming.py
 │   ├── test_llm_transport_factory.py
 │   ├── test_local_transformers_generation_args.py
+│   ├── test_locked_field_precedence.py
 │   ├── test_ontology_canonicalize_and_lock.py
 │   ├── test_ontology_chroma_grounding.py
 │   ├── test_ontology_chroma_normalized_metadata_query.py
@@ -266,6 +297,9 @@
 │   ├── test_suggestions.py
 │   ├── test_terminal_exact_short_circuit.py
 │   ├── test_thresholds_and_ontology_validator.py
+│   ├── test_tissue_type_disease_label_fallback.py
+│   ├── test_tissue_type_placeholder_fallback.py
+│   ├── test_treatment_identity_fallback.py
 │   ├── test_writer.py
 │   └── ui
 │       ├── test_cli.py
@@ -281,4 +315,4 @@
 │       └── test_triage.py
 └── uv.lock
 
-18 directories, 264 files
+19 directories, 297 files
