@@ -1,0 +1,16 @@
+uv run python -m agent.cli --output-dir out/capit/ --config ./config/gat-llama3-8b-it_config.yaml --gse GSE235356
+uv run python -m agent.cli --output-dir out/capit/ --config ./config/gat-llama3-8b-it_config.yaml --gse GSE226697
+uv run python -m agent.cli --output-dir out/capit/ --config ./config/gat-llama3-8b-it_config.yaml --gse GSE226675
+uv run python -m agent.cli --output-dir out/capit/ --config ./config/gat-llama3-8b-it_config.yaml --gse GSE244865
+uv run python -m agent.cli --output-dir out/capit/ --config ./config/gat-llama3-8b-it_config.yaml --gse GSE226956
+uv run python -m agent.cli --output-dir out/capit/ --config ./config/gat-llama3-8b-it_config.yaml --gse GSE276561
+uv run python -m agent.cli --output-dir out/capit/ --config ./config/gat-llama3-8b-it_config.yaml --gse GSE280634
+uv run python -m agent.cli --output-dir out/capit/ --config ./config/gat-llama3-8b-it_config.yaml --gse GSE253327
+uv run python -m agent.cli --output-dir out/capit/ --config ./config/gat-llama3-8b-it_config.yaml --gse GSE253325
+uv run python -m agent.cli --output-dir out/capit/ --config ./config/gat-llama3-8b-it_config.yaml --gse GSE253324
+uv run python -m agent.cli --output-dir out/capit/ --config ./config/gat-llama3-8b-it_config.yaml --gse GSE253323
+uv run python -m agent.cli --output-dir out/capit/ --config ./config/gat-llama3-8b-it_config.yaml --gse GSE253373
+uv run python -m agent.cli --output-dir out/capit/ --config ./config/gat-llama3-8b-it_config.yaml --gse GSE253328
+uv run python -m agent.cli --output-dir out/capit/ --config ./config/gat-llama3-8b-it_config.yaml --gse GSE298277
+uv run python -m agent.cli --output-dir out/capit/ --config ./config/gat-llama3-8b-it_config.yaml --gse GSE303326
+uv run python -m agent.cli --output-dir out/capit/ --config ./config/gat-llama3-8b-it_config.yaml --gse GSE302656

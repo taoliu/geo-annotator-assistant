@@ -88,6 +88,31 @@ _HEALTHY_CONTROL_DISEASES = {
     "normal control",
     "normal controls",
 }
+_HEALTHY_GENOTYPE_INDICATORS = {"healthy", "normal", "control"}
+_HEALTHY_GENOTYPE_EXCLUDE_TERMS = {
+    "tumor",
+    "tumour",
+    "cancer",
+    "carcinoma",
+    "adenocarcinoma",
+    "leukemia",
+    "lymphoma",
+    "melanoma",
+    "sarcoma",
+    "glioma",
+    "glioblastoma",
+    "myeloma",
+    "blastoma",
+    "disease",
+    "infection",
+}
+_HEALTHY_GENOTYPE_ANIMAL_TOKENS = {"mouse", "mice", "rat", "rats"}
+_HEALTHY_GENOTYPE_STRAINS = {
+    "c57bl 6",
+    "balb c",
+    "leiden",
+}
+_HEALTHY_GENOTYPE_TOKEN_MARKERS = {"ko", "knockout", "transgenic", "tg", "wt"}
 _DISEASE_EXPLICIT_TERMS = {
     "cancer",
     "carcinoma",
@@ -224,6 +249,49 @@ def _is_healthy_control_disease(raw_value: str) -> bool:
     return normalized in _HEALTHY_CONTROL_DISEASES
 
 
+def _has_genotype_marker(raw_value: str, normalized: str, tokens: set[str]) -> bool:
+    if any(marker in raw_value for marker in ("-/-", "+/-", "+/+")):
+        return True
+    if "wild type" in normalized:
+        return True
+    if tokens.intersection(_HEALTHY_GENOTYPE_TOKEN_MARKERS):
+        return True
+    return False
+
+
+def _has_strain_marker(normalized: str) -> bool:
+    return any(marker in normalized for marker in _HEALTHY_GENOTYPE_STRAINS)
+
+
+def _is_healthy_genotype_disease(raw_value: str, organism_value: str) -> bool:
+    normalized = _normalize_placeholder_value(raw_value)
+    if not normalized:
+        return False
+    tokens = set(normalized.split())
+    if not tokens.intersection(_HEALTHY_GENOTYPE_INDICATORS):
+        return False
+    if tokens.intersection(_HEALTHY_GENOTYPE_EXCLUDE_TERMS):
+        return False
+    if _is_disease_model_identifier(raw_value):
+        return False
+
+    if organism_value and _is_human_organism(organism_value):
+        return False
+
+    animal_context = True
+    if not organism_value:
+        animal_context = bool(tokens.intersection(_HEALTHY_GENOTYPE_ANIMAL_TOKENS))
+    if not animal_context:
+        return False
+
+    has_genotype = _has_genotype_marker(raw_value, normalized, tokens)
+    has_strain = _has_strain_marker(normalized)
+    if not (has_genotype or has_strain):
+        return False
+
+    return True
+
+
 def _is_human_organism(value: str) -> bool:
     return value.strip().lower() == "homo sapiens"
 
@@ -331,6 +399,22 @@ def _make_healthy_control_match(field: str, raw_value: str, ontology: str) -> On
     )
 
 
+def _make_healthy_genotype_match(field: str, raw_value: str, ontology: str) -> OntologyMatch:
+    return OntologyMatch(
+        field=field,
+        raw_value=raw_value,
+        ontology=ontology,
+        status="FALLBACK",
+        matched_term_id=None,
+        matched_label=None,
+        matched_source=None,
+        match_type="fallback",
+        score=None,
+        alternates=[],
+        matched_via="healthy_genotype_normalized",
+    )
+
+
 def _normalize_allowlist_values(values: object) -> set[str]:
     if values is None:
         return set()
@@ -415,6 +499,10 @@ def ground_all_fields(
             match = _make_placeholder_match(field, raw_value, ontology)
         elif field == "disease" and _is_disease_model_identifier(raw_value):
             match = _make_disease_model_match(field, raw_value, ontology)
+        elif field == "disease" and _is_healthy_genotype_disease(
+            raw_value, (llm_output.get("organism") or "").strip()
+        ):
+            match = _make_healthy_genotype_match(field, raw_value, ontology)
         elif field == "disease" and _is_healthy_control_disease(raw_value):
             match = _make_healthy_control_match(field, raw_value, ontology)
         elif _is_fallback_value(field, raw_value):

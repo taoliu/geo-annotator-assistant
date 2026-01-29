@@ -27,6 +27,8 @@ _DISEASE_MODEL_PHRASES = {
 _TREATMENT_IDENTITY_FLAG = "treatment_not_an_intervention"
 _HEALTHY_CONTROL_FLAG = "disease_normalized_to_healthy"
 _HEALTHY_CONTROL_MATCHED_VIA = "healthy_control_normalized"
+_HEALTHY_GENOTYPE_FLAG = "disease_contains_genotype_context"
+_HEALTHY_GENOTYPE_MATCHED_VIA = "healthy_genotype_normalized"
 
 
 def _extract_match_values(match: Any) -> tuple[Optional[str], float, Optional[str], Optional[str], Optional[str], Optional[str]]:
@@ -433,3 +435,35 @@ def apply_healthy_control_disease_normalization(
     state.ontology_failures.pop("disease", None)
     if _HEALTHY_CONTROL_FLAG not in state.flags:
         state.flags.append(_HEALTHY_CONTROL_FLAG)
+
+
+def apply_healthy_genotype_disease_normalization(
+    state: PipelineState,
+    config: Optional[Dict[str, Any]],
+) -> None:
+    del config
+    if state.final_output is None:
+        return
+    match = state.ontology_matches.get("disease")
+    if not match:
+        return
+    if state.locked_fields.get("disease", {}).get("reason") == _HEALTHY_GENOTYPE_FLAG:
+        return
+    matched_via = _extract_match_attr(match, "matched_via")
+    if matched_via != _HEALTHY_GENOTYPE_MATCHED_VIA:
+        return
+
+    state.final_output["disease"] = "Healthy"
+    locked_fields = dict(state.locked_fields)
+    locked_fields["disease"] = {
+        "term_id": None,
+        "label": "Healthy",
+        "source": None,
+        "reason": _HEALTHY_GENOTYPE_FLAG,
+    }
+    state.locked_fields = locked_fields
+
+    state.semantic_errors.pop("disease", None)
+    state.ontology_failures.pop("disease", None)
+    if _HEALTHY_GENOTYPE_FLAG not in state.flags:
+        state.flags.append(_HEALTHY_GENOTYPE_FLAG)
