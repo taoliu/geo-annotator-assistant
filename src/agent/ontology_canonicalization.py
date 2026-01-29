@@ -8,6 +8,7 @@ import re
 from agent.state import PipelineState
 from validator.failure_codes import TREATMENT_IDENTITY_LEAKAGE
 from validator.ontology_match import is_terminal_exact
+from validator.non_answer_placeholders import is_llm_non_answer_placeholder
 
 _DISEASE_GENERALIZATION_FLAG = "disease_generalized_for_ontology"
 _DISEASE_PARENT_SOURCES = {"human disease ontology", "nci thesaurus"}
@@ -25,11 +26,25 @@ _DISEASE_MODEL_PHRASES = {
     "xenograft model",
 }
 _DISEASE_TOKEN_EQUIV_REASON = "disease_token_equiv_similarity"
+_NON_ANSWER_PLACEHOLDER_REASON = "llm_non_answer_placeholder"
 _TREATMENT_IDENTITY_FLAG = "treatment_not_an_intervention"
 _HEALTHY_CONTROL_FLAG = "disease_normalized_to_healthy"
 _HEALTHY_CONTROL_MATCHED_VIA = "healthy_control_normalized"
 _HEALTHY_GENOTYPE_FLAG = "disease_contains_genotype_context"
 _HEALTHY_GENOTYPE_MATCHED_VIA = "healthy_genotype_normalized"
+_NON_ANSWER_FLAGS = {
+    "disease": "llm_non_answer_disease",
+    "tissue_type": "llm_non_answer_tissue_type",
+    "cell_line": "llm_non_answer_cell_line",
+}
+_NON_ANSWER_FALLBACKS = {
+    "disease": "Unknown",
+    "tissue_type": "Unknown",
+    "cell_line": "Unknown",
+    "treatment": "None",
+    "organism": "Unknown",
+    "data_type": "Unknown",
+}
 
 
 def _extract_match_values(match: Any) -> tuple[Optional[str], float, Optional[str], Optional[str], Optional[str], Optional[str]]:
@@ -117,6 +132,54 @@ def apply_terminal_exact_canonicalization_and_lock(
         for field in list(state.ontology_failures):
             if field in locked_fields:
                 state.ontology_failures.pop(field, None)
+
+    state.canonicalizations = canonicalizations
+    state.locked_fields = locked_fields
+
+
+def apply_llm_non_answer_placeholders(
+    state: PipelineState,
+    config: Optional[Dict[str, Any]],
+) -> None:
+    del config
+    if state.final_output is None:
+        return
+
+    canonicalizations = dict(state.canonicalizations)
+    locked_fields = dict(state.locked_fields)
+
+    for field, fallback_value in _NON_ANSWER_FALLBACKS.items():
+        raw_value = state.final_output.get(field)
+        if not isinstance(raw_value, str):
+            continue
+        if not is_llm_non_answer_placeholder(raw_value):
+            continue
+        if field in locked_fields:
+            continue
+
+        state.final_output[field] = fallback_value
+        canonicalizations[field] = {
+            "field": field,
+            "original_value": raw_value,
+            "canonical_value": fallback_value,
+            "term_id": None,
+            "source": None,
+            "match_type": "llm_non_answer_placeholder",
+        }
+        locked_fields[field] = {
+            "term_id": None,
+            "label": fallback_value,
+            "source": None,
+            "reason": _NON_ANSWER_PLACEHOLDER_REASON,
+            "original_value": raw_value,
+        }
+
+        state.semantic_errors.pop(field, None)
+        state.ontology_failures.pop(field, None)
+
+        flag = _NON_ANSWER_FLAGS.get(field)
+        if flag and flag not in state.flags:
+            state.flags.append(flag)
 
     state.canonicalizations = canonicalizations
     state.locked_fields = locked_fields

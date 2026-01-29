@@ -19,6 +19,7 @@ from validator.failure_codes import (
     ONTOLOGY_NO_MATCH_TISSUE_TYPE,
 )
 from validator.ontology_match import OntologyMatch, is_terminal_exact
+from validator.non_answer_placeholders import is_llm_non_answer_placeholder
 from validator.cell_line_rules import is_cell_line_cell_type
 
 try:
@@ -441,6 +442,22 @@ def _make_healthy_genotype_match(field: str, raw_value: str, ontology: str) -> O
     )
 
 
+def _make_llm_non_answer_match(field: str, raw_value: str, ontology: str) -> OntologyMatch:
+    return OntologyMatch(
+        field=field,
+        raw_value=raw_value,
+        ontology=ontology,
+        status="FALLBACK",
+        matched_term_id=None,
+        matched_label=None,
+        matched_source=None,
+        match_type="fallback",
+        score=None,
+        alternates=[],
+        matched_via="llm_non_answer_placeholder",
+    )
+
+
 
 
 def _normalize_allowlist_values(values: object) -> set[str]:
@@ -523,6 +540,8 @@ def ground_all_fields(
 
         if not raw_value:
             match = _make_none_match(field, raw_value, ontology)
+        elif is_llm_non_answer_placeholder(raw_value):
+            match = _make_llm_non_answer_match(field, raw_value, ontology)
         elif field == "tissue_type" and _is_non_anatomical_tissue_placeholder(
             raw_value, (llm_output.get("disease") or "").strip()
         ):

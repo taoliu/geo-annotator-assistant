@@ -12,6 +12,7 @@ from validator.failure_codes import (
 )
 from validator.cell_line_rules import is_cell_line_cell_type, is_cell_type_like
 from validator.heuristics import get_heuristics
+from validator.non_answer_placeholders import is_llm_non_answer_placeholder
 
 _HEURISTICS = get_heuristics()
 _SEMANTIC = _HEURISTICS["semantic"]
@@ -68,6 +69,8 @@ def semantic_validate(parsed_output: Dict[str, str], context_text: str) -> Dict[
     errs: Dict[str, List[str]] = {}
 
     tissue_value = (parsed_output.get("tissue_type") or "").strip()
+    if is_llm_non_answer_placeholder(tissue_value):
+        tissue_value = ""
     if tissue_value and tissue_value.lower() not in {"unknown", "no"}:
         tissue_lower = tissue_value.lower()
         if (
@@ -78,6 +81,8 @@ def semantic_validate(parsed_output: Dict[str, str], context_text: str) -> Dict[
             errs.setdefault("tissue_type", []).append(TISSUE_TYPE_IS_CELL_TYPE)
 
     treatment = parsed_output.get("treatment", "")
+    if is_llm_non_answer_placeholder(treatment):
+        treatment = ""
     if treatment and treatment != "None":
         if (
             _TREATMENT_IDENTITY_WORD_RE.search(treatment)
@@ -88,6 +93,8 @@ def semantic_validate(parsed_output: Dict[str, str], context_text: str) -> Dict[
             errs.setdefault("treatment", []).append(TREATMENT_IDENTITY_LEAKAGE)
 
     cell_line = parsed_output.get("cell_line", "")
+    if is_llm_non_answer_placeholder(cell_line):
+        cell_line = ""
     cell_line_value = cell_line.strip()
     cell_line_lower = cell_line_value.lower()
     if cell_line_value and cell_line_lower == "yes":
@@ -99,6 +106,8 @@ def semantic_validate(parsed_output: Dict[str, str], context_text: str) -> Dict[
             errs.setdefault("cell_line", []).append(CELL_LINE_INFERRED_WITHOUT_EVIDENCE)
 
     disease = parsed_output.get("disease", "")
+    if is_llm_non_answer_placeholder(disease):
+        disease = ""
     if disease and disease != "Healthy":
         # Very conservative: if context has no common disease cues, flag.
         cues = _SEMANTIC["disease_cues"]
