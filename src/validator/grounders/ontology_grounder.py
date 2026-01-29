@@ -105,6 +105,7 @@ def _build_match_from_result(
             original_score=result.original_confidence,
             token_equiv_score=result.token_equiv_confidence,
             token_equiv_class=result.token_equiv_class,
+            tie_break_rule=result.tie_break_rule,
             alternates=alternates,
             matched_via=result.matched_via,
             matched_synonym=result.matched_synonym,
@@ -130,6 +131,7 @@ def _build_match_from_result(
         original_score=result.original_confidence,
         token_equiv_score=result.token_equiv_confidence,
         token_equiv_class=result.token_equiv_class,
+        tie_break_rule=result.tie_break_rule,
         alternates=alternates,
         matched_via=None,
         matched_synonym=None,
@@ -198,7 +200,12 @@ def ground_ontology_field(
         )
         return _make_index_unavailable_match(field, raw_value, ontology)
 
-    result = choose_best_ontology_candidate(raw_value, candidates, thresholds)
+    result = choose_best_ontology_candidate(
+        raw_value,
+        candidates,
+        thresholds,
+        tie_breaker="cell_line" if field == "cell_line" else None,
+    )
     vector_fallback_used = any(
         candidate.retrieval_mode == "vector_fallback" for candidate in candidates
     )

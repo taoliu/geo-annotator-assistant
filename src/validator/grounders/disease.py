@@ -180,6 +180,7 @@ def _ground_source(
         candidates,
         thresholds,
         token_equivalence=token_equivalence,
+        tie_breaker=None,
     )
     vector_fallback_used = any(
         candidate.retrieval_mode == "vector_fallback" for candidate in candidates

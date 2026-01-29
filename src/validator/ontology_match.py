@@ -81,6 +81,7 @@ class OntologyMatchResult:
     original_confidence: Optional[float] = None
     token_equiv_confidence: Optional[float] = None
     token_equiv_class: Optional[List[str]] = None
+    tie_break_rule: Optional[str] = None
     matched_via: Optional[str] = None
     matched_synonym: Optional[str] = None
 
@@ -105,6 +106,7 @@ class OntologyMatch:
     original_score: Optional[float] = None
     token_equiv_score: Optional[float] = None
     token_equiv_class: Optional[List[str]] = None
+    tie_break_rule: Optional[str] = None
     alternates: List[Dict[str, Any]] = dataclass_field(default_factory=list)
     matched_via: Optional[str] = None
     matched_synonym: Optional[str] = None
@@ -139,6 +141,7 @@ class OntologyMatch:
             "token_equiv_class": (
                 list(self.token_equiv_class) if self.token_equiv_class is not None else None
             ),
+            "tie_break_rule": self.tie_break_rule,
             "alternates": list(self.alternates),
             "matched_via": self.matched_via,
             "matched_synonym": self.matched_synonym,
@@ -297,12 +300,38 @@ def _jaccard(a_tokens: List[str], b_tokens: List[str]) -> float:
     return len(intersection) / len(union)
 
 
+def _punct_pattern(text: str) -> str:
+    if not text:
+        return ""
+    return "".join(ch for ch in text if not ch.isalnum())
+
+
+def _edit_distance(a: str, b: str) -> int:
+    if a == b:
+        return 0
+    if not a:
+        return len(b)
+    if not b:
+        return len(a)
+    prev = list(range(len(b) + 1))
+    for i, ch_a in enumerate(a, start=1):
+        curr = [i]
+        for j, ch_b in enumerate(b, start=1):
+            insert = curr[j - 1] + 1
+            delete = prev[j] + 1
+            replace = prev[j - 1] + (0 if ch_a == ch_b else 1)
+            curr.append(min(insert, delete, replace))
+        prev = curr
+    return prev[-1]
+
+
 def choose_best_ontology_candidate(
     raw_value: str,
     candidates: List[OntologyCandidate],
     thresholds: OntologyThresholds,
     *,
     token_equivalence: Optional[Dict[str, str]] = None,
+    tie_breaker: Optional[str] = None,
 ) -> OntologyMatchResult:
     if not candidates:
         return OntologyMatchResult(status="NO_MATCH")
@@ -419,6 +448,7 @@ def choose_best_ontology_candidate(
 
     scored.sort(key=lambda item: (-item[0], item[1], item[2]))
     exact_tie_resolved = False
+    tie_break_rule = None
     best_confidence, best_match_rank = scored[0][0], scored[0][1]
     if (
         best_confidence == 1.0
@@ -429,7 +459,40 @@ def choose_best_ontology_candidate(
             for item in scored
             if item[0] == 1.0 and item[1] == best_match_rank
         ]
-        if len(tied) > 1:
+        if len(tied) > 1 and tie_breaker == "cell_line":
+            raw_norm = (raw_value or "").strip().lower()
+            raw_punct = _punct_pattern(raw_value or "")
+
+            def _raw_label_match(item) -> bool:
+                return (item[9].label or "").strip().lower() == raw_norm
+
+            raw_matches = [item for item in tied if _raw_label_match(item)]
+            if len(raw_matches) == 1:
+                scored = raw_matches + [item for item in scored if item not in raw_matches]
+                exact_tie_resolved = True
+                tie_break_rule = "raw_label_exact_match"
+            else:
+                def _punct_match(item) -> bool:
+                    return _punct_pattern(item[9].label or "") == raw_punct
+
+                punct_matches = [item for item in tied if _punct_match(item)]
+                if len(punct_matches) == 1:
+                    scored = punct_matches + [item for item in scored if item not in punct_matches]
+                    exact_tie_resolved = True
+                    tie_break_rule = "punctuation_pattern_match"
+                else:
+                    distances = [
+                        (_edit_distance(raw_norm, (item[9].label or "").strip().lower()), item)
+                        for item in tied
+                    ]
+                    min_distance = min(distance for distance, _ in distances)
+                    closest = [item for distance, item in distances if distance == min_distance]
+                    if len(closest) == 1:
+                        scored = closest + [item for item in scored if item not in closest]
+                        exact_tie_resolved = True
+                        tie_break_rule = "minimal_edit_distance"
+
+        if len(tied) > 1 and not exact_tie_resolved:
             def _specificity_key(item) -> tuple[int, int, int]:
                 label_text = item[9].label or ""
                 normalized_label = normalize_exact_match_text(label_text)
@@ -469,7 +532,7 @@ def choose_best_ontology_candidate(
         )
 
     status = "MATCHED"
-    if best_match_type in {"label_exact", "synonym_exact"}:
+    if best_match_type in {"label_exact", "label_norm_exact", "synonym_exact"}:
         if len(scored) > 1 and not exact_tie_resolved:
             second_confidence = scored[1][0]
             if (
@@ -519,6 +582,7 @@ def choose_best_ontology_candidate(
         original_confidence=best_original_confidence,
         token_equiv_confidence=best_token_equiv_confidence,
         token_equiv_class=best_token_equiv_class,
+        tie_break_rule=tie_break_rule,
         matched_via=matched_via,
         matched_synonym=matched_synonym,
     )
