@@ -24,6 +24,15 @@ _LOGGER = logging.getLogger(__name__)
 _NCIT_SOURCE = "NCI Thesaurus"
 _TRIGGER_TOKEN_RE = re.compile(r"[a-z0-9]+")
 _LEADING_DIGIT_RE = re.compile(r"\d")
+_ONCOLOGY_TOKEN_EQUIVALENCE = {
+    "cancer": "oncology_cancer",
+    "carcinoma": "oncology_cancer",
+    "adenocarcinoma": "oncology_cancer",
+    "neoplasm": "oncology_cancer",
+    "malignancy": "oncology_cancer",
+    "tumor": "tumor",
+    "tumour": "tumor",
+}
 
 
 def should_query_ncit(raw_label: str, trigger_terms: list[str]) -> bool:
@@ -145,6 +154,8 @@ def _ground_source(
     source: str,
     config: Dict[str, Any],
     thresholds,
+    *,
+    token_equivalence: Optional[Dict[str, str]] = None,
 ) -> tuple[OntologyMatchResult, bool, bool]:
     (
         top_k,
@@ -164,7 +175,12 @@ def _ground_source(
         embedding_device=embedding_device,
         top_k=top_k,
     )
-    result = choose_best_ontology_candidate(raw_value, candidates, thresholds)
+    result = choose_best_ontology_candidate(
+        raw_value,
+        candidates,
+        thresholds,
+        token_equivalence=token_equivalence,
+    )
     vector_fallback_used = any(
         candidate.retrieval_mode == "vector_fallback" for candidate in candidates
     )
@@ -187,6 +203,7 @@ def _ground_disease_with_query(
 ) -> OntologyMatch:
     attempted_sources = [doid_source]
     thresholds = thresholds_from_config(config)
+    token_equivalence = dict(_ONCOLOGY_TOKEN_EQUIVALENCE)
 
     try:
         doid_result, doid_terminal_exact, doid_vector_fallback = _ground_source(
@@ -194,6 +211,7 @@ def _ground_disease_with_query(
             doid_source,
             config,
             thresholds,
+            token_equivalence=token_equivalence,
         )
     except OntologyIndexUnavailable as exc:
         _LOGGER.warning(
@@ -290,6 +308,7 @@ def _ground_disease_with_query(
             _NCIT_SOURCE,
             config,
             thresholds,
+            token_equivalence=token_equivalence,
         )
     except OntologyIndexUnavailable as exc:
         _LOGGER.warning(

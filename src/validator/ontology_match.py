@@ -14,6 +14,7 @@ _ALLOWED_MATCH_TYPES = {
     "synonym_exact",
     "term_id_exact",
     "jaccard",
+    "token_equiv_similarity",
     "none",
     "fallback",
 }
@@ -77,6 +78,9 @@ class OntologyMatchResult:
     alternates: List[OntologyMatchAlternate] = dataclass_field(default_factory=list)
     match_type: Optional[str] = None
     confidence: Optional[float] = None
+    original_confidence: Optional[float] = None
+    token_equiv_confidence: Optional[float] = None
+    token_equiv_class: Optional[List[str]] = None
     matched_via: Optional[str] = None
     matched_synonym: Optional[str] = None
 
@@ -98,6 +102,9 @@ class OntologyMatch:
     matched_source: Optional[str]
     match_type: Optional[str]
     score: Optional[float]
+    original_score: Optional[float] = None
+    token_equiv_score: Optional[float] = None
+    token_equiv_class: Optional[List[str]] = None
     alternates: List[Dict[str, Any]] = dataclass_field(default_factory=list)
     matched_via: Optional[str] = None
     matched_synonym: Optional[str] = None
@@ -127,6 +134,11 @@ class OntologyMatch:
             "matched_source": self.matched_source,
             "match_type": self.match_type,
             "score": self.score,
+            "original_score": self.original_score,
+            "token_equiv_score": self.token_equiv_score,
+            "token_equiv_class": (
+                list(self.token_equiv_class) if self.token_equiv_class is not None else None
+            ),
             "alternates": list(self.alternates),
             "matched_via": self.matched_via,
             "matched_synonym": self.matched_synonym,
@@ -257,6 +269,22 @@ def _tokenize(normalized_text: str) -> List[str]:
     return normalized_text.split()
 
 
+def _apply_token_equivalence(
+    tokens: List[str],
+    equivalence_map: Optional[Dict[str, str]],
+) -> tuple[List[str], set[str]]:
+    if not tokens or not equivalence_map:
+        return tokens, set()
+    normalized_tokens: List[str] = []
+    used: set[str] = set()
+    for token in tokens:
+        mapped = equivalence_map.get(token, token)
+        normalized_tokens.append(mapped)
+        if token in equivalence_map:
+            used.add(mapped)
+    return normalized_tokens, used
+
+
 def _jaccard(a_tokens: List[str], b_tokens: List[str]) -> float:
     if not a_tokens or not b_tokens:
         return 0.0
@@ -273,6 +301,8 @@ def choose_best_ontology_candidate(
     raw_value: str,
     candidates: List[OntologyCandidate],
     thresholds: OntologyThresholds,
+    *,
+    token_equivalence: Optional[Dict[str, str]] = None,
 ) -> OntologyMatchResult:
     if not candidates:
         return OntologyMatchResult(status="NO_MATCH")
@@ -282,6 +312,7 @@ def choose_best_ontology_candidate(
     normalized_raw_variants = _expand_exact_variants(normalized_raw_exact)
     normalized_raw = _normalize_text(cleaned_raw)
     raw_tokens = _tokenize(normalized_raw)
+    equiv_raw_tokens, raw_equiv_used = _apply_token_equivalence(raw_tokens, token_equivalence)
 
     scored: List[
         tuple[
@@ -291,6 +322,9 @@ def choose_best_ontology_candidate(
             str,
             Optional[str],
             Optional[str],
+            Optional[float],
+            Optional[float],
+            Optional[List[str]],
             OntologyCandidate,
         ]
     ] = []
@@ -301,6 +335,9 @@ def choose_best_ontology_candidate(
         matched_synonym = None
         normalized_label_exact = normalize_exact_match_text(label)
 
+        original_confidence = None
+        token_equiv_confidence = None
+        token_equiv_class = None
         if candidate.retrieval_mode == "meta_exact":
             confidence = 1.0
             match_type = "label_norm_exact"
@@ -326,6 +363,39 @@ def choose_best_ontology_candidate(
                     syn_score = max(syn_score, _jaccard(raw_tokens, _tokenize(syn)))
                 confidence = max(label_score, syn_score)
                 match_type = "jaccard"
+                original_confidence = confidence
+
+                if token_equivalence:
+                    label_tokens = _tokenize(normalized_label)
+                    equiv_label_tokens, label_equiv_used = _apply_token_equivalence(
+                        label_tokens,
+                        token_equivalence,
+                    )
+                    label_equiv_score = _jaccard(equiv_raw_tokens, equiv_label_tokens)
+                    syn_equiv_score = 0.0
+                    syn_equiv_used: set[str] = set()
+                    for syn in normalized_synonyms:
+                        syn_tokens = _tokenize(syn)
+                        equiv_syn_tokens, syn_used = _apply_token_equivalence(
+                            syn_tokens,
+                            token_equivalence,
+                        )
+                        score = _jaccard(equiv_raw_tokens, equiv_syn_tokens)
+                        if score > syn_equiv_score:
+                            syn_equiv_score = score
+                            syn_equiv_used = syn_used
+                    token_equiv_score = max(label_equiv_score, syn_equiv_score)
+                    equiv_used = set(raw_equiv_used)
+                    if token_equiv_score == label_equiv_score:
+                        equiv_used |= label_equiv_used
+                    else:
+                        equiv_used |= syn_equiv_used
+                    if equiv_used:
+                        token_equiv_confidence = token_equiv_score
+                        token_equiv_class = sorted(equiv_used)
+                    if token_equiv_score > confidence:
+                        confidence = token_equiv_score
+                        match_type = "token_equiv_similarity"
 
         match_rank = 2
         if match_type in {"label_exact", "label_norm_exact"}:
@@ -340,6 +410,9 @@ def choose_best_ontology_candidate(
                 match_type,
                 matched_via,
                 matched_synonym,
+                original_confidence,
+                token_equiv_confidence,
+                token_equiv_class,
                 candidate,
             )
         )
@@ -358,7 +431,7 @@ def choose_best_ontology_candidate(
         ]
         if len(tied) > 1:
             def _specificity_key(item) -> tuple[int, int, int]:
-                label_text = item[6].label or ""
+                label_text = item[9].label or ""
                 normalized_label = normalize_exact_match_text(label_text)
                 tokens = _tokenize(normalized_label)
                 return (len(tokens), len(normalized_label), -item[2])
@@ -378,11 +451,14 @@ def choose_best_ontology_candidate(
         best_match_type,
         best_matched_via,
         best_matched_synonym,
+        best_original_confidence,
+        best_token_equiv_confidence,
+        best_token_equiv_class,
         best_candidate,
     ) = scored[0]
 
     alternates: List[OntologyMatchAlternate] = []
-    for confidence, _, _, _, _, _, candidate in scored[:_MAX_ALTERNATES]:
+    for confidence, _, _, _, _, _, _, _, _, candidate in scored[:_MAX_ALTERNATES]:
         alternates.append(
             OntologyMatchAlternate(
                 term_id=candidate.term_id,
@@ -440,6 +516,9 @@ def choose_best_ontology_candidate(
         alternates=alternates,
         match_type=match_type,
         confidence=confidence,
+        original_confidence=best_original_confidence,
+        token_equiv_confidence=best_token_equiv_confidence,
+        token_equiv_class=best_token_equiv_class,
         matched_via=matched_via,
         matched_synonym=matched_synonym,
     )

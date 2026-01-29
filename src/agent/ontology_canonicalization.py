@@ -24,6 +24,7 @@ _DISEASE_MODEL_PHRASES = {
     "syngeneic tumor model",
     "xenograft model",
 }
+_DISEASE_TOKEN_EQUIV_REASON = "disease_token_equiv_similarity"
 _TREATMENT_IDENTITY_FLAG = "treatment_not_an_intervention"
 _HEALTHY_CONTROL_FLAG = "disease_normalized_to_healthy"
 _HEALTHY_CONTROL_MATCHED_VIA = "healthy_control_normalized"
@@ -119,6 +120,48 @@ def apply_terminal_exact_canonicalization_and_lock(
 
     state.canonicalizations = canonicalizations
     state.locked_fields = locked_fields
+
+
+def apply_disease_token_equiv_lock(
+    state: PipelineState,
+    config: Optional[Dict[str, Any]],
+) -> None:
+    del config
+    if state.final_output is None:
+        return
+    if state.locked_fields.get("disease"):
+        return
+    match = state.ontology_matches.get("disease")
+    if not match:
+        return
+    status, _, match_type, label, term_id, source = _extract_match_values(match)
+    if status != "MATCHED" or match_type != "token_equiv_similarity" or not label:
+        return
+    original_value = state.final_output.get("disease")
+    state.final_output["disease"] = label
+
+    canonicalizations = dict(state.canonicalizations)
+    canonicalizations["disease"] = {
+        "field": "disease",
+        "original_value": original_value,
+        "canonical_value": label,
+        "term_id": term_id,
+        "source": source,
+        "match_type": match_type,
+    }
+    state.canonicalizations = canonicalizations
+
+    locked_fields = dict(state.locked_fields)
+    locked_fields["disease"] = {
+        "term_id": term_id,
+        "label": label,
+        "source": source,
+        "reason": _DISEASE_TOKEN_EQUIV_REASON,
+    }
+    state.locked_fields = locked_fields
+
+    state.semantic_errors.pop("disease", None)
+    state.ontology_failures.pop("disease", None)
 
 
 def _normalize_substring_text(text: str) -> str:
@@ -467,4 +510,3 @@ def apply_healthy_genotype_disease_normalization(
     state.ontology_failures.pop("disease", None)
     if _HEALTHY_GENOTYPE_FLAG not in state.flags:
         state.flags.append(_HEALTHY_GENOTYPE_FLAG)
-

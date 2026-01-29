@@ -12,6 +12,7 @@ from agent.audit import build_audit_record
 from agent.ontology_canonicalization import (
     apply_disease_modifier_generalization,
     apply_disease_model_fallback,
+    apply_disease_token_equiv_lock,
     apply_sloppy_tumor_disease_generalization,
     apply_healthy_control_disease_normalization,
     apply_healthy_genotype_disease_normalization,
@@ -382,6 +383,7 @@ def _update_validation_state(
         ontology_matches=state.ontology_matches,
     )
     apply_terminal_exact_canonicalization_and_lock(state, cfg)
+    apply_disease_token_equiv_lock(state, cfg)
     apply_disease_modifier_generalization(state, cfg)
     apply_tissue_placeholder_fallback(state, cfg)
     apply_disease_model_fallback(state, cfg)
