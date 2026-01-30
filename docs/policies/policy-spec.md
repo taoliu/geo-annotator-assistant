@@ -58,7 +58,8 @@ All fields are strings. The output schema always includes exactly 8 fields:
 
 ### disease
 - **Ontology sources**: DOID + NCIT fallback. NCIT queried only when trigger terms match (`src/validator/grounders/disease.py`).
-- **Token-equivalence** (Ticket #96): oncology synonyms normalized for scoring; match type `token_equiv_similarity` may produce terminal MATCHED + lock (`disease_token_equiv_similarity`).
+- **Token-equivalence** (Ticket #96 + #100): oncology synonyms normalized for scoring, including lymphoid/lymphocytic equivalence; match type `token_equiv_similarity` may produce terminal MATCHED + lock (`disease_token_equiv_similarity`).
+- **Parenthetical acronym stripping (Ticket #100)**: trailing parenthetical acronyms are stripped from the **ontology query** (e.g., `X (CLL)` → `X`) while preserving `raw_value`; `query_used` reflects the cleaned query.
 - **Generalizations/normalizations** (see Section 4).
 - **Healthy/Unknown**: deterministic normalization when patterns match.
 - **Locks**: terminal exact + token-equiv similarity + policy-driven locks.

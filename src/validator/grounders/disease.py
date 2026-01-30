@@ -24,6 +24,7 @@ _LOGGER = logging.getLogger(__name__)
 _NCIT_SOURCE = "NCI Thesaurus"
 _TRIGGER_TOKEN_RE = re.compile(r"[a-z0-9]+")
 _LEADING_DIGIT_RE = re.compile(r"\d")
+_TRAILING_ACRONYM_RE = re.compile(r"\s*\(([A-Za-z0-9]{2,10})\)\s*$")
 _ONCOLOGY_TOKEN_EQUIVALENCE = {
     "cancer": "oncology_cancer",
     "carcinoma": "oncology_cancer",
@@ -32,6 +33,8 @@ _ONCOLOGY_TOKEN_EQUIVALENCE = {
     "malignancy": "oncology_cancer",
     "tumor": "tumor",
     "tumour": "tumor",
+    "lymphoid": "lymphoid",
+    "lymphocytic": "lymphoid",
 }
 
 
@@ -98,6 +101,18 @@ def _strip_leading_model_token(raw_value: str) -> tuple[str, bool]:
     if not _LEADING_DIGIT_RE.search(tokens[0]):
         return raw_value, False
     stripped = " ".join(tokens[1:]).strip()
+    if not stripped:
+        return raw_value, False
+    return stripped, True
+
+
+def _strip_trailing_acronym(raw_value: str) -> tuple[str, bool]:
+    if not raw_value:
+        return raw_value, False
+    match = _TRAILING_ACRONYM_RE.search(raw_value)
+    if not match:
+        return raw_value, False
+    stripped = raw_value[: match.start()].strip()
     if not stripped:
         return raw_value, False
     return stripped, True
@@ -414,7 +429,8 @@ def ground_disease(
 
     ncit_enabled, trigger_terms = _extract_ncit_config(config)
     base_query = query_override or raw_value
-    query_value, stripped = _strip_leading_model_token(base_query)
+    cleaned_query, stripped_acronym = _strip_trailing_acronym(base_query)
+    query_value, stripped_model = _strip_leading_model_token(cleaned_query)
     match = _ground_disease_with_query(
         raw_value,
         query_value,
@@ -423,7 +439,7 @@ def ground_disease(
         ncit_enabled=ncit_enabled,
         trigger_terms=trigger_terms,
     )
-    if stripped and query_override is None and not _is_terminal_exact_match(match):
+    if stripped_model and query_override is None and not _is_terminal_exact_match(match):
         match = _ground_disease_with_query(
             raw_value,
             raw_value,
