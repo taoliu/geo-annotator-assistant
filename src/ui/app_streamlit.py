@@ -29,11 +29,7 @@ from ui.flags import (
     format_flag_category_summary,
     primary_failure_tooltip,
 )
-from ui.help_text import (
-    gsm_accession_tooltip,
-    table_guidance_text,
-    table_help_lines,
-)
+from ui.help_text import gsm_accession_tooltip, table_guidance_text
 from ui.dashboard import BADGE_TOOLTIPS, build_dashboard_items
 from ui.evidence import EVIDENCE_FIELDS, extract_field_evidence
 from ui.loaders import (
@@ -181,19 +177,20 @@ def _render_header(
     active_gse: str | None = None,
 ) -> None:
     st.title("GEO GSM Curator UI")
-    if root_dir and root_dir != paths.input_dir:
-        st.caption(f"Input root: {root_dir}")
-    st.caption(f"Input directory: {paths.input_dir}")
-    st.caption(f"Curation: {paths.curation_path}")
-    st.caption(f"Evidence: {paths.evidence_path}")
-    if paths.suggestions_present:
-        st.caption(f"Suggestions: {paths.suggestions_path}")
-    else:
-        st.caption("Suggestions: not loaded")
-    if paths.audit_present:
-        st.caption(f"Audit: {paths.audit_path}")
-    else:
-        st.caption("Audit: not loaded")
+    with st.expander("Input details", expanded=False):
+        if root_dir and root_dir != paths.input_dir:
+            st.caption(f"Input root: {root_dir}")
+        st.caption(f"Input directory: {paths.input_dir}")
+        st.caption(f"Curation: {paths.curation_path}")
+        st.caption(f"Evidence: {paths.evidence_path}")
+        if paths.suggestions_present:
+            st.caption(f"Suggestions: {paths.suggestions_path}")
+        else:
+            st.caption("Suggestions: not loaded")
+        if paths.audit_present:
+            st.caption(f"Audit: {paths.audit_path}")
+        else:
+            st.caption("Audit: not loaded")
     if active_gse:
         st.subheader(f"Active GSE: {active_gse}")
 
@@ -477,14 +474,16 @@ def _render_gse_summary_panel(
         items = sorted(counter.items(), key=lambda item: (-item[1], item[0]))
         return ", ".join(f"{name} ({count})" for name, count in items[:limit])
 
-    st.caption(f"Most common primary failures: {_top_items(primary_counts)}")
-    st.caption(f"Most common flags: {_top_items(flag_counts)}")
-    if outlier_counts:
-        st.caption(f"Outlier categories: {_top_items(outlier_counts)}")
-    else:
-        st.caption("Outlier categories: None.")
-
-    st.caption("Summary reflects current GSE/search filters.")
+    with st.expander("Show detailed summary", expanded=False):
+        st.caption(
+            f"Most common primary failures: {_top_items(primary_counts)}"
+        )
+        st.caption(f"Most common flags: {_top_items(flag_counts)}")
+        if outlier_counts:
+            st.caption(f"Outlier categories: {_top_items(outlier_counts)}")
+        else:
+            st.caption("Outlier categories: None.")
+        st.caption("Summary reflects current GSE/search filters.")
 
 
 def _render_triage_controls(
@@ -1446,9 +1445,6 @@ def run_app() -> None:
         st.stop()
 
     st.caption(table_guidance_text())
-    with st.expander("Help"):
-        for line in table_help_lines():
-            st.write(line)
 
     column_config = _table_column_config()
 
