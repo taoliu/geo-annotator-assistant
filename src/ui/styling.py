@@ -15,6 +15,16 @@ _GSM_ACCESSION_STYLE = (
 )
 _FLAG_SUMMARY_COLUMN = "Flag summary"
 _PRIMARY_FAILURE_COLUMN = "Primary failure"
+_DECISION_COLUMN = "Decision"
+_REVIEW_FLAGS_COLUMN = "Review flags"
+_TERMINAL_FALLBACK_COLUMN = "Terminal fallbacks"
+_OUTLIER_COLUMN = "Outliers"
+
+_DECISION_FLAGGED = "background-color: #fde2e2"
+_DECISION_ACCEPT = "background-color: #e9f7ef"
+_REVIEW_BG = "background-color: #fff4e5"
+_TERMINAL_BG = "background-color: #fde2e2"
+_OUTLIER_BG = "background-color: #fff4e5"
 
 
 def active_row_style(row_index: int, active_row_idx: int | None) -> str:
@@ -72,6 +82,25 @@ def style_curation_table(
                 if color:
                     cell_styles.append(f"background-color: {color}")
                     cell_styles.append("font-weight: 600")
+            if column == _DECISION_COLUMN:
+                decision = str(row.get(_DECISION_COLUMN) or "")
+                if decision == "FLAGGED":
+                    cell_styles.append(_DECISION_FLAGGED)
+                    cell_styles.append("font-weight: 600")
+                elif decision == "ACCEPT":
+                    cell_styles.append(_DECISION_ACCEPT)
+            if column == _REVIEW_FLAGS_COLUMN:
+                value = str(row.get(_REVIEW_FLAGS_COLUMN) or "")
+                if value:
+                    cell_styles.append(_REVIEW_BG)
+            if column == _TERMINAL_FALLBACK_COLUMN:
+                value = str(row.get(_TERMINAL_FALLBACK_COLUMN) or "")
+                if value:
+                    cell_styles.append(_TERMINAL_BG)
+            if column == _OUTLIER_COLUMN:
+                value = str(row.get(_OUTLIER_COLUMN) or "")
+                if value:
+                    cell_styles.append(_OUTLIER_BG)
             if column == "gsm_accession":
                 cell_styles.append(_GSM_ACCESSION_STYLE)
             styles.append("; ".join(cell_styles))

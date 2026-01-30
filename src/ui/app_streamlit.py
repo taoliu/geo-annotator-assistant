@@ -6,6 +6,7 @@ import argparse
 import html
 import inspect
 import os
+from collections import Counter
 from pathlib import Path
 
 import pandas as pd
@@ -15,6 +16,7 @@ from ui.flags import (
     FLAG_CATEGORY_BADGES,
     FLAG_CATEGORY_LABELS,
     FLAG_CATEGORY_ORDER,
+    FLAG_CATEGORY_REVIEW,
     build_curation_flags_index,
     build_flag_category_summary,
     build_flag_display_groups,
@@ -176,6 +178,23 @@ def _extract_selected_rows(source: object) -> list[int]:
     return list(rows)
 
 
+DECISION_FILTER_OPTIONS: tuple[str, ...] = (
+    "All",
+    "FLAGGED",
+    "ACCEPT",
+)
+
+SORT_OPTIONS: tuple[str, ...] = (
+    "Default (input order)",
+    "Decision",
+    "Review flags",
+    "Primary failure",
+    "Overrides",
+    "Terminal fallbacks",
+    "Outliers",
+)
+
+
 def _flag_callout(category: str):
     if category == "policy":
         return st.error
@@ -235,6 +254,236 @@ def _primary_failure_html(primary_failure: str) -> str:
         + '"><strong>Primary failure:</strong> <code>'
         + html.escape(primary_failure)
         + "</code></span></div>"
+    )
+
+
+def _row_key(row: dict) -> tuple[str, str]:
+    return (row["gse_accession"], row["gsm_accession"])
+
+
+def _dedupe_preserve(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for item in items:
+        if item not in seen:
+            ordered.append(item)
+            seen.add(item)
+    return ordered
+
+
+def _combine_flags(
+    curation_flags: list[str],
+    evidence_field_flags: dict[str, list[str]] | None,
+) -> list[str]:
+    combined: list[str] = []
+    combined.extend(curation_flags)
+    if evidence_field_flags:
+        for field in CANONICAL_FIELDS:
+            for flag in evidence_field_flags.get(field, []):
+                combined.append(flag)
+    return _dedupe_preserve(combined)
+
+
+def _terminal_fallback_fields(
+    curation_raw: dict | None,
+    evidence_field_flags: dict[str, list[str]] | None,
+) -> list[str]:
+    fields: set[str] = set()
+    if isinstance(curation_raw, dict):
+        terminal_fields = curation_raw.get("terminal_fallback_fields")
+        if isinstance(terminal_fields, list):
+            for field in terminal_fields:
+                if isinstance(field, str) and field:
+                    fields.add(field)
+    if evidence_field_flags:
+        for field, flags in evidence_field_flags.items():
+            if "terminal_fallback" in flags:
+                fields.add(field)
+    return sorted(fields)
+
+
+def _outlier_categories(curation_flags: list[str]) -> list[str]:
+    categories: set[str] = set()
+    for flag in curation_flags:
+        if flag.startswith("gse_outlier_"):
+            categories.add(flag[len("gse_outlier_") :])
+    return sorted(categories)
+
+
+def _render_gse_summary_panel(
+    rows: list[dict],
+    final_decisions: dict[tuple[str, str], str],
+    primary_failures: dict[tuple[str, str], str],
+    combined_flags_by_gsm: dict[tuple[str, str], list[str]],
+    overrides: dict,
+    outlier_categories_by_gsm: dict[tuple[str, str], list[str]],
+) -> None:
+    total = len(rows)
+    if total == 0:
+        st.info("No GSMs available for summary.")
+        return
+
+    flagged = sum(
+        1
+        for row in rows
+        if final_decisions.get(_row_key(row), "") != "ACCEPT"
+    )
+    flagged_fraction = flagged / total if total else 0.0
+    overrides_keys = {(gse, gsm) for gse, gsm, _ in overrides}
+    overrides_count = sum(1 for row in rows if _row_key(row) in overrides_keys)
+
+    primary_counts = Counter()
+    flag_counts = Counter()
+    outlier_counts = Counter()
+    outlier_gsm_count = 0
+    for row in rows:
+        key = _row_key(row)
+        primary = primary_failures.get(key, "")
+        if primary:
+            primary_counts[primary] += 1
+        for flag in combined_flags_by_gsm.get(key, []):
+            flag_counts[flag] += 1
+        categories = outlier_categories_by_gsm.get(key, [])
+        if categories:
+            outlier_gsm_count += 1
+        for category in categories:
+            outlier_counts[category] += 1
+
+    st.markdown("### GSE Summary")
+    cols = st.columns(4)
+    cols[0].markdown(f"**Total GSMs**\n{total}")
+    cols[1].markdown(
+        f"**FLAGGED**\n{flagged} ({flagged_fraction:.0%})"
+    )
+    cols[2].markdown(f"**Overrides**\n{overrides_count}")
+    cols[3].markdown(f"**Outliers**\n{outlier_gsm_count}")
+
+    def _top_items(counter: Counter, limit: int = 5) -> str:
+        if not counter:
+            return "None."
+        items = sorted(counter.items(), key=lambda item: (-item[1], item[0]))
+        return ", ".join(f"{name} ({count})" for name, count in items[:limit])
+
+    st.caption(f"Most common primary failures: {_top_items(primary_counts)}")
+    st.caption(f"Most common flags: {_top_items(flag_counts)}")
+    if outlier_counts:
+        st.caption(f"Outlier categories: {_top_items(outlier_counts)}")
+    else:
+        st.caption("Outlier categories: None.")
+
+    st.caption("Summary reflects current GSE/search filters.")
+
+
+def _render_triage_controls(
+    primary_failure_options: list[str],
+    flag_options: list[str],
+) -> tuple[str, list[str], list[str], str, bool]:
+    st.sidebar.header("Triage")
+    decision_filter = st.sidebar.selectbox(
+        "Decision",
+        DECISION_FILTER_OPTIONS,
+        index=0,
+    )
+    primary_filter = st.sidebar.multiselect(
+        "Primary failures",
+        primary_failure_options,
+    )
+    flag_filter = st.sidebar.multiselect(
+        "Flags",
+        flag_options,
+    )
+    sort_by = st.sidebar.selectbox(
+        "Sort by",
+        SORT_OPTIONS,
+        index=0,
+    )
+    sort_desc = st.sidebar.checkbox("Sort descending", value=True)
+    return decision_filter, primary_filter, flag_filter, sort_by, sort_desc
+
+
+def _filter_rows_by_decision(
+    rows: list[dict],
+    decision_filter: str,
+    final_decisions: dict[tuple[str, str], str],
+) -> list[dict]:
+    if decision_filter == "All":
+        return rows
+    filtered: list[dict] = []
+    for row in rows:
+        key = _row_key(row)
+        if final_decisions.get(key, "") == decision_filter:
+            filtered.append(row)
+    return filtered
+
+
+def _filter_rows_by_primary_failure(
+    rows: list[dict],
+    primary_filter: list[str],
+    primary_failures: dict[tuple[str, str], str],
+) -> list[dict]:
+    if not primary_filter:
+        return rows
+    selected = set(primary_filter)
+    return [
+        row
+        for row in rows
+        if primary_failures.get(_row_key(row), "") in selected
+    ]
+
+
+def _filter_rows_by_flags(
+    rows: list[dict],
+    flag_filter: list[str],
+    combined_flags_by_gsm: dict[tuple[str, str], list[str]],
+) -> list[dict]:
+    if not flag_filter:
+        return rows
+    selected = set(flag_filter)
+    filtered: list[dict] = []
+    for row in rows:
+        key = _row_key(row)
+        flags = combined_flags_by_gsm.get(key, [])
+        if selected.intersection(flags):
+            filtered.append(row)
+    return filtered
+
+
+def _sort_rows(
+    rows: list[dict],
+    sort_by: str,
+    sort_desc: bool,
+    final_decisions: dict[tuple[str, str], str],
+    review_counts: dict[tuple[str, str], int],
+    primary_failures: dict[tuple[str, str], str],
+    overrides: dict,
+    terminal_fallback_counts: dict[tuple[str, str], int],
+    outlier_categories_by_gsm: dict[tuple[str, str], list[str]],
+) -> list[dict]:
+    if sort_by == "Default (input order)":
+        return rows
+    index_map = {_row_key(row): idx for idx, row in enumerate(rows)}
+    direction = -1 if sort_desc else 1
+    overrides_keys = {(gse, gsm) for gse, gsm, _ in overrides}
+
+    def _priority(row: dict) -> int:
+        key = _row_key(row)
+        if sort_by == "Decision":
+            return 1 if final_decisions.get(key, "") == "FLAGGED" else 0
+        if sort_by == "Review flags":
+            return review_counts.get(key, 0)
+        if sort_by == "Primary failure":
+            return 1 if primary_failures.get(key, "") else 0
+        if sort_by == "Overrides":
+            return 1 if key in overrides_keys else 0
+        if sort_by == "Terminal fallbacks":
+            return terminal_fallback_counts.get(key, 0)
+        if sort_by == "Outliers":
+            return 1 if outlier_categories_by_gsm.get(key) else 0
+        return 0
+
+    return sorted(
+        rows,
+        key=lambda row: (direction * _priority(row), index_map.get(_row_key(row), 0)),
     )
 
 
@@ -597,6 +846,10 @@ def _build_editable_df(
     triage_flags: dict[tuple[str, str], dict[str, bool]],
     flag_summaries: dict[tuple[str, str], dict[str, object]],
     primary_failures: dict[tuple[str, str], str],
+    final_decisions: dict[tuple[str, str], str],
+    review_counts: dict[tuple[str, str], int],
+    terminal_fallback_counts: dict[tuple[str, str], int],
+    outlier_categories_by_gsm: dict[tuple[str, str], list[str]],
 ) -> pd.DataFrame:
     df_editable = df_base.copy()
     for (gse, gsm, field), value in overrides.items():
@@ -613,26 +866,42 @@ def _build_editable_df(
         "Yes" if (row["gse_accession"], row["gsm_accession"]) in edited_keys else ""
         for row in df_base.to_dict("records")
     ]
-    df_editable.insert(2, "Edited", edited_values)
+    df_editable.insert(2, "Decision", [
+        final_decisions.get((row["gse_accession"], row["gsm_accession"]), "")
+        for row in df_base.to_dict("records")
+    ])
+    df_editable.insert(3, "Edited", edited_values)
 
     attention_values = []
     for row in df_base.to_dict("records"):
         key = (row["gse_accession"], row["gsm_accession"])
         flags = triage_flags.get(key, {})
         attention_values.append("ATTN" if flags.get("needs_attention") else "")
-    df_editable.insert(3, "Needs attention", attention_values)
+    df_editable.insert(4, "Needs attention", attention_values)
 
+    review_values = []
+    terminal_values = []
+    outlier_values = []
     primary_values = []
     summary_values = []
     for row in df_base.to_dict("records"):
         key = (row["gse_accession"], row["gsm_accession"])
+        review_count = review_counts.get(key, 0)
+        review_values.append(str(review_count) if review_count else "")
+        terminal_count = terminal_fallback_counts.get(key, 0)
+        terminal_values.append(str(terminal_count) if terminal_count else "")
+        outliers = outlier_categories_by_gsm.get(key, [])
+        outlier_values.append(",".join(outliers))
         primary_values.append(primary_failures.get(key, ""))
         summary = flag_summaries.get(key)
         if summary is None:
             summary = build_flag_category_summary([], {})
         summary_values.append(format_flag_category_summary(summary))
-    df_editable.insert(4, "Primary failure", primary_values)
-    df_editable.insert(5, "Flag summary", summary_values)
+    df_editable.insert(5, "Review flags", review_values)
+    df_editable.insert(6, "Terminal fallbacks", terminal_values)
+    df_editable.insert(7, "Outliers", outlier_values)
+    df_editable.insert(8, "Primary failure", primary_values)
+    df_editable.insert(9, "Flag summary", summary_values)
 
     flagged_values = []
     for row in df_base.to_dict("records"):
@@ -719,14 +988,37 @@ def run_app() -> None:
     curation_flags_by_gsm = build_curation_flags_index(curation_records)
     primary_failures = build_primary_failure_index(curation_records)
     flag_summaries: dict[tuple[str, str], dict[str, object]] = {}
+    final_decisions: dict[tuple[str, str], str] = {}
+    combined_flags_by_gsm: dict[tuple[str, str], list[str]] = {}
+    review_counts: dict[tuple[str, str], int] = {}
+    terminal_fallback_counts: dict[tuple[str, str], int] = {}
+    outlier_categories_by_gsm: dict[tuple[str, str], list[str]] = {}
     for record in curation_records:
         key = (record["gse_accession"], record["gsm_accession"])
+        curation_raw = record.get("raw", {})
+        final_decisions[key] = (
+            curation_raw.get("final_decision") if isinstance(curation_raw, dict) else ""
+        ) or ""
         summary = build_flag_category_summary(
             curation_flags_by_gsm.get(key, []),
             flags_by_gsm.get(key, {}),
         )
         flag_summaries[key] = summary
+        counts = summary.get("counts") if isinstance(summary, dict) else {}
+        review_counts[key] = int(counts.get(FLAG_CATEGORY_REVIEW, 0)) if isinstance(counts, dict) else 0
+        evidence_field_flags = flags_by_gsm.get(key, {})
+        combined_flags_by_gsm[key] = _combine_flags(
+            curation_flags_by_gsm.get(key, []),
+            evidence_field_flags,
+        )
+        terminal_fallback_counts[key] = len(
+            _terminal_fallback_fields(curation_raw, evidence_field_flags)
+        )
+        outlier_categories_by_gsm[key] = _outlier_categories(
+            curation_flags_by_gsm.get(key, [])
+        )
     evidence_lookup = index_evidence_records(evidence_records)
+    curation_lookup = index_curation_records(curation_records)
     overrides = st.session_state.get("overrides", {})
     if not isinstance(overrides, dict):
         overrides = {}
@@ -741,8 +1033,57 @@ def run_app() -> None:
 
     triage_flags = build_triage_flags(base_rows, evidence_lookup, overrides)
     _render_summary_strip(base_rows, triage_flags)
+    _render_gse_summary_panel(
+        base_rows,
+        final_decisions,
+        primary_failures,
+        combined_flags_by_gsm,
+        overrides,
+        outlier_categories_by_gsm,
+    )
     triage_filter = _render_triage_filters()
+    primary_failure_options = sorted(
+        {
+            primary_failures.get(_row_key(row), "")
+            for row in base_rows
+            if primary_failures.get(_row_key(row), "")
+        }
+    )
+    flag_options = sorted(
+        {
+            flag
+            for row in base_rows
+            for flag in combined_flags_by_gsm.get(_row_key(row), [])
+        }
+    )
+    (
+        decision_filter,
+        primary_filter,
+        flag_filter,
+        sort_by,
+        sort_desc,
+    ) = _render_triage_controls(primary_failure_options, flag_options)
     filtered_rows = apply_triage_filter(base_rows, triage_flags, triage_filter)
+    filtered_rows = _filter_rows_by_decision(
+        filtered_rows, decision_filter, final_decisions
+    )
+    filtered_rows = _filter_rows_by_primary_failure(
+        filtered_rows, primary_filter, primary_failures
+    )
+    filtered_rows = _filter_rows_by_flags(
+        filtered_rows, flag_filter, combined_flags_by_gsm
+    )
+    filtered_rows = _sort_rows(
+        filtered_rows,
+        sort_by,
+        sort_desc,
+        final_decisions,
+        review_counts,
+        primary_failures,
+        overrides,
+        terminal_fallback_counts,
+        outlier_categories_by_gsm,
+    )
     st.caption(f"Rows: {len(filtered_rows)}")
 
     if not filtered_rows:
@@ -781,6 +1122,10 @@ def run_app() -> None:
             triage_flags,
             flag_summaries,
             primary_failures,
+            final_decisions,
+            review_counts,
+            terminal_fallback_counts,
+            outlier_categories_by_gsm,
         )
         st.subheader("Curation Table (Editable)")
         editor_kwargs = {
@@ -813,24 +1158,41 @@ def run_app() -> None:
                 "Yes" if (row["gse_accession"], row["gsm_accession"]) in edited_keys else ""
                 for row in filtered_rows
             ]
-            df.insert(2, "Edited", edited_values)
+            decision_values = [
+                final_decisions.get((row["gse_accession"], row["gsm_accession"]), "")
+                for row in filtered_rows
+            ]
+            df.insert(2, "Decision", decision_values)
+            df.insert(3, "Edited", edited_values)
             attention_values = []
             for row in filtered_rows:
                 key = (row["gse_accession"], row["gsm_accession"])
                 flags = triage_flags.get(key, {})
                 attention_values.append("ATTN" if flags.get("needs_attention") else "")
-            df.insert(3, "Needs attention", attention_values)
+            df.insert(4, "Needs attention", attention_values)
+            review_values = []
+            terminal_values = []
+            outlier_values = []
             primary_values = []
             summary_values = []
             for row in filtered_rows:
                 key = (row["gse_accession"], row["gsm_accession"])
+                review_count = review_counts.get(key, 0)
+                review_values.append(str(review_count) if review_count else "")
+                terminal_count = terminal_fallback_counts.get(key, 0)
+                terminal_values.append(str(terminal_count) if terminal_count else "")
+                outliers = outlier_categories_by_gsm.get(key, [])
+                outlier_values.append(",".join(outliers))
                 primary_values.append(primary_failures.get(key, ""))
                 summary = flag_summaries.get(key)
                 if summary is None:
                     summary = build_flag_category_summary([], {})
                 summary_values.append(format_flag_category_summary(summary))
-            df.insert(4, "Primary failure", primary_values)
-            df.insert(5, "Flag summary", summary_values)
+            df.insert(5, "Review flags", review_values)
+            df.insert(6, "Terminal fallbacks", terminal_values)
+            df.insert(7, "Outliers", outlier_values)
+            df.insert(8, "Primary failure", primary_values)
+            df.insert(9, "Flag summary", summary_values)
         styled = style_curation_table(
             df,
             flags_by_gsm,
@@ -876,7 +1238,6 @@ def run_app() -> None:
 
     overrides = _render_export_section(overrides)
 
-    curation_lookup = index_curation_records(curation_records)
     suggestions_lookup = index_suggestion_records(suggestions_records)
 
     if modal_open and isinstance(active_row_idx, int):
