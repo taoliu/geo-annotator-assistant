@@ -35,6 +35,13 @@ The UI is read-only and does not write any files unless you explicitly export ov
 The modal presents GSM detail sections and review signals. At the top is the
 Field Status Dashboard.
 
+### Summary-first layout
+
+The modal now opens with a compact decision summary, followed by the field
+status dashboard. Deep evidence is collapsed by default and can be expanded on
+demand. All information remains available, but high-signal elements are surfaced
+first for faster scanning.
+
 ### Field Status Dashboard
 
 - Shows all 8 output fields:

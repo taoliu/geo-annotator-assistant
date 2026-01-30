@@ -84,6 +84,57 @@ from ui.override_safety import (
 st.set_page_config(layout="wide")
 
 
+def _inject_layout_styles() -> None:
+    st.markdown(
+        """
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Fraunces:wght@500;600&display=swap');
+        .stApp {
+          background: radial-gradient(circle at 15% 10%, #f6f1e8 0%, #f8f7f3 45%, #ffffff 100%);
+        }
+        h1, h2, h3, h4 {
+          font-family: 'Fraunces', serif;
+          letter-spacing: -0.01em;
+        }
+        body, p, li, .stMarkdown, .stCaption {
+          font-family: 'Space Grotesk', sans-serif;
+        }
+        .summary-card {
+          background: linear-gradient(130deg, #fff6e9 0%, #ffffff 60%);
+          border: 1px solid #f0e2cf;
+          border-radius: 14px;
+          padding: 12px 16px;
+          margin-bottom: 8px;
+        }
+        .summary-label {
+          font-size: 0.75rem;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          color: #6b5f4b;
+          margin-bottom: 4px;
+        }
+        .summary-value {
+          font-size: 1rem;
+          font-weight: 600;
+          color: #2b2b2b;
+        }
+        .pill {
+          display: inline-block;
+          padding: 2px 10px;
+          border-radius: 999px;
+          font-size: 0.78rem;
+          font-weight: 600;
+          letter-spacing: 0.02em;
+          border: 1px solid rgba(0,0,0,0.08);
+        }
+        .pill-flagged { background: #fde2e2; color: #7d2f2f; }
+        .pill-accept { background: #e9f7ef; color: #1f5a3f; }
+        .pill-neutral { background: #f2f2f2; color: #404040; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
 def _resolve_input_dir() -> str | None:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--input-dir")
@@ -557,74 +608,19 @@ def _render_details(
     st.subheader("Record Details")
     selection_key = details["selection_key"]
     st.caption(f"Selected: {selection_key[0]} / {selection_key[1]}")
-    _render_field_status_dashboard(details)
-    _render_field_override_controls(details, edit_mode)
-    _render_field_evidence_panels(details)
-    evidence = details["evidence"]
-    suggestions = details["suggestions"]
-    flagged_fields = details["flagged_fields"]
     curation = details["curation"]
     curation_raw = curation["raw"] if curation else None
     curation_flags = extract_curation_flags(curation_raw)
     primary_failure = extract_primary_failure(curation_raw)
+    flagged_fields = details["flagged_fields"]
     flag_groups = build_flag_display_groups(curation_flags, flagged_fields)
 
-    st.caption(f"Evidence present: {'yes' if evidence else 'no'}")
-    if suggestions_present:
-        st.caption(f"Suggestions: {len(suggestions)}")
-    else:
-        st.caption("Suggestions: 0 (not loaded)")
-
-    st.markdown("**Flags**")
-    st.caption("Grouped for visual scanning only; no backend changes.")
-    has_secondary = any(flag_groups.get(category) for category in FLAG_CATEGORY_ORDER)
-    if not primary_failure and not has_secondary:
-        st.write("None.")
-    else:
-        if primary_failure:
-            _render_primary_failure(primary_failure)
-        for category in FLAG_CATEGORY_ORDER:
-            _render_flag_group(category, flag_groups.get(category, []))
-
+    _render_decision_summary(details, curation_raw, flag_groups)
+    _render_field_status_dashboard(details)
+    _render_field_override_controls(details, edit_mode)
     _render_override_diff(details, curation_flags, flag_groups)
-
-    selected_overrides = details["selected_overrides"]
-    effective_fields = details["effective_fields"]
-
-    st.markdown("**Overrides (in-memory)**")
-    if not selected_overrides:
-        st.write("None.")
-    else:
-        st.json(selected_overrides)
-
-    st.markdown("**Curation (effective)**")
-    if effective_fields:
-        st.json(effective_fields)
-    else:
-        st.write("No curation record found.")
-
-    st.markdown("**Curation (raw)**")
-    if curation:
-        st.json(curation["raw"])
-    else:
-        st.write("No curation record found.")
-
-    st.markdown("**Evidence (raw)**")
-    if evidence:
-        st.json(evidence["raw"])
-    else:
-        st.write("No evidence record found.")
-
-    st.markdown("**Suggestions (raw)**")
-    if not suggestions_present:
-        st.write("Suggestions not loaded.")
-        return
-    if not suggestions:
-        st.write("No suggestions for this GSM.")
-        return
-    for field, records in group_suggestions_by_field(suggestions):
-        st.markdown(f"**{field}**")
-        st.json([record["raw"] for record in records])
+    _render_field_evidence_panels(details)
+    _render_raw_artifacts(details, suggestions_present)
 
 
 def _render_field_status_dashboard(details: DetailsContext) -> None:
@@ -682,6 +678,114 @@ def _badge_html(badge: str) -> str:
         + html.escape(badge)
         + "</span>"
     )
+
+
+def _render_decision_summary(
+    details: DetailsContext,
+    curation_raw: dict | None,
+    flag_groups: dict[str, list[str]],
+) -> None:
+    st.markdown("### Decision Summary")
+    final_decision = ""
+    if isinstance(curation_raw, dict):
+        final_decision = str(curation_raw.get("final_decision") or "")
+    primary_failure = extract_primary_failure(curation_raw)
+    overrides_count = len(details["selected_overrides"])
+    evidence_present = "yes" if details["evidence"] else "no"
+    suggestions_count = len(details["suggestions"])
+    flagged_total = sum(len(items) for items in flag_groups.values())
+    terminal_count = 0
+    if isinstance(curation_raw, dict):
+        terminal_fields = curation_raw.get("terminal_fallback_fields")
+        if isinstance(terminal_fields, list):
+            terminal_count = len(terminal_fields)
+
+    decision_class = "pill-neutral"
+    if final_decision == "FLAGGED":
+        decision_class = "pill-flagged"
+    elif final_decision == "ACCEPT":
+        decision_class = "pill-accept"
+
+    cols = st.columns(4)
+    cols[0].markdown(
+        "<div class='summary-card'>"
+        "<div class='summary-label'>Decision</div>"
+        f"<div class='summary-value'><span class='pill {decision_class}'>"
+        f"{html.escape(final_decision or 'N/A')}</span></div></div>",
+        unsafe_allow_html=True,
+    )
+    cols[1].markdown(
+        "<div class='summary-card'>"
+        "<div class='summary-label'>Primary Failure</div>"
+        f"<div class='summary-value'>{_primary_failure_inline(primary_failure)}</div>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+    cols[2].markdown(
+        "<div class='summary-card'>"
+        "<div class='summary-label'>Flags</div>"
+        f"<div class='summary-value'>{flagged_total} total</div>"
+        f"<div class='summary-label'>Terminal fallbacks</div>"
+        f"<div class='summary-value'>{terminal_count}</div>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+    cols[3].markdown(
+        "<div class='summary-card'>"
+        "<div class='summary-label'>Overrides</div>"
+        f"<div class='summary-value'>{overrides_count}</div>"
+        f"<div class='summary-label'>Evidence</div>"
+        f"<div class='summary-value'>{html.escape(evidence_present)}</div>"
+        f"<div class='summary-label'>Suggestions</div>"
+        f"<div class='summary-value'>{suggestions_count}</div>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    st.caption("Summary-first view. Expand sections below for detail.")
+    _render_flag_groups_compact(flag_groups, primary_failure)
+
+
+def _primary_failure_inline(primary_failure: str) -> str:
+    if not primary_failure:
+        return "<span class='pill pill-neutral'>None</span>"
+    tooltip = primary_failure_tooltip(primary_failure)
+    return (
+        "<span title=\""
+        + html.escape(tooltip, quote=True)
+        + "\" class='pill pill-flagged'><code>"
+        + html.escape(primary_failure)
+        + "</code></span>"
+    )
+
+
+def _render_flag_groups_compact(
+    flag_groups: dict[str, list[str]],
+    primary_failure: str,
+    max_inline: int = 3,
+) -> None:
+    st.markdown("**Flag groups (compact)**")
+    has_secondary = any(flag_groups.get(category) for category in FLAG_CATEGORY_ORDER)
+    if not primary_failure and not has_secondary:
+        st.write("None.")
+        return
+    if primary_failure:
+        _render_primary_failure(primary_failure)
+    for category in FLAG_CATEGORY_ORDER:
+        items = flag_groups.get(category, [])
+        if not items:
+            continue
+        label = FLAG_CATEGORY_LABELS.get(category, category)
+        badge = FLAG_CATEGORY_BADGES.get(category, category.upper())
+        message = f"{badge} {label} ({len(items)})"
+        _flag_callout(category)(message)
+        st.markdown(_format_flag_list(items[:max_inline]), unsafe_allow_html=True)
+        if len(items) > max_inline:
+            with st.expander(
+                f"Show {len(items) - max_inline} more {label} flags",
+                expanded=False,
+            ):
+                st.markdown(_format_flag_list(items[max_inline:]), unsafe_allow_html=True)
 
 
 def _extract_llm_originals(audit_raw: dict | None) -> dict[str, str]:
@@ -771,25 +875,72 @@ def _render_override_diff(
         )
 
 
+def _render_raw_artifacts(
+    details: DetailsContext,
+    suggestions_present: bool,
+) -> None:
+    with st.expander("Raw artifacts (advanced)", expanded=False):
+        selected_overrides = details["selected_overrides"]
+        effective_fields = details["effective_fields"]
+        curation = details["curation"]
+        evidence = details["evidence"]
+        suggestions = details["suggestions"]
+
+        st.markdown("**Overrides (in-memory)**")
+        if not selected_overrides:
+            st.write("None.")
+        else:
+            st.json(selected_overrides)
+
+        st.markdown("**Curation (effective)**")
+        if effective_fields:
+            st.json(effective_fields)
+        else:
+            st.write("No curation record found.")
+
+        st.markdown("**Curation (raw)**")
+        if curation:
+            st.json(curation["raw"])
+        else:
+            st.write("No curation record found.")
+
+        st.markdown("**Evidence (raw)**")
+        if evidence:
+            st.json(evidence["raw"])
+        else:
+            st.write("No evidence record found.")
+
+        st.markdown("**Suggestions (raw)**")
+        if not suggestions_present:
+            st.write("Suggestions not loaded.")
+        elif not suggestions:
+            st.write("No suggestions for this GSM.")
+        else:
+            for field, records in group_suggestions_by_field(suggestions):
+                st.markdown(f"**{field}**")
+                st.json([record["raw"] for record in records])
+
+
 def _render_field_evidence_panels(details: DetailsContext) -> None:
     evidence = details["evidence"]
     evidence_raw = evidence["raw"] if evidence else None
     selection_key = details["selection_key"]
-    expand_all = st.checkbox(
-        "Expand all evidence",
-        value=False,
-        key=f"expand_all_evidence_{selection_key[0]}_{selection_key[1]}",
-    )
-    st.markdown("### Evidence")
-    for field in EVIDENCE_FIELDS:
-        items = extract_field_evidence(field, evidence_raw)
-        with st.expander(f"{field} - Evidence", expanded=expand_all):
-            if not items:
-                st.write("(not available)")
-                continue
-            for item in items:
-                st.write(f"{item['label']}: {item['value']}")
-    st.markdown("---")
+    with st.expander("Evidence (details)", expanded=False):
+        expand_all = st.checkbox(
+            "Expand all evidence",
+            value=False,
+            key=f"expand_all_evidence_{selection_key[0]}_{selection_key[1]}",
+        )
+        st.markdown("### Evidence")
+        for field in EVIDENCE_FIELDS:
+            items = extract_field_evidence(field, evidence_raw)
+            with st.expander(f"{field} - Evidence", expanded=expand_all):
+                if not items:
+                    st.write("(not available)")
+                    continue
+                for item in items:
+                    st.write(f"{item['label']}: {item['value']}")
+        st.markdown("---")
 
 
 def _render_field_override_controls(details: DetailsContext, edit_mode: bool) -> None:
@@ -1132,6 +1283,7 @@ def _render_export_section(overrides: dict) -> dict:
 
 
 def run_app() -> None:
+    _inject_layout_styles()
     input_dir = _resolve_input_dir()
     if not input_dir:
         st.error("No input directory provided. Use --input-dir or GEO_GSM_UI_INPUT_DIR.")
@@ -1457,7 +1609,7 @@ def run_app() -> None:
                 flags_by_gsm,
                 overrides,
             )
-            _render_details_modal(details, paths.suggestions_present, edit_mode)
+            _render_details_modal(details, active_paths.suggestions_present, edit_mode)
 
 
 run_app()
