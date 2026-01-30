@@ -31,6 +31,77 @@ FLAG_CATEGORY_COLORS: dict[str, str] = {
     FLAG_CATEGORY_INFO: "#e9f7ef",
 }
 
+FLAG_TOOLTIP_EXACT: dict[str, str] = {
+    "assay_platform_conflict": (
+        "Assay platform conflicts with the inferred data type."
+    ),
+    "cell_line_inferred_without_evidence": (
+        "Cell line was inferred without explicit evidence in the source context."
+    ),
+    "cell_line_is_cell_type": (
+        "Cell line value appears to describe a cell type rather than a cell line."
+    ),
+    "cell_line_yes_invalid": "Cell line value 'Yes' is not a valid cell line name.",
+    "disease_inferred_without_evidence": (
+        "Disease was inferred without explicit evidence in the source context."
+    ),
+    "disease_unsupported": "Disease term is unsupported by the ontology.",
+    "disease_contains_genotype_context": (
+        "Disease label includes genotype context; informational signal."
+    ),
+    "disease_generalized_for_ontology": (
+        "Disease term was generalized to a broader ontology-supported label."
+    ),
+    "disease_normalized_to_healthy": (
+        "Disease value normalized to Healthy due to insufficient evidence."
+    ),
+    "format_unrepaired": (
+        "Output format errors could not be repaired; record remains flagged."
+    ),
+    "healthy_disease_conflict": (
+        "Disease labeled Healthy conflicts with disease cues in context."
+    ),
+    "invalid_json": "LLM output could not be parsed as valid JSON.",
+    "missing_keys": "Required output fields were missing.",
+    "extra_keys": "Output contained extra unexpected fields.",
+    "word_limit_violation": "One or more field values exceeded the word limit.",
+    "max_repairs_exceeded": "Repair attempts exceeded the allowed limit.",
+    "ontology_index_unavailable": (
+        "Ontology index was unavailable; grounding could not run."
+    ),
+    "organism_context_conflict": "Organism label conflicts with context evidence.",
+    "repeated_failure": "Repeated validation failures across repair attempts.",
+    "single_cell_evidence_missing": (
+        "Single-cell evidence missing for a single-cell data type."
+    ),
+    "terminal_fallback": "Terminal fallback applied for this field.",
+    "tissue_type_is_cell_type": (
+        "Tissue type value appears to be a cell type."
+    ),
+    "tissue_type_non_anatomical_placeholder": (
+        "Tissue type is a non-anatomical placeholder; terminal fallback applied."
+    ),
+    "tissue_type_disease_label_used_as_tissue": (
+        "Disease label was used as tissue type; semantic ambiguity flagged."
+    ),
+    "treatment_identity_leakage": (
+        "Treatment field appears to contain sample identity information."
+    ),
+    "treatment_not_an_intervention": (
+        "Treatment value is not a clear intervention."
+    ),
+}
+
+_ONTOLOGY_STATUS_TOOLTIPS = {
+    "NO_MATCH": "Ontology match not found for this field.",
+    "LOW_CONFIDENCE": (
+        "Ontology match is below confidence threshold."
+    ),
+    "AMBIGUOUS": "Ontology match is ambiguous between candidates.",
+    "FALLBACK": "Ontology grounding fell back to a terminal policy value.",
+    "TERMINAL_FALLBACK": "Ontology grounding used a terminal policy fallback.",
+}
+
 _POLICY_FLAG_EXACT = {
     "format_unrepaired",
     "max_repairs_exceeded",
@@ -271,6 +342,34 @@ def format_flag_category_summary(summary: Mapping[str, object]) -> str:
     return f"{badge}P:{policy_count} R:{review_count} I:{info_count}"
 
 
+def flag_tooltip(flag_label: str) -> str:
+    flag, field = _split_flag_label(flag_label)
+    normalized = flag.strip()
+    if not normalized:
+        return "Flags are informational only."
+
+    category = categorize_flag(normalized)
+    explanation = _flag_explanation(normalized, field)
+    category_label = FLAG_CATEGORY_LABELS.get(category, category)
+    return (
+        f"{explanation} Category: {category_label}. "
+        "Flags are informational only."
+    )
+
+
+def primary_failure_tooltip(primary_failure: str) -> str:
+    normalized = (primary_failure or "").strip()
+    if not normalized:
+        return ""
+    category = categorize_flag(normalized)
+    category_label = FLAG_CATEGORY_LABELS.get(category, category)
+    return (
+        "Primary failure selected deterministically based on policy severity "
+        "and priority ordering. Secondary flags still apply. "
+        f"Category: {category_label}."
+    )
+
+
 def _category_for_ontology_status(status: str) -> str:
     normalized = status.strip().upper()
     if normalized in _POLICY_ONTOLOGY_STATUSES:
@@ -278,6 +377,73 @@ def _category_for_ontology_status(status: str) -> str:
     if normalized in _REVIEW_ONTOLOGY_STATUSES:
         return FLAG_CATEGORY_REVIEW
     return _DEFAULT_FLAG_CATEGORY
+
+
+def _flag_explanation(flag: str, field: str | None) -> str:
+    if flag.startswith("ontology_status:"):
+        status = flag.split(":", 1)[1].strip().upper()
+        base = _ONTOLOGY_STATUS_TOOLTIPS.get(
+            status, f"Ontology status is {status}."
+        )
+        return _with_field_prefix(base, field)
+
+    if flag in FLAG_TOOLTIP_EXACT:
+        return _with_field_prefix(FLAG_TOOLTIP_EXACT[flag], field)
+
+    if flag.startswith("ontology_low_confidence_"):
+        suffix = _suffix_field(flag, "ontology_low_confidence_")
+        return _with_field_prefix(
+            "Ontology match is below the acceptance threshold.",
+            field or suffix,
+        )
+    if flag.startswith("ontology_ambiguous_"):
+        suffix = _suffix_field(flag, "ontology_ambiguous_")
+        return _with_field_prefix(
+            "Ontology match is ambiguous between candidates.",
+            field or suffix,
+        )
+    if flag.startswith("ontology_no_match_"):
+        suffix = _suffix_field(flag, "ontology_no_match_")
+        return _with_field_prefix(
+            "Ontology match not found for this field.",
+            field or suffix,
+        )
+    if flag.startswith("gse_outlier_"):
+        suffix = _suffix_field(flag, "gse_outlier_")
+        return _with_field_prefix(
+            "Value differs from the dominant value within the GSE.",
+            field or suffix,
+        )
+    return _with_field_prefix(
+        f"Backend emitted flag '{flag}'.",
+        field,
+    )
+
+
+def _suffix_field(flag: str, prefix: str) -> str | None:
+    if not flag.startswith(prefix):
+        return None
+    suffix = flag[len(prefix) :]
+    if suffix in CANONICAL_FIELDS:
+        return suffix
+    return None
+
+
+def _split_flag_label(label: str) -> tuple[str, str | None]:
+    raw = (label or "").strip()
+    if not raw:
+        return "", None
+    if ": " in raw:
+        left, right = raw.split(": ", 1)
+        if left in CANONICAL_FIELDS:
+            return right, left
+    return raw, None
+
+
+def _with_field_prefix(text: str, field: str | None) -> str:
+    if field:
+        return f"{field}: {text}"
+    return text
 
 
 def _is_policy_flag(flag: str) -> bool:
@@ -318,6 +484,7 @@ __all__ = [
     "FLAG_CATEGORY_ORDER",
     "FLAG_CATEGORY_POLICY",
     "FLAG_CATEGORY_REVIEW",
+    "FLAG_TOOLTIP_EXACT",
     "build_curation_flags_index",
     "build_flag_category_summary",
     "build_flag_display_groups",
@@ -327,5 +494,7 @@ __all__ = [
     "extract_curation_flags",
     "extract_field_flags",
     "extract_primary_failure",
+    "flag_tooltip",
     "format_flag_category_summary",
+    "primary_failure_tooltip",
 ]

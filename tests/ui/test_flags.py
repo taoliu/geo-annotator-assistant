@@ -18,6 +18,8 @@ from ui.flags import (
     build_flags_index,
     categorize_flag,
     extract_field_flags,
+    flag_tooltip,
+    primary_failure_tooltip,
 )
 from ui.styling import active_row_style, style_curation_table
 
@@ -148,3 +150,17 @@ def test_build_flag_category_summary_counts() -> None:
     assert summary["counts"][FLAG_CATEGORY_REVIEW] == 1
     assert summary["counts"][FLAG_CATEGORY_INFO] == 1
     assert summary["highest"] == FLAG_CATEGORY_POLICY
+
+
+def test_flag_tooltip_includes_category_and_info() -> None:
+    tooltip = flag_tooltip("ontology_low_confidence_disease")
+
+    assert "Category:" in tooltip
+    assert "Flags are informational only." in tooltip
+
+
+def test_primary_failure_tooltip_mentions_determinism() -> None:
+    tooltip = primary_failure_tooltip("format_unrepaired")
+
+    assert "deterministically" in tooltip.lower()
+    assert "secondary flags still apply" in tooltip.lower()

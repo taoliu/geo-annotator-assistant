@@ -31,19 +31,20 @@ BADGE_ORDER: tuple[str, ...] = (
 
 BADGE_TOOLTIPS: dict[str, str] = {
     "OVERRIDDEN": (
-        "Session override applied. Backend value is unchanged; overrides remain allowed."
+        "This value was manually overridden in the current session. "
+        "Overrides do not retrigger backend logic."
     ),
     "LOCKED": (
-        "Backend locked this field due to a terminal exact match or policy. "
-        "Backend will not repair it further; overrides remain allowed."
+        "Backend marked this field as final due to a deterministic ontology match "
+        "or policy rule. The system will not attempt further repair."
     ),
     "TERMINAL": (
-        "Backend applied a terminal fallback value for this field. "
-        "Policy-defined finality, not correctness; overrides remain allowed."
+        "This value is a policy-defined fallback (e.g. Unknown, No, Healthy). "
+        "It reflects insufficient or non-actionable evidence, not correctness."
     ),
     "REPAIRED": (
-        "Backend repair loop attempted or updated this field (attempts recorded). "
-        "Overrides remain allowed."
+        "This value was modified by the backend repair loop after validation "
+        "or ontology checks."
     ),
     "CANON": (
         "Backend replaced the value with an ontology canonical label. "

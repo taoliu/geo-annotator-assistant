@@ -23,7 +23,9 @@ from ui.flags import (
     categorize_flag,
     extract_curation_flags,
     extract_primary_failure,
+    flag_tooltip,
     format_flag_category_summary,
+    primary_failure_tooltip,
 )
 from ui.help_text import (
     gsm_accession_tooltip,
@@ -187,9 +189,9 @@ def _render_flag_group(category: str, items: list[str]) -> None:
         return
     label = FLAG_CATEGORY_LABELS.get(category, category)
     badge = FLAG_CATEGORY_BADGES.get(category, category.upper())
-    lines = "\n".join(f"- {item}" for item in items)
-    message = f"{badge} {label}\n{lines}"
+    message = f"{badge} {label} ({len(items)})"
     _flag_callout(category)(message)
+    st.markdown(_format_flag_list(items), unsafe_allow_html=True)
 
 
 def _render_primary_failure(primary_failure: str) -> None:
@@ -198,6 +200,42 @@ def _render_primary_failure(primary_failure: str) -> None:
     badge = FLAG_CATEGORY_BADGES.get(category, category.upper())
     message = f"{badge} Primary failure ({label}): {primary_failure}"
     _flag_callout(category)(message)
+    st.markdown(
+        _primary_failure_html(primary_failure),
+        unsafe_allow_html=True,
+    )
+
+
+def _format_flag_list(items: list[str]) -> str:
+    rendered = "".join(f"<li>{_flag_item_html(item)}</li>" for item in items)
+    return (
+        '<ul style="margin: 0.4em 0 0.6em 1.2em; padding: 0;">'
+        + rendered
+        + "</ul>"
+    )
+
+
+def _flag_item_html(item: str) -> str:
+    tooltip = flag_tooltip(item)
+    return (
+        '<span title="'
+        + html.escape(tooltip, quote=True)
+        + '"><code>'
+        + html.escape(item)
+        + "</code></span>"
+    )
+
+
+def _primary_failure_html(primary_failure: str) -> str:
+    tooltip = primary_failure_tooltip(primary_failure)
+    return (
+        '<div style="margin: 0.4em 0 0.6em 0;">'
+        '<span title="'
+        + html.escape(tooltip, quote=True)
+        + '"><strong>Primary failure:</strong> <code>'
+        + html.escape(primary_failure)
+        + "</code></span></div>"
+    )
 
 
 def _render_details(
