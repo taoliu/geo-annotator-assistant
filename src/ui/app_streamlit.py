@@ -524,6 +524,8 @@ def _render_details(
         for category in FLAG_CATEGORY_ORDER:
             _render_flag_group(category, flag_groups.get(category, []))
 
+    _render_override_diff(details, curation_flags, flag_groups)
+
     selected_overrides = details["selected_overrides"]
     effective_fields = details["effective_fields"]
 
@@ -608,6 +610,62 @@ def _badge_html(badge: str) -> str:
     )
 
 
+def _render_override_diff(
+    details: DetailsContext,
+    curation_flags: list[str],
+    flag_groups: dict[str, list[str]],
+) -> None:
+    selected_overrides = details["selected_overrides"]
+    if not selected_overrides:
+        return
+    curation = details["curation"]
+    backend_fields = curation.get("fields", {}) if curation else {}
+    diffs: list[dict[str, str]] = []
+    for field in CANONICAL_FIELDS:
+        if field in selected_overrides:
+            diffs.append(
+                {
+                    "Field": field,
+                    "Backend": _format_override_display(backend_fields.get(field)),
+                    "Override": _format_override_display(
+                        selected_overrides.get(field)
+                    ),
+                }
+            )
+    unchanged_fields = [
+        field for field in CANONICAL_FIELDS if field not in selected_overrides
+    ]
+
+    with st.expander("Override diff (backend -> override)", expanded=False):
+        st.caption(
+            "Overrides do not retrigger validation, repair, or ontology grounding. "
+            "All backend flags remain visible for audit."
+        )
+        if diffs:
+            st.table(diffs)
+        if unchanged_fields:
+            st.caption("Unchanged fields: " + ", ".join(unchanged_fields))
+
+        st.markdown("**Signal persistence**")
+        if curation_flags or any(flag_groups.values()):
+            st.caption(
+                "Backend flags remain active after overrides; any resolution is "
+                "by human judgment only."
+            )
+            for category in FLAG_CATEGORY_ORDER:
+                items = flag_groups.get(category, [])
+                if not items:
+                    continue
+                label = FLAG_CATEGORY_LABELS.get(category, category)
+                joined = ", ".join(items)
+                st.write(f"{label}: {joined}")
+        else:
+            st.caption("No backend flags recorded for this GSM.")
+        st.caption(
+            "LOCKED and TERMINAL badges reflect backend state and are not recomputed."
+        )
+
+
 def _render_field_evidence_panels(details: DetailsContext) -> None:
     evidence = details["evidence"]
     evidence_raw = evidence["raw"] if evidence else None
@@ -631,6 +689,10 @@ def _render_field_evidence_panels(details: DetailsContext) -> None:
 
 def _render_field_override_controls(details: DetailsContext, edit_mode: bool) -> None:
     st.markdown("### Field Overrides")
+    st.caption(
+        "Overrides do not retrigger validation, repair, or ontology grounding. "
+        "Backend flags remain visible for audit."
+    )
     selection_key = details["selection_key"]
     gse_accession, gsm_accession = selection_key
     evidence = details["evidence"]
