@@ -15,6 +15,13 @@ Where `<DIR>` contains:
 - `suggestions.jsonl` (optional)
 - `audit.jsonl` (optional; provides initial LLM proposals)
 
+### Multi-GSE roots
+
+If `<DIR>` contains immediate subdirectories named `GSE*`, the UI scans them and
+loads each valid GSE. A GSE switcher appears in the sidebar, and skipped
+directories are listed with reasons. This mode is read-only and does not
+aggregate across GSEs.
+
 The UI is read-only and does not write any files unless you explicitly export overrides.
 
 ## Primary navigation

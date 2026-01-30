@@ -7,7 +7,7 @@ from ui.loaders import (
     load_jsonl,
     load_suggestions_jsonl_optional,
 )
-from ui.paths import InputPaths, resolve_input_paths
+from ui.paths import InputPaths, InputScanResult, resolve_input_directory, resolve_input_paths
 from ui.flags import build_flags_index, extract_field_flags
 from ui.schema import (
     AuditRecord,
@@ -42,6 +42,7 @@ __all__ = [
     "build_flags_index",
     "extract_field_flags",
     "InputPaths",
+    "InputScanResult",
     "NormalizedCurationRecord",
     "SuggestionRecord",
     "load_audit_jsonl_optional",
@@ -59,5 +60,6 @@ __all__ = [
     "lookup_evidence",
     "lookup_suggestions",
     "resolve_input_paths",
+    "resolve_input_directory",
     "style_curation_table",
 ]

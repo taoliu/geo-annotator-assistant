@@ -53,7 +53,7 @@ from ui.overrides import (
     overrides_to_jsonl,
     set_override,
 )
-from ui.paths import InputPaths, resolve_input_paths
+from ui.paths import InputPaths, InputScanResult, resolve_input_directory
 from ui.schema import CANONICAL_FIELDS
 from ui.state import (
     DetailsContext,
@@ -93,15 +93,13 @@ def _resolve_input_dir() -> str | None:
     return os.environ.get("GEO_GSM_UI_INPUT_DIR")
 
 
-def _load_records(input_dir: str) -> tuple[
-    InputPaths,
+def _load_records_for_paths(paths: InputPaths) -> tuple[
     list[dict],
     list[dict],
     list[dict],
     list[dict],
     str | None,
 ]:
-    paths = resolve_input_paths(input_dir)
     curation_records = load_curation_jsonl(str(paths.curation_path))
     evidence_records = load_evidence_jsonl(str(paths.evidence_path))
     suggestions_records = load_suggestions_jsonl_optional(
@@ -114,7 +112,6 @@ def _load_records(input_dir: str) -> tuple[
     except Exception as exc:
         audit_error = str(exc)
     return (
-        paths,
         curation_records,
         evidence_records,
         suggestions_records,
@@ -123,8 +120,18 @@ def _load_records(input_dir: str) -> tuple[
     )
 
 
-def _render_header(paths: InputPaths) -> None:
+def _resolve_inputs(input_dir: str) -> InputScanResult:
+    return resolve_input_directory(input_dir)
+
+
+def _render_header(
+    paths: InputPaths,
+    root_dir: Path | None = None,
+    active_gse: str | None = None,
+) -> None:
     st.title("GEO GSM Curator UI")
+    if root_dir and root_dir != paths.input_dir:
+        st.caption(f"Input root: {root_dir}")
     st.caption(f"Input directory: {paths.input_dir}")
     st.caption(f"Curation: {paths.curation_path}")
     st.caption(f"Evidence: {paths.evidence_path}")
@@ -136,6 +143,8 @@ def _render_header(paths: InputPaths) -> None:
         st.caption(f"Audit: {paths.audit_path}")
     else:
         st.caption("Audit: not loaded")
+    if active_gse:
+        st.subheader(f"Active GSE: {active_gse}")
 
 
 def _gse_options(rows: list[dict]) -> list[str]:
@@ -157,6 +166,38 @@ def _render_filters(rows: list[dict]) -> tuple[str | None, str, bool]:
     edit_mode = st.sidebar.checkbox("Enable editing", value=False)
     gse_filter = None if selected_gse == "All" else selected_gse
     return gse_filter, search_text, edit_mode
+
+
+def _render_gse_switcher(
+    gse_options: list[str],
+    skipped: dict[str, str],
+) -> str:
+    st.sidebar.header("GSE Selection")
+    previous = st.session_state.get("active_gse")
+    active = st.sidebar.selectbox(
+        "Active GSE",
+        gse_options,
+        index=0,
+        key="active_gse",
+    )
+    if previous and previous != active:
+        st.session_state["active_row_idx"] = None
+        st.session_state["modal_open"] = False
+        st.session_state["last_opened_row_idx"] = None
+    if skipped:
+        with st.sidebar.expander("Skipped GSE directories", expanded=False):
+            for name, reason in sorted(skipped.items()):
+                st.write(f"{name}: {reason}")
+    return active
+
+
+def _render_skipped_panel(skipped: dict[str, str]) -> None:
+    if not skipped:
+        return
+    st.warning("Some GSE directories were skipped due to missing or invalid files.")
+    with st.expander("Skipped GSE directories", expanded=False):
+        for name, reason in sorted(skipped.items()):
+            st.write(f"{name}: {reason}")
 
 
 def _supports_table_selection(widget: object) -> bool:
@@ -1097,14 +1138,31 @@ def run_app() -> None:
         st.stop()
 
     try:
+        inputs = _resolve_inputs(input_dir)
+    except Exception as exc:
+        st.error(str(exc))
+        st.stop()
+
+    active_paths: InputPaths
+    if inputs.mode == "multi":
+        gse_options = sorted(inputs.gse_paths.keys())
+        active_gse = _render_gse_switcher(gse_options, inputs.skipped)
+        active_paths = inputs.gse_paths[active_gse]
+    else:
+        active_gse = None
+        active_paths = inputs.single_paths if inputs.single_paths else None
+        if active_paths is None:
+            st.error("No valid input directory found.")
+            st.stop()
+
+    try:
         (
-            paths,
             curation_records,
             evidence_records,
             suggestions_records,
             audit_records,
             audit_error,
-        ) = _load_records(input_dir)
+        ) = _load_records_for_paths(active_paths)
     except Exception as exc:
         st.error(str(exc))
         st.stop()
@@ -1115,7 +1173,13 @@ def run_app() -> None:
             f"Details: {audit_error}"
         )
 
-    _render_header(paths)
+    _render_header(
+        active_paths,
+        root_dir=inputs.input_dir,
+        active_gse=active_gse,
+    )
+    if inputs.mode == "multi":
+        _render_skipped_panel(inputs.skipped)
 
     rows = build_table_rows(curation_records)
     gse_filter, search_text, edit_mode = _render_filters(rows)

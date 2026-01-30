@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from ui.paths import resolve_input_paths
+from ui.paths import resolve_input_directory
 
 
 class _ArgumentParser(argparse.ArgumentParser):
@@ -57,7 +57,7 @@ def _launch_streamlit(input_dir: str) -> None:
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     try:
-        resolve_input_paths(args.input_dir)
+        resolve_input_directory(args.input_dir)
         _launch_streamlit(args.input_dir)
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
