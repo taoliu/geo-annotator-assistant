@@ -21,11 +21,41 @@ DASHBOARD_FIELDS: tuple[str, ...] = (
 BADGE_ORDER: tuple[str, ...] = (
     "OVERRIDDEN",
     "LOCKED",
+    "TERMINAL",
+    "REPAIRED",
     "CANON",
     "TERM",
     "AMBIG",
     "NO-MATCH",
 )
+
+BADGE_TOOLTIPS: dict[str, str] = {
+    "OVERRIDDEN": (
+        "Session override applied. Backend value is unchanged; overrides remain allowed."
+    ),
+    "LOCKED": (
+        "Backend locked this field due to a terminal exact match or policy. "
+        "Backend will not repair it further; overrides remain allowed."
+    ),
+    "TERMINAL": (
+        "Backend applied a terminal fallback value for this field. "
+        "Policy-defined finality, not correctness; overrides remain allowed."
+    ),
+    "REPAIRED": (
+        "Backend repair loop attempted or updated this field (attempts recorded). "
+        "Overrides remain allowed."
+    ),
+    "CANON": (
+        "Backend replaced the value with an ontology canonical label. "
+        "Overrides remain allowed."
+    ),
+    "TERM": (
+        "Ontology returned a terminal exact match for this field. "
+        "Overrides remain allowed."
+    ),
+    "AMBIG": "Ontology match ambiguous or low confidence. Review may be needed.",
+    "NO-MATCH": "Ontology match not found. Review may be needed.",
+}
 
 _TERMINAL_EXACT_TYPES = {
     "label_exact",
@@ -58,7 +88,12 @@ def build_dashboard_item(
         effective_fields,
         curation,
     )
-    badges = map_field_badges(field, evidence_raw, overrides_for_gsm)
+    badges = map_field_badges(
+        field,
+        evidence_raw,
+        overrides_for_gsm,
+        curation.get("raw") if curation else None,
+    )
     return {
         "field": field,
         "label": field,
@@ -111,12 +146,17 @@ def map_field_badges(
     field: str,
     evidence_raw: Mapping[str, Any] | None,
     overrides_for_gsm: OverridesForGsm,
+    curation_raw: Mapping[str, Any] | None = None,
 ) -> list[str]:
     badges: set[str] = set()
     if field in overrides_for_gsm:
         badges.add("OVERRIDDEN")
     if _field_locked(field, evidence_raw):
         badges.add("LOCKED")
+    if _field_terminal_fallback(field, curation_raw, evidence_raw):
+        badges.add("TERMINAL")
+    if _field_repaired(field, curation_raw, evidence_raw):
+        badges.add("REPAIRED")
     if _field_canonicalized(field, evidence_raw):
         badges.add("CANON")
     if _field_terminal_exact(field, evidence_raw):
@@ -159,6 +199,48 @@ def _field_canonicalized(field: str, evidence_raw: Mapping[str, Any] | None) -> 
         if isinstance(field_info, dict) and field_info.get("canonical_label_used"):
             return True
     return False
+
+
+def _field_terminal_fallback(
+    field: str,
+    curation_raw: Mapping[str, Any] | None,
+    evidence_raw: Mapping[str, Any] | None,
+) -> bool:
+    if isinstance(curation_raw, Mapping):
+        terminal_fields = curation_raw.get("terminal_fallback_fields")
+        if isinstance(terminal_fields, list) and field in terminal_fields:
+            return True
+    if not evidence_raw:
+        return False
+    evidence_by_field = evidence_raw.get("evidence_by_field")
+    if isinstance(evidence_by_field, dict):
+        field_info = evidence_by_field.get(field)
+        if isinstance(field_info, dict) and field_info.get("terminal_fallback") is True:
+            return True
+    return False
+
+
+def _field_repaired(
+    field: str,
+    curation_raw: Mapping[str, Any] | None,
+    evidence_raw: Mapping[str, Any] | None,
+) -> bool:
+    attempts_value = None
+    if isinstance(curation_raw, Mapping):
+        attempts_by_field = curation_raw.get("attempts_by_field")
+        if isinstance(attempts_by_field, Mapping):
+            attempts_value = attempts_by_field.get(field)
+    if attempts_value is None and evidence_raw:
+        evidence_by_field = evidence_raw.get("evidence_by_field")
+        if isinstance(evidence_by_field, Mapping):
+            field_info = evidence_by_field.get(field)
+            if isinstance(field_info, Mapping):
+                attempts_value = field_info.get("attempts")
+    try:
+        attempts = int(attempts_value)
+    except (TypeError, ValueError):
+        attempts = 0
+    return attempts > 0
 
 
 def _field_terminal_exact(field: str, evidence_raw: Mapping[str, Any] | None) -> bool:
@@ -262,6 +344,7 @@ def _stringify_value(value: OverrideValue | None) -> str:
 
 __all__ = [
     "BADGE_ORDER",
+    "BADGE_TOOLTIPS",
     "DASHBOARD_FIELDS",
     "DashboardItem",
     "build_dashboard_item",

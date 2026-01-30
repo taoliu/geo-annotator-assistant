@@ -35,15 +35,25 @@ def test_map_field_badges_collects_available_signals() -> None:
         "canonicalizations": [{"field": "tissue_type"}],
         "locked_fields": {"tissue_type": {"reason": "ontology_terminal_exact"}},
     }
+    curation_raw = {
+        "terminal_fallback_fields": ["disease"],
+        "attempts_by_field": {"data_type": 1},
+    }
     overrides = {"cell_line": "Myc-CaP"}
 
-    assert map_field_badges("data_type", evidence_raw, overrides) == ["AMBIG"]
-    assert map_field_badges("disease", evidence_raw, overrides) == ["NO-MATCH"]
-    assert map_field_badges("cell_line", evidence_raw, overrides) == [
+    assert map_field_badges("data_type", evidence_raw, overrides, curation_raw) == [
+        "REPAIRED",
+        "AMBIG",
+    ]
+    assert map_field_badges("disease", evidence_raw, overrides, curation_raw) == [
+        "TERMINAL",
+        "NO-MATCH",
+    ]
+    assert map_field_badges("cell_line", evidence_raw, overrides, curation_raw) == [
         "OVERRIDDEN",
         "TERM",
     ]
-    assert map_field_badges("tissue_type", evidence_raw, overrides) == [
+    assert map_field_badges("tissue_type", evidence_raw, overrides, curation_raw) == [
         "LOCKED",
         "CANON",
         "TERM",

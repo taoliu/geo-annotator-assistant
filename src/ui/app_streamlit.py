@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import html
 import inspect
 import os
 from pathlib import Path
@@ -29,7 +30,7 @@ from ui.help_text import (
     table_guidance_text,
     table_help_lines,
 )
-from ui.dashboard import build_dashboard_items
+from ui.dashboard import BADGE_TOOLTIPS, build_dashboard_items
 from ui.evidence import EVIDENCE_FIELDS, extract_field_evidence
 from ui.loaders import (
     load_curation_jsonl,
@@ -293,9 +294,31 @@ def _render_field_status_dashboard(details: DetailsContext) -> None:
                 st.markdown(f"**{item['label']}**")
                 st.write(item["value"])
                 if item["badges"]:
-                    badges = " ".join(f"`{badge}`" for badge in item["badges"])
-                    st.markdown(badges)
+                    st.markdown(
+                        _format_badges_with_tooltips(item["badges"]),
+                        unsafe_allow_html=True,
+                    )
     st.markdown("---")
+
+
+def _format_badges_with_tooltips(badges: list[str]) -> str:
+    rendered = [_badge_html(badge) for badge in badges]
+    return " ".join(rendered)
+
+
+def _badge_html(badge: str) -> str:
+    tooltip = BADGE_TOOLTIPS.get(
+        badge, "Backend badge. Overrides remain allowed."
+    )
+    return (
+        '<span title="'
+        + html.escape(tooltip, quote=True)
+        + '" style="display:inline-block; padding:2px 6px; margin-right:4px; '
+        + 'border:1px solid #dcdcdc; border-radius:6px; '
+        + 'font-family:monospace; font-size:0.85em; background-color:#f5f5f5;">'
+        + html.escape(badge)
+        + "</span>"
+    )
 
 
 def _render_field_evidence_panels(details: DetailsContext) -> None:
