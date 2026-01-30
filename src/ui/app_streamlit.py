@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import html
 import inspect
 import os
@@ -39,11 +40,13 @@ from ui.loaders import (
     load_suggestions_jsonl_optional,
 )
 from ui.overrides import (
+    apply_overrides_to_record,
     clear_all_overrides,
     clear_override,
     clear_overrides_for_gsm,
     compute_overrides,
     format_override_value,
+    load_overrides_jsonl,
     overrides_for_gsm,
     parse_override_input,
     overrides_to_jsonl,
@@ -954,7 +957,10 @@ def _render_field_override_controls(details: DetailsContext, edit_mode: bool) ->
     evidence_raw = evidence["raw"] if evidence else None
     curation = details["curation"]
     backend_fields = curation.get("fields", {}) if curation else {}
-    overrides = st.session_state.get("overrides", {})
+    overrides_by_gse = st.session_state.get("overrides_by_gse", {})
+    if not isinstance(overrides_by_gse, dict):
+        overrides_by_gse = {}
+    overrides = overrides_by_gse.get(gse_accession, {})
     if not isinstance(overrides, dict):
         overrides = {}
     selected_overrides = overrides_for_gsm(overrides, gse_accession, gsm_accession)
@@ -978,7 +984,8 @@ def _render_field_override_controls(details: DetailsContext, edit_mode: bool) ->
                 overrides = clear_override(
                     overrides, gse_accession, gsm_accession, field
                 )
-                st.session_state["overrides"] = overrides
+                overrides_by_gse[gse_accession] = overrides
+                st.session_state["overrides_by_gse"] = overrides_by_gse
                 st.session_state[input_key] = _format_override_input(backend_value)
         if not edit_mode or not field_is_editable(edit_mode, field, evidence_raw):
             continue
@@ -1014,7 +1021,8 @@ def _render_field_override_controls(details: DetailsContext, edit_mode: bool) ->
                 overrides = clear_override(
                     overrides, gse_accession, gsm_accession, field
                 )
-                st.session_state["overrides"] = overrides
+                overrides_by_gse[gse_accession] = overrides
+                st.session_state["overrides_by_gse"] = overrides_by_gse
                 st.session_state.pop(pending_key, None)
                 st.session_state[input_key] = _format_override_input(backend_value)
             elif requires_override_confirmation(field, evidence_raw):
@@ -1023,7 +1031,8 @@ def _render_field_override_controls(details: DetailsContext, edit_mode: bool) ->
                 overrides = set_override(
                     overrides, (gse_accession, gsm_accession, field), proposed_value
                 )
-                st.session_state["overrides"] = overrides
+                overrides_by_gse[gse_accession] = overrides
+                st.session_state["overrides_by_gse"] = overrides_by_gse
                 st.session_state.pop(pending_key, None)
 
         if pending_value is not None and requires_override_confirmation(
@@ -1044,7 +1053,8 @@ def _render_field_override_controls(details: DetailsContext, edit_mode: bool) ->
                 overrides = set_override(
                     overrides, (gse_accession, gsm_accession, field), pending_value
                 )
-                st.session_state["overrides"] = overrides
+                overrides_by_gse[gse_accession] = overrides
+                st.session_state["overrides_by_gse"] = overrides_by_gse
                 st.session_state.pop(pending_key, None)
             if cols[1].button(
                 "Cancel",
@@ -1246,39 +1256,165 @@ def _merge_overrides(
     return merged
 
 
-def _render_export_section(overrides: dict) -> dict:
-    st.subheader("Overrides export (session-only edits)")
+def _overrides_path(active_paths: InputPaths) -> Path:
+    return active_paths.input_dir / "overrides.jsonl"
+
+
+def _ensure_saved_overrides(
+    gse_accession: str,
+    active_paths: InputPaths,
+) -> tuple[dict, dict, bool]:
+    overrides_by_gse = st.session_state.get("overrides_by_gse", {})
+    if not isinstance(overrides_by_gse, dict):
+        overrides_by_gse = {}
+    saved_by_gse = st.session_state.get("saved_overrides_by_gse", {})
+    if not isinstance(saved_by_gse, dict):
+        saved_by_gse = {}
+
+    path = _overrides_path(active_paths)
+    saved_present = path.is_file()
+    if gse_accession not in saved_by_gse:
+        if saved_present:
+            try:
+                saved_by_gse[gse_accession] = load_overrides_jsonl(
+                    str(path), gse_accession
+                )
+            except Exception as exc:
+                st.warning(
+                    f"Failed to load overrides.jsonl for {gse_accession}: {exc}"
+                )
+                saved_by_gse[gse_accession] = {}
+        else:
+            saved_by_gse[gse_accession] = {}
+    if gse_accession not in overrides_by_gse:
+        overrides_by_gse[gse_accession] = dict(saved_by_gse[gse_accession])
+
+    st.session_state["overrides_by_gse"] = overrides_by_gse
+    st.session_state["saved_overrides_by_gse"] = saved_by_gse
+    return overrides_by_gse, saved_by_gse, saved_present
+
+
+def _render_overrides_persistence(
+    active_paths: InputPaths,
+    gse_accession: str,
+    overrides: dict,
+    saved_overrides: dict,
+    saved_present: bool,
+) -> dict:
+    st.subheader("Overrides (persistent)")
     edited_gsms = {(gse, gsm) for gse, gsm, _ in overrides}
     st.write(f"Edited GSMs: {len(edited_gsms)}")
     st.write(f"Edited fields: {len(overrides)}")
-    if not overrides:
-        st.write("No edits to export.")
+    if saved_present:
+        st.success("Saved overrides detected (loaded from disk).")
+    else:
+        st.info("No saved overrides found for this GSE.")
 
-    lines: list[str] = []
-    if overrides:
+    has_unsaved = overrides != saved_overrides
+    if has_unsaved:
+        st.warning("Unsaved edits (session differs from disk).")
+    else:
+        st.caption("Session matches saved overrides.")
+
+    cols = st.columns(3)
+    if cols[0].button("Save overrides"):
+        lines: list[str] = []
         try:
             lines = overrides_to_jsonl(overrides)
         except ValueError as exc:
             st.error(str(exc))
+            lines = []
+        if lines:
+            path = _overrides_path(active_paths)
+            path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            st.success(f"Saved overrides to {path}.")
+            saved_overrides = dict(overrides)
+            saved_present = True
+        else:
+            st.info("No overrides to save.")
 
+    if cols[1].button("Revert to saved"):
+        overrides = dict(saved_overrides)
+        st.info("Reverted to saved overrides.")
+
+    discard_confirm = st.checkbox(
+        "Confirm discard saved overrides",
+        key=f"confirm_discard_overrides_{gse_accession}",
+    )
+    if cols[2].button("Discard saved overrides"):
+        if not discard_confirm:
+            st.warning("Please confirm discard before deleting saved overrides.")
+        else:
+            path = _overrides_path(active_paths)
+            try:
+                if path.exists():
+                    path.unlink()
+                saved_overrides = {}
+                saved_present = False
+                st.success("Saved overrides deleted.")
+            except OSError as exc:
+                st.error(f"Failed to delete overrides: {exc}")
+
+    overrides_by_gse = st.session_state.get("overrides_by_gse", {})
+    if not isinstance(overrides_by_gse, dict):
+        overrides_by_gse = {}
+    overrides_by_gse[gse_accession] = overrides
+    st.session_state["overrides_by_gse"] = overrides_by_gse
+    saved_by_gse = st.session_state.get("saved_overrides_by_gse", {})
+    if not isinstance(saved_by_gse, dict):
+        saved_by_gse = {}
+    saved_by_gse[gse_accession] = saved_overrides
+    st.session_state["saved_overrides_by_gse"] = saved_by_gse
+    return overrides
+
+
+def _render_export_final_annotations(
+    curation_records: list[dict],
+    overrides: dict,
+) -> None:
+    st.subheader("Exports")
+    st.caption(
+        "Exports apply curator overrides but do not rerun validation, repair, "
+        "or ontology grounding."
+    )
+
+    def _final_annotation_lines() -> list[str]:
+        lines: list[str] = []
+        for record in curation_records:
+            gse = record["gse_accession"]
+            gsm = record["gsm_accession"]
+            selected = overrides_for_gsm(overrides, gse, gsm)
+            effective_fields = apply_overrides_to_record(record, selected)
+            if effective_fields is None:
+                continue
+            output = {
+                "gse_accession": gse,
+                "gsm_accession": gsm,
+                "data_type": effective_fields.get("data_type", ""),
+                "organism": effective_fields.get("organism", ""),
+                "tissue_type": effective_fields.get("tissue_type", ""),
+                "cell_line": effective_fields.get("cell_line", ""),
+                "disease": effective_fields.get("disease", ""),
+                "treatment": effective_fields.get("treatment", ""),
+            }
+            lines.append(json.dumps(output))
+        return lines
+
+    lines = _final_annotation_lines()
     preview = "\n".join(lines)
-    st.text_area("Preview (JSONL)", value=preview, height=200, disabled=True)
-
-    cols = st.columns(2)
-    downloaded = cols[0].download_button(
-        "Export overrides.jsonl",
+    st.text_area(
+        "Preview (annotations.final.jsonl)",
+        value=preview,
+        height=200,
+        disabled=True,
+    )
+    st.download_button(
+        "Export final annotations",
         data=preview,
-        file_name="overrides.jsonl",
+        file_name="annotations.final.jsonl",
         mime="application/jsonl",
         disabled=not lines,
     )
-    clear_clicked = cols[1].button("Cancel / Clear edits")
-    if downloaded:
-        st.success("Overrides ready for download.")
-    if clear_clicked:
-        overrides = clear_all_overrides(overrides)
-        st.session_state["overrides"] = overrides
-    return overrides
 
 
 def run_app() -> None:
@@ -1372,9 +1508,18 @@ def run_app() -> None:
     evidence_lookup = index_evidence_records(evidence_records)
     curation_lookup = index_curation_records(curation_records)
     audit_lookup = index_audit_records(audit_records)
-    overrides = st.session_state.get("overrides", {})
-    if not isinstance(overrides, dict):
-        overrides = {}
+    gse_id = active_gse
+    if not gse_id:
+        if curation_records:
+            gse_id = curation_records[0]["gse_accession"]
+        else:
+            gse_id = active_paths.input_dir.name
+    overrides_by_gse, saved_by_gse, saved_present = _ensure_saved_overrides(
+        gse_id,
+        active_paths,
+    )
+    overrides = overrides_by_gse.get(gse_id, {})
+    saved_overrides = saved_by_gse.get(gse_id, {})
     active_row_idx = st.session_state.get("active_row_idx")
     if not isinstance(active_row_idx, int):
         active_row_idx = None
@@ -1461,8 +1606,12 @@ def run_app() -> None:
             overrides = clear_overrides_for_gsm(
                 overrides, active_selection[0], active_selection[1]
             )
+            overrides_by_gse[gse_id] = overrides
+            st.session_state["overrides_by_gse"] = overrides_by_gse
         if action_cols[1].button("Clear all edits"):
             overrides = clear_all_overrides(overrides)
+            overrides_by_gse[gse_id] = overrides
+            st.session_state["overrides_by_gse"] = overrides_by_gse
 
         df_base = pd.DataFrame(filtered_rows)
         df_editable = _build_editable_df(
@@ -1497,7 +1646,8 @@ def run_app() -> None:
             (row["gse_accession"], row["gsm_accession"]) for row in filtered_rows
         }
         overrides = _merge_overrides(overrides, overrides_visible, visible_keys)
-        st.session_state["overrides"] = overrides
+        overrides_by_gse[gse_id] = overrides
+        st.session_state["overrides_by_gse"] = overrides_by_gse
         _render_unsaved_indicator(indicator, overrides)
     else:
         _render_unsaved_indicator(indicator, overrides)
@@ -1586,7 +1736,14 @@ def run_app() -> None:
             active_row_idx = row_idx
             modal_open = True
 
-    overrides = _render_export_section(overrides)
+    overrides = _render_overrides_persistence(
+        active_paths,
+        gse_id,
+        overrides,
+        saved_overrides,
+        saved_present,
+    )
+    _render_export_final_annotations(curation_records, overrides)
 
     suggestions_lookup = index_suggestion_records(suggestions_records)
 

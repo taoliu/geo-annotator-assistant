@@ -17,6 +17,7 @@ from ui.overrides import (
     clear_all_overrides,
     clear_overrides_for_gsm,
     compute_overrides,
+    load_overrides_jsonl,
     overrides_to_jsonl,
     overrides_for_gsm,
     set_override,
@@ -258,6 +259,33 @@ def test_overrides_to_jsonl_ordering() -> None:
             }
         ),
     ]
+
+
+def test_load_overrides_jsonl_round_trip(tmp_path: Path) -> None:
+    path = tmp_path / "overrides.jsonl"
+    records = [
+        {
+            "gsm_accession": "GSM1",
+            "field": "disease",
+            "new_value": "Flu",
+        },
+        {
+            "gsm_accession": "GSM2",
+            "field": "tissue_type",
+            "new_value": "Liver",
+        },
+    ]
+    with path.open("w", encoding="utf-8") as handle:
+        for record in records:
+            handle.write(json.dumps(record))
+            handle.write("\n")
+
+    overrides = load_overrides_jsonl(str(path), "GSE1")
+
+    assert overrides == {
+        ("GSE1", "GSM1", "disease"): "Flu",
+        ("GSE1", "GSM2", "tissue_type"): "Liver",
+    }
 
 
 def test_overrides_to_jsonl_invalid_field() -> None:

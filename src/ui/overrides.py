@@ -146,6 +146,41 @@ def overrides_to_jsonl(overrides_map: Mapping[OverrideKey, OverrideValue]) -> li
     return lines
 
 
+def load_overrides_jsonl(path: str, gse_accession: str) -> OverridesMap:
+    overrides: OverridesMap = {}
+    with open(path, "r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                record = json.loads(stripped)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"{path}:{line_number}: invalid JSON ({exc.msg})"
+                ) from exc
+            if not isinstance(record, dict):
+                raise ValueError(
+                    f"{path}:{line_number}: expected a JSON object"
+                )
+            gsm_accession = record.get("gsm_accession")
+            field = record.get("field")
+            value = record.get("new_value")
+            if not isinstance(gsm_accession, str) or not gsm_accession:
+                raise ValueError(
+                    f"{path}:{line_number}: missing gsm_accession"
+                )
+            if not isinstance(field, str) or field not in CANONICAL_FIELDS_SET:
+                raise ValueError(
+                    f"{path}:{line_number}: invalid field {field!r}"
+                )
+            _validate_override_value(value)
+            overrides = set_override(
+                overrides, (gse_accession, gsm_accession, field), value
+            )
+    return overrides
+
+
 def _validate_override_value(value: OverrideValue) -> None:
     if isinstance(value, str):
         return
@@ -208,6 +243,7 @@ __all__ = [
     "compute_overrides",
     "overrides_to_jsonl",
     "format_override_value",
+    "load_overrides_jsonl",
     "overrides_for_gsm",
     "parse_override_input",
     "set_override",

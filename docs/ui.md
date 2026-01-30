@@ -89,13 +89,20 @@ not affect backend outputs, validation, or decisions.
 
 ## Overrides and editing
 
-- Overrides are session-only and live in memory.
+- Overrides can be persisted per GSE in `overrides.jsonl`.
+- If `overrides.jsonl` is present in the active GSE directory, it is loaded on startup.
 - Overrides do not retrigger inference, repair, or ontology grounding.
 - Overrides may replace values even when canonicalized or terminal exact.
 - Exported overrides are explicit input artifacts, not learned or persisted
   state.
 - The UI may show soft warnings or confirmations when overriding high-confidence
   signals, but it never hard-blocks edits.
+
+### Exports
+
+- **Save overrides** writes `<GSE_DIR>/overrides.jsonl`.
+- **Export final annotations** creates `annotations.final.jsonl` with exactly the
+  8 output fields and applies overrides without re-running backend logic.
 
 ## Ontology confidence vs correctness
 
