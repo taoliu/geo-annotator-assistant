@@ -10,7 +10,15 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from ui.flags import build_flags_index, extract_field_flags
+from ui.flags import (
+    FLAG_CATEGORY_INFO,
+    FLAG_CATEGORY_POLICY,
+    FLAG_CATEGORY_REVIEW,
+    build_flag_category_summary,
+    build_flags_index,
+    categorize_flag,
+    extract_field_flags,
+)
 from ui.styling import active_row_style, style_curation_table
 
 
@@ -40,7 +48,7 @@ def test_extract_field_flags_uses_explicit_signals() -> None:
     assert flags == {
         "data_type": ["assay_platform_conflict"],
         "cell_line": ["terminal_fallback"],
-        "disease": ["ontology_status:NO_MATCH", "rare_value"],
+        "disease": ["rare_value", "ontology_status:NO_MATCH"],
     }
 
 
@@ -122,3 +130,21 @@ def test_style_curation_table_highlights_active_row() -> None:
     html = styler.to_html()
 
     assert "#e8f4ff" in html
+
+
+def test_categorize_flag_known_patterns() -> None:
+    assert categorize_flag("terminal_fallback") == FLAG_CATEGORY_POLICY
+    assert categorize_flag("ontology_low_confidence_disease") == FLAG_CATEGORY_REVIEW
+    assert categorize_flag("gse_outlier_disease") == FLAG_CATEGORY_INFO
+
+
+def test_build_flag_category_summary_counts() -> None:
+    summary = build_flag_category_summary(
+        ["tissue_type_non_anatomical_placeholder", "disease_generalized_for_ontology"],
+        {"disease": ["ontology_status:NO_MATCH"]},
+    )
+
+    assert summary["counts"][FLAG_CATEGORY_POLICY] == 1
+    assert summary["counts"][FLAG_CATEGORY_REVIEW] == 1
+    assert summary["counts"][FLAG_CATEGORY_INFO] == 1
+    assert summary["highest"] == FLAG_CATEGORY_POLICY

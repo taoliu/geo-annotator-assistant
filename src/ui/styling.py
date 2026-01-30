@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from ui.flags import FLAG_CATEGORY_COLORS, categorize_flag
 from ui.schema import CANONICAL_FIELDS
 
 _HIGHLIGHT_CELL = "background-color: #fff3cd"
@@ -12,6 +13,8 @@ _ACTIVE_ROW = "background-color: #e8f4ff"
 _GSM_ACCESSION_STYLE = (
     "color: #1a73e8; text-decoration: underline; cursor: pointer"
 )
+_FLAG_SUMMARY_COLUMN = "Flag summary"
+_PRIMARY_FAILURE_COLUMN = "Primary failure"
 
 
 def active_row_style(row_index: int, active_row_idx: int | None) -> str:
@@ -24,6 +27,8 @@ def style_curation_table(
     df: pd.DataFrame,
     flags_by_gsm: dict[tuple[str, str], dict[str, list[str]]],
     active_row_idx: int | None = None,
+    flag_summaries: dict[tuple[str, str], dict[str, object]] | None = None,
+    primary_failures: dict[tuple[str, str], str] | None = None,
 ) -> pd.io.formats.style.Styler:
     def _style_row(row: pd.Series) -> list[str]:
         gse = row.get("gse_accession")
@@ -35,6 +40,18 @@ def style_curation_table(
         row_index = row.name if isinstance(row.name, int) else -1
         active_style = active_row_style(row_index, active_row_idx)
 
+        summary_category = ""
+        primary_failure = ""
+        if isinstance(gse, str) and isinstance(gsm, str):
+            if flag_summaries:
+                summary = flag_summaries.get((gse, gsm))
+                if isinstance(summary, dict):
+                    highest = summary.get("highest")
+                    if isinstance(highest, str):
+                        summary_category = highest
+            if primary_failures:
+                primary_failure = primary_failures.get((gse, gsm), "")
+
         styles: list[str] = []
         for column in row.index:
             cell_styles: list[str] = []
@@ -44,6 +61,17 @@ def style_curation_table(
                 cell_styles.append(active_style)
             elif row_has_flags:
                 cell_styles.append(_HIGHLIGHT_ROW)
+            if column == _PRIMARY_FAILURE_COLUMN and primary_failure:
+                category = categorize_flag(primary_failure)
+                color = FLAG_CATEGORY_COLORS.get(category)
+                if color:
+                    cell_styles.append(f"background-color: {color}")
+                    cell_styles.append("font-weight: 600")
+            if column == _FLAG_SUMMARY_COLUMN and summary_category:
+                color = FLAG_CATEGORY_COLORS.get(summary_category)
+                if color:
+                    cell_styles.append(f"background-color: {color}")
+                    cell_styles.append("font-weight: 600")
             if column == "gsm_accession":
                 cell_styles.append(_GSM_ACCESSION_STYLE)
             styles.append("; ".join(cell_styles))

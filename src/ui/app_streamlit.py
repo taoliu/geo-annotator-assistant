@@ -10,7 +10,20 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from ui.flags import build_flags_index
+from ui.flags import (
+    FLAG_CATEGORY_BADGES,
+    FLAG_CATEGORY_LABELS,
+    FLAG_CATEGORY_ORDER,
+    build_curation_flags_index,
+    build_flag_category_summary,
+    build_flag_display_groups,
+    build_flags_index,
+    build_primary_failure_index,
+    categorize_flag,
+    extract_curation_flags,
+    extract_primary_failure,
+    format_flag_category_summary,
+)
 from ui.help_text import (
     gsm_accession_tooltip,
     table_guidance_text,
@@ -160,6 +173,32 @@ def _extract_selected_rows(source: object) -> list[int]:
     return list(rows)
 
 
+def _flag_callout(category: str):
+    if category == "policy":
+        return st.error
+    if category == "review":
+        return st.warning
+    return st.info
+
+
+def _render_flag_group(category: str, items: list[str]) -> None:
+    if not items:
+        return
+    label = FLAG_CATEGORY_LABELS.get(category, category)
+    badge = FLAG_CATEGORY_BADGES.get(category, category.upper())
+    lines = "\n".join(f"- {item}" for item in items)
+    message = f"{badge} {label}\n{lines}"
+    _flag_callout(category)(message)
+
+
+def _render_primary_failure(primary_failure: str) -> None:
+    category = categorize_flag(primary_failure)
+    label = FLAG_CATEGORY_LABELS.get(category, category)
+    badge = FLAG_CATEGORY_BADGES.get(category, category.upper())
+    message = f"{badge} Primary failure ({label}): {primary_failure}"
+    _flag_callout(category)(message)
+
+
 def _render_details(
     details: DetailsContext,
     suggestions_present: bool,
@@ -174,6 +213,11 @@ def _render_details(
     evidence = details["evidence"]
     suggestions = details["suggestions"]
     flagged_fields = details["flagged_fields"]
+    curation = details["curation"]
+    curation_raw = curation["raw"] if curation else None
+    curation_flags = extract_curation_flags(curation_raw)
+    primary_failure = extract_primary_failure(curation_raw)
+    flag_groups = build_flag_display_groups(curation_flags, flagged_fields)
 
     st.caption(f"Evidence present: {'yes' if evidence else 'no'}")
     if suggestions_present:
@@ -182,14 +226,16 @@ def _render_details(
         st.caption("Suggestions: 0 (not loaded)")
 
     st.markdown("**Flags**")
-    if not flagged_fields:
+    st.caption("Grouped for visual scanning only; no backend changes.")
+    has_secondary = any(flag_groups.get(category) for category in FLAG_CATEGORY_ORDER)
+    if not primary_failure and not has_secondary:
         st.write("None.")
     else:
-        for field in sorted(flagged_fields):
-            tags = ", ".join(flagged_fields[field])
-            st.write(f"{field}: {tags}")
+        if primary_failure:
+            _render_primary_failure(primary_failure)
+        for category in FLAG_CATEGORY_ORDER:
+            _render_flag_group(category, flag_groups.get(category, []))
 
-    curation = details["curation"]
     selected_overrides = details["selected_overrides"]
     effective_fields = details["effective_fields"]
 
@@ -488,6 +534,8 @@ def _build_editable_df(
     overrides: dict,
     flags_by_gsm: dict[tuple[str, str], dict[str, list[str]]],
     triage_flags: dict[tuple[str, str], dict[str, bool]],
+    flag_summaries: dict[tuple[str, str], dict[str, object]],
+    primary_failures: dict[tuple[str, str], str],
 ) -> pd.DataFrame:
     df_editable = df_base.copy()
     for (gse, gsm, field), value in overrides.items():
@@ -512,6 +560,18 @@ def _build_editable_df(
         flags = triage_flags.get(key, {})
         attention_values.append("ATTN" if flags.get("needs_attention") else "")
     df_editable.insert(3, "Needs attention", attention_values)
+
+    primary_values = []
+    summary_values = []
+    for row in df_base.to_dict("records"):
+        key = (row["gse_accession"], row["gsm_accession"])
+        primary_values.append(primary_failures.get(key, ""))
+        summary = flag_summaries.get(key)
+        if summary is None:
+            summary = build_flag_category_summary([], {})
+        summary_values.append(format_flag_category_summary(summary))
+    df_editable.insert(4, "Primary failure", primary_values)
+    df_editable.insert(5, "Flag summary", summary_values)
 
     flagged_values = []
     for row in df_base.to_dict("records"):
@@ -595,6 +655,16 @@ def run_app() -> None:
     base_rows = filter_table_rows(rows, gse_filter, search_text)
 
     flags_by_gsm = build_flags_index(evidence_records)
+    curation_flags_by_gsm = build_curation_flags_index(curation_records)
+    primary_failures = build_primary_failure_index(curation_records)
+    flag_summaries: dict[tuple[str, str], dict[str, object]] = {}
+    for record in curation_records:
+        key = (record["gse_accession"], record["gsm_accession"])
+        summary = build_flag_category_summary(
+            curation_flags_by_gsm.get(key, []),
+            flags_by_gsm.get(key, {}),
+        )
+        flag_summaries[key] = summary
     evidence_lookup = index_evidence_records(evidence_records)
     overrides = st.session_state.get("overrides", {})
     if not isinstance(overrides, dict):
@@ -644,7 +714,12 @@ def run_app() -> None:
 
         df_base = pd.DataFrame(filtered_rows)
         df_editable = _build_editable_df(
-            df_base, overrides, flags_by_gsm, triage_flags
+            df_base,
+            overrides,
+            flags_by_gsm,
+            triage_flags,
+            flag_summaries,
+            primary_failures,
         )
         st.subheader("Curation Table (Editable)")
         editor_kwargs = {
@@ -684,7 +759,24 @@ def run_app() -> None:
                 flags = triage_flags.get(key, {})
                 attention_values.append("ATTN" if flags.get("needs_attention") else "")
             df.insert(3, "Needs attention", attention_values)
-        styled = style_curation_table(df, flags_by_gsm, active_row_idx=active_row_idx)
+            primary_values = []
+            summary_values = []
+            for row in filtered_rows:
+                key = (row["gse_accession"], row["gsm_accession"])
+                primary_values.append(primary_failures.get(key, ""))
+                summary = flag_summaries.get(key)
+                if summary is None:
+                    summary = build_flag_category_summary([], {})
+                summary_values.append(format_flag_category_summary(summary))
+            df.insert(4, "Primary failure", primary_values)
+            df.insert(5, "Flag summary", summary_values)
+        styled = style_curation_table(
+            df,
+            flags_by_gsm,
+            active_row_idx=active_row_idx,
+            flag_summaries=flag_summaries,
+            primary_failures=primary_failures,
+        )
         st.subheader("Curation Table")
         selection_event = None
         selection_supported = _supports_table_selection(st.dataframe)
