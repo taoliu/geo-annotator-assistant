@@ -12,6 +12,7 @@ from ui.state import (
     build_details_context,
     default_modal_state,
     details_render_mode,
+    index_audit_records,
     index_curation_records,
     index_evidence_records,
     index_suggestion_records,
@@ -68,6 +69,13 @@ def test_modal_context_binds_active_record() -> None:
             "raw": {"evidence": True},
         }
     ]
+    audit_records = [
+        {
+            "gse_accession": "GSE1",
+            "gsm_accession": "GSM1",
+            "raw": {"llm_parsed_outputs": []},
+        }
+    ]
     suggestions_records = [
         {
             "gse_accession": "GSE1",
@@ -83,6 +91,7 @@ def test_modal_context_binds_active_record() -> None:
         ("GSE1", "GSM1"),
         index_curation_records(curation_records),
         index_evidence_records(evidence_records),
+        index_audit_records(audit_records),
         index_suggestion_records(suggestions_records),
         flags_by_gsm,
         overrides,

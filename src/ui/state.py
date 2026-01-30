@@ -6,6 +6,7 @@ from typing import Any, Iterable, Mapping, Sequence, TypedDict
 
 from ui.schema import (
     CANONICAL_FIELDS,
+    AuditRecord,
     EvidenceRecord,
     NormalizedCurationRecord,
     SuggestionRecord,
@@ -41,6 +42,7 @@ class ModalState(TypedDict):
 class DetailsContext(TypedDict):
     selection_key: SelectionKey
     evidence: EvidenceRecord | None
+    audit: AuditRecord | None
     suggestions: list[SuggestionRecord]
     flagged_fields: dict[str, list[str]]
     curation: NormalizedCurationRecord | None
@@ -122,6 +124,16 @@ def index_suggestion_records(
     return lookup
 
 
+def index_audit_records(
+    records: Iterable[AuditRecord],
+) -> dict[tuple[str, str], AuditRecord]:
+    lookup: dict[tuple[str, str], AuditRecord] = {}
+    for record in records:
+        key = (record["gse_accession"], record["gsm_accession"])
+        lookup[key] = record
+    return lookup
+
+
 def lookup_evidence(
     lookup: dict[tuple[str, str], EvidenceRecord],
     gse_accession: str,
@@ -136,6 +148,14 @@ def lookup_suggestions(
     gsm_accession: str,
 ) -> list[SuggestionRecord]:
     return list(lookup.get((gse_accession, gsm_accession), []))
+
+
+def lookup_audit(
+    lookup: dict[tuple[str, str], AuditRecord],
+    gse_accession: str,
+    gsm_accession: str,
+) -> AuditRecord | None:
+    return lookup.get((gse_accession, gsm_accession))
 
 
 def group_suggestions_by_field(
@@ -187,12 +207,16 @@ def build_details_context(
     selection_key: SelectionKey,
     curation_lookup: dict[SelectionKey, NormalizedCurationRecord],
     evidence_lookup: dict[SelectionKey, EvidenceRecord],
+    audit_lookup: dict[SelectionKey, AuditRecord],
     suggestions_lookup: dict[SelectionKey, list[SuggestionRecord]],
     flags_by_gsm: dict[SelectionKey, dict[str, list[str]]],
     overrides: Mapping[OverrideKey, OverrideValue],
 ) -> DetailsContext:
     evidence = lookup_evidence(
         evidence_lookup, selection_key[0], selection_key[1]
+    )
+    audit = lookup_audit(
+        audit_lookup, selection_key[0], selection_key[1]
     )
     suggestions = lookup_suggestions(
         suggestions_lookup, selection_key[0], selection_key[1]
@@ -206,6 +230,7 @@ def build_details_context(
     return {
         "selection_key": selection_key,
         "evidence": evidence,
+        "audit": audit,
         "suggestions": suggestions,
         "flagged_fields": flagged_fields,
         "curation": curation,
@@ -223,8 +248,10 @@ __all__ = [
     "filter_table_rows",
     "index_curation_records",
     "index_evidence_records",
+    "index_audit_records",
     "index_suggestion_records",
     "lookup_evidence",
+    "lookup_audit",
     "lookup_suggestions",
     "group_suggestions_by_field",
     "default_modal_state",

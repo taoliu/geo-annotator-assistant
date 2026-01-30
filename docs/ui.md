@@ -13,6 +13,7 @@ Where `<DIR>` contains:
 - `curation.jsonl`
 - `evidence.jsonl`
 - `suggestions.jsonl` (optional)
+- `audit.jsonl` (optional; provides initial LLM proposals)
 
 The UI is read-only and does not write any files unless you explicitly export overrides.
 
@@ -32,8 +33,8 @@ Field Status Dashboard.
 - Shows all 8 output fields:
   `data_type`, `organism`, `tissue_type`, `cell_line`, `disease`, `treatment`,
   `gse_accession`, `gsm_accession`.
-- Displays the current value (session override takes precedence over backend
-  value).
+- Displays the backend value, optional LLM original (from `audit.jsonl`), and
+  any session override.
 - Displays one or more status badges derived from backend audit signals and
   session overrides.
 
@@ -42,6 +43,8 @@ Field Status Dashboard.
 Badges are informational only; they do not block edits or alter backend logic.
 
 - LOCKED: field locked by backend due to a terminal exact match.
+- TERMINAL: backend applied a terminal fallback value.
+- REPAIRED: backend repair loop attempted or updated this field.
 - CANONICALIZED: backend replaced the value with an ontology canonical label.
 - TERMINAL EXACT: ontology grounding returned a terminal exact match.
 - AMBIGUOUS / NO MATCH: grounding was ambiguous or failed (if available).
@@ -63,6 +66,12 @@ Intentionally not shown:
 - free-text rationale or commentary
 - hidden model reasoning traces
 - new analysis created by the UI
+
+### Optional audit signals
+
+If `audit.jsonl` is present, the modal displays the initial LLM proposal
+per field (from `llm_parsed_outputs[0]`). These values are read-only and do
+not affect backend outputs, validation, or decisions.
 
 ## Overrides and editing
 

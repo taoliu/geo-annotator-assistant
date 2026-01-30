@@ -1,6 +1,7 @@
 """UI schema and loaders for review artifacts."""
 
 from ui.loaders import (
+    load_audit_jsonl_optional,
     load_curation_jsonl,
     load_evidence_jsonl,
     load_jsonl,
@@ -9,6 +10,7 @@ from ui.loaders import (
 from ui.paths import InputPaths, resolve_input_paths
 from ui.flags import build_flags_index, extract_field_flags
 from ui.schema import (
+    AuditRecord,
     CANONICAL_FIELDS,
     CANONICAL_FIELDS_SET,
     CanonicalField,
@@ -35,12 +37,14 @@ __all__ = [
     "CANONICAL_FIELDS_SET",
     "CanonicalField",
     "CurationFields",
+    "AuditRecord",
     "EvidenceRecord",
     "build_flags_index",
     "extract_field_flags",
     "InputPaths",
     "NormalizedCurationRecord",
     "SuggestionRecord",
+    "load_audit_jsonl_optional",
     "load_jsonl",
     "load_curation_jsonl",
     "load_evidence_jsonl",

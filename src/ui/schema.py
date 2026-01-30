@@ -46,6 +46,12 @@ class EvidenceRecord(TypedDict):
     raw: dict[str, Any]
 
 
+class AuditRecord(TypedDict):
+    gse_accession: str
+    gsm_accession: str
+    raw: dict[str, Any]
+
+
 class SuggestionRecord(TypedDict):
     gse_accession: str
     gsm_accession: str
@@ -60,5 +66,6 @@ __all__ = [
     "CurationFields",
     "NormalizedCurationRecord",
     "EvidenceRecord",
+    "AuditRecord",
     "SuggestionRecord",
 ]

@@ -12,6 +12,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from ui.loaders import (
+    load_audit_jsonl_optional,
     load_curation_jsonl,
     load_jsonl,
     load_suggestions_jsonl_optional,
@@ -104,5 +105,13 @@ def test_load_suggestions_jsonl_optional_missing(tmp_path: Path) -> None:
     missing_path = tmp_path / "suggestions.jsonl"
 
     loaded = load_suggestions_jsonl_optional(str(missing_path))
+
+    assert loaded == []
+
+
+def test_load_audit_jsonl_optional_missing(tmp_path: Path) -> None:
+    missing_path = tmp_path / "audit.jsonl"
+
+    loaded = load_audit_jsonl_optional(str(missing_path))
 
     assert loaded == []

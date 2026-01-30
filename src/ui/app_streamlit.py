@@ -37,6 +37,7 @@ from ui.help_text import (
 from ui.dashboard import BADGE_TOOLTIPS, build_dashboard_items
 from ui.evidence import EVIDENCE_FIELDS, extract_field_evidence
 from ui.loaders import (
+    load_audit_jsonl_optional,
     load_curation_jsonl,
     load_evidence_jsonl,
     load_suggestions_jsonl_optional,
@@ -62,6 +63,7 @@ from ui.state import (
     filter_table_rows,
     group_suggestions_by_field,
     index_curation_records,
+    index_audit_records,
     index_evidence_records,
     index_suggestion_records,
     resolve_selected_key,
@@ -96,6 +98,8 @@ def _load_records(input_dir: str) -> tuple[
     list[dict],
     list[dict],
     list[dict],
+    list[dict],
+    str | None,
 ]:
     paths = resolve_input_paths(input_dir)
     curation_records = load_curation_jsonl(str(paths.curation_path))
@@ -103,7 +107,20 @@ def _load_records(input_dir: str) -> tuple[
     suggestions_records = load_suggestions_jsonl_optional(
         str(paths.suggestions_path)
     )
-    return paths, curation_records, evidence_records, suggestions_records
+    audit_records: list[dict] = []
+    audit_error: str | None = None
+    try:
+        audit_records = load_audit_jsonl_optional(str(paths.audit_path))
+    except Exception as exc:
+        audit_error = str(exc)
+    return (
+        paths,
+        curation_records,
+        evidence_records,
+        suggestions_records,
+        audit_records,
+        audit_error,
+    )
 
 
 def _render_header(paths: InputPaths) -> None:
@@ -115,6 +132,10 @@ def _render_header(paths: InputPaths) -> None:
         st.caption(f"Suggestions: {paths.suggestions_path}")
     else:
         st.caption("Suggestions: not loaded")
+    if paths.audit_present:
+        st.caption(f"Audit: {paths.audit_path}")
+    else:
+        st.caption("Audit: not loaded")
 
 
 def _gse_options(rows: list[dict]) -> list[str]:
@@ -568,6 +589,8 @@ def _render_details(
 def _render_field_status_dashboard(details: DetailsContext) -> None:
     st.markdown("### Field Status Dashboard")
     evidence = details["evidence"]
+    audit = details["audit"]
+    llm_originals = _extract_llm_originals(audit["raw"] if audit else None)
     items = build_dashboard_items(
         details["selection_key"],
         details["curation"],
@@ -581,7 +604,17 @@ def _render_field_status_dashboard(details: DetailsContext) -> None:
         for idx, item in enumerate(row):
             with cols[idx]:
                 st.markdown(f"**{item['label']}**")
-                st.write(item["value"])
+                field = item["field"]
+                backend_value = _backend_value_for_field(details, field)
+                st.write(f"Backend: {backend_value}")
+                llm_value = llm_originals.get(field)
+                if llm_value:
+                    st.caption(f"LLM original (initial proposal): {llm_value}")
+                if field in details["selected_overrides"]:
+                    override_value = _format_override_display(
+                        details["selected_overrides"].get(field)
+                    )
+                    st.caption(f"Override (session): {override_value}")
                 if item["badges"]:
                     st.markdown(
                         _format_badges_with_tooltips(item["badges"]),
@@ -608,6 +641,37 @@ def _badge_html(badge: str) -> str:
         + html.escape(badge)
         + "</span>"
     )
+
+
+def _extract_llm_originals(audit_raw: dict | None) -> dict[str, str]:
+    if not isinstance(audit_raw, dict):
+        return {}
+    outputs = audit_raw.get("llm_parsed_outputs")
+    if not isinstance(outputs, list) or not outputs:
+        return {}
+    first = outputs[0]
+    if not isinstance(first, dict):
+        return {}
+    originals: dict[str, str] = {}
+    for field in (*CANONICAL_FIELDS, "gse_accession", "gsm_accession"):
+        value = first.get(field)
+        if value is None:
+            continue
+        formatted = _format_override_display(value)
+        if formatted:
+            originals[field] = formatted
+    return originals
+
+
+def _backend_value_for_field(details: DetailsContext, field: str) -> str:
+    selection_key = details["selection_key"]
+    if field == "gse_accession":
+        return _format_override_display(selection_key[0] if selection_key else None)
+    if field == "gsm_accession":
+        return _format_override_display(selection_key[1] if selection_key else None)
+    curation = details["curation"]
+    backend_fields = curation.get("fields", {}) if curation else {}
+    return _format_override_display(backend_fields.get(field))
 
 
 def _render_override_diff(
@@ -1033,12 +1097,23 @@ def run_app() -> None:
         st.stop()
 
     try:
-        paths, curation_records, evidence_records, suggestions_records = _load_records(
-            input_dir
-        )
+        (
+            paths,
+            curation_records,
+            evidence_records,
+            suggestions_records,
+            audit_records,
+            audit_error,
+        ) = _load_records(input_dir)
     except Exception as exc:
         st.error(str(exc))
         st.stop()
+
+    if audit_error:
+        st.warning(
+            "audit.jsonl could not be loaded; continuing without LLM originals. "
+            f"Details: {audit_error}"
+        )
 
     _render_header(paths)
 
@@ -1081,6 +1156,7 @@ def run_app() -> None:
         )
     evidence_lookup = index_evidence_records(evidence_records)
     curation_lookup = index_curation_records(curation_records)
+    audit_lookup = index_audit_records(audit_records)
     overrides = st.session_state.get("overrides", {})
     if not isinstance(overrides, dict):
         overrides = {}
@@ -1312,6 +1388,7 @@ def run_app() -> None:
                 selection_key,
                 curation_lookup,
                 evidence_lookup,
+                audit_lookup,
                 suggestions_lookup,
                 flags_by_gsm,
                 overrides,

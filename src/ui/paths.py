@@ -13,6 +13,8 @@ class InputPaths:
     evidence_path: Path
     suggestions_path: Path
     suggestions_present: bool
+    audit_path: Path
+    audit_present: bool
 
 
 def resolve_input_paths(input_dir: str) -> InputPaths:
@@ -38,6 +40,8 @@ def resolve_input_paths(input_dir: str) -> InputPaths:
 
     suggestions_path = base_dir / "suggestions.jsonl"
     suggestions_present = suggestions_path.is_file()
+    audit_path = base_dir / "audit.jsonl"
+    audit_present = audit_path.is_file()
 
     return InputPaths(
         input_dir=base_dir,
@@ -45,4 +49,6 @@ def resolve_input_paths(input_dir: str) -> InputPaths:
         evidence_path=evidence_path,
         suggestions_path=suggestions_path,
         suggestions_present=suggestions_present,
+        audit_path=audit_path,
+        audit_present=audit_present,
     )

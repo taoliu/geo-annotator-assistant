@@ -10,6 +10,7 @@ from ui.schema import (
     CANONICAL_FIELDS,
     CANONICAL_FIELDS_SET,
     CurationFields,
+    AuditRecord,
     EvidenceRecord,
     NormalizedCurationRecord,
     SuggestionRecord,
@@ -142,9 +143,32 @@ def load_suggestions_jsonl_optional(path: str) -> list[SuggestionRecord]:
     return normalized
 
 
+def load_audit_jsonl_optional(path: str) -> list[AuditRecord]:
+    """Load audit.jsonl if present; returns an empty list when missing."""
+    path_obj = Path(path)
+    if not path_obj.exists():
+        print(f"[UI] audit.jsonl not found at {path_obj}; returning 0 records")
+        return []
+
+    normalized: list[AuditRecord] = []
+    for line_number, record in _iter_jsonl_records(path):
+        gse_accession = _require_string(record, "gse_accession", path_obj, line_number)
+        gsm_accession = _require_string(record, "gsm_accession", path_obj, line_number)
+        normalized.append(
+            {
+                "gse_accession": gse_accession,
+                "gsm_accession": gsm_accession,
+                "raw": dict(record),
+            }
+        )
+    normalized.sort(key=lambda item: (item["gse_accession"], item["gsm_accession"]))
+    return normalized
+
+
 __all__ = [
     "load_jsonl",
     "load_curation_jsonl",
     "load_evidence_jsonl",
     "load_suggestions_jsonl_optional",
+    "load_audit_jsonl_optional",
 ]
