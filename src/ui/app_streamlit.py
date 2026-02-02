@@ -228,7 +228,20 @@ def _render_header(
         else:
             st.caption("GSE field values: not loaded")
     if active_gse:
-        st.subheader(active_gse)
+        st.session_state["active_gse_label"] = active_gse
+
+
+def _section_header(title: str, subtitle: str | None = None) -> None:
+    st.markdown(f"### {title}")
+    if subtitle:
+        st.caption(subtitle)
+
+
+def _render_gse_identifier(active_gse: str | None) -> None:
+    if not active_gse:
+        return
+    _section_header("GSE Identifier")
+    st.markdown(f"**{active_gse}**")
 
 
 def _gse_options(rows: list[dict]) -> list[str]:
@@ -1257,8 +1270,6 @@ def _render_gse_field_values_summary(gse_field_values: dict | None) -> None:
     fields = gse_field_values.get("fields")
     if not isinstance(fields, dict) or not fields:
         return
-    st.markdown("### GSE-wide summary")
-    st.caption("GSE-wide (not affected by filters).")
     items = list(fields.items())
     cols = st.columns(3)
     for idx, (field, value) in enumerate(items):
@@ -1653,6 +1664,9 @@ def run_app() -> None:
     outlier_count = sum(
         1 for categories in outlier_categories_by_gsm.values() if categories
     )
+    _render_gse_identifier(active_gse or gse_id)
+    st.markdown("---")
+    _section_header("GSE-wide summary", "GSE-wide (not affected by filters).")
     _render_gse_field_values_summary(gse_field_values)
     _render_gse_metrics(
         total=len(rows),
@@ -1661,6 +1675,8 @@ def run_app() -> None:
         overrides_session=len(session_override_keys),
         outliers=outlier_count,
     )
+    st.markdown("---")
+    _section_header("Table controls", "Filters apply to table only.")
     triage_filter = _render_triage_filters()
     primary_failure_options = sorted(
         {
@@ -1705,13 +1721,14 @@ def run_app() -> None:
         outlier_categories_by_gsm,
     )
     st.caption(f"Rows: {len(filtered_rows)}")
+    st.caption("Table reflects current filters.")
 
     if not filtered_rows:
         _render_unsaved_indicator(indicator, overrides)
         st.info("No records match the current filters.")
         st.stop()
-
-    st.caption("Table reflects current filters.")
+    st.markdown("---")
+    _section_header("Curation table")
     st.caption(table_guidance_text())
 
     column_config = _table_column_config()
