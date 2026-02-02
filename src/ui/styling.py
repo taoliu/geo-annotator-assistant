@@ -13,9 +13,10 @@ _ACTIVE_ROW = "background-color: #e8f4ff"
 _GSM_ACCESSION_STYLE = (
     "color: #1a73e8; text-decoration: underline; cursor: pointer"
 )
+_STATUS_STYLE = "cursor: pointer; text-align: center; font-size: 1.05rem"
 _FLAG_SUMMARY_COLUMN = "Flag summary"
 _PRIMARY_FAILURE_COLUMN = "Primary failure"
-_DECISION_COLUMN = "Decision"
+_STATUS_COLUMN = "Status"
 _REVIEW_FLAGS_COLUMN = "Review flags"
 _TERMINAL_FALLBACK_COLUMN = "Terminal fallbacks"
 _OUTLIER_COLUMN = "Outliers"
@@ -82,12 +83,13 @@ def style_curation_table(
                 if color:
                     cell_styles.append(f"background-color: {color}")
                     cell_styles.append("font-weight: 600")
-            if column == _DECISION_COLUMN:
-                decision = str(row.get(_DECISION_COLUMN) or "")
-                if decision == "FLAGGED":
+            if column == _STATUS_COLUMN:
+                icon = str(row.get(_STATUS_COLUMN) or "")
+                cell_styles.append(_STATUS_STYLE)
+                if icon == "🚩":
                     cell_styles.append(_DECISION_FLAGGED)
                     cell_styles.append("font-weight: 600")
-                elif decision == "ACCEPT":
+                elif icon == "✅":
                     cell_styles.append(_DECISION_ACCEPT)
             if column == _REVIEW_FLAGS_COLUMN:
                 value = str(row.get(_REVIEW_FLAGS_COLUMN) or "")

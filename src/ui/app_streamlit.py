@@ -30,7 +30,11 @@ from ui.flags import (
     format_flag_category_summary,
     primary_failure_tooltip,
 )
-from ui.help_text import gsm_accession_tooltip, table_guidance_text
+from ui.help_text import (
+    gsm_accession_tooltip,
+    status_icon_tooltip,
+    table_guidance_text,
+)
 from ui.dashboard import BADGE_TOOLTIPS, build_dashboard_items
 from ui.evidence import EVIDENCE_FIELDS, extract_field_evidence
 from ui.loaders import (
@@ -82,6 +86,8 @@ from ui.override_safety import (
 
 st.set_page_config(layout="wide")
 
+STATUS_COLUMN = "Status"
+
 
 def _inject_layout_styles() -> None:
     st.markdown(
@@ -129,6 +135,12 @@ def _inject_layout_styles() -> None:
         .pill-flagged { background: #fde2e2; color: #7d2f2f; }
         .pill-accept { background: #e9f7ef; color: #1f5a3f; }
         .pill-neutral { background: #f2f2f2; color: #404040; }
+        div[data-testid="stDataFrame"] thead tr th:first-child:has(input),
+        div[data-testid="stDataFrame"] tbody tr td:first-child:has(input),
+        div[data-testid="stDataEditor"] thead tr th:first-child:has(input),
+        div[data-testid="stDataEditor"] tbody tr td:first-child:has(input) {
+          display: none;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -259,12 +271,31 @@ def _supports_table_selection(widget: object) -> bool:
     return "on_select" in params and "selection_mode" in params
 
 
+def _decision_icon(final_decision: str) -> str:
+    normalized = final_decision.strip().upper()
+    if normalized == "ACCEPT":
+        return "✅"
+    if normalized == "FLAGGED":
+        return "🚩"
+    return "—"
+
+
+def _reorder_table_columns(df: pd.DataFrame) -> pd.DataFrame:
+    preferred = [STATUS_COLUMN, "gse_accession", "gsm_accession", *CANONICAL_FIELDS]
+    ordered = [column for column in preferred if column in df.columns]
+    remainder = [column for column in df.columns if column not in ordered]
+    return df[ordered + remainder]
+
+
 def _table_column_config() -> dict[str, object]:
     column_config = getattr(st, "column_config", None)
     text_column = getattr(column_config, "TextColumn", None) if column_config else None
     if text_column is None:
         return {}
-    return {"gsm_accession": text_column(help=gsm_accession_tooltip())}
+    return {
+        STATUS_COLUMN: text_column(help=status_icon_tooltip()),
+        "gsm_accession": text_column(help=gsm_accession_tooltip()),
+    }
 
 
 def _extract_selected_rows(source: object) -> list[int]:
@@ -1170,7 +1201,6 @@ def _build_editable_df(
     df_base: pd.DataFrame,
     overrides: dict,
     flags_by_gsm: dict[tuple[str, str], dict[str, list[str]]],
-    triage_flags: dict[tuple[str, str], dict[str, bool]],
     flag_summaries: dict[tuple[str, str], dict[str, object]],
     primary_failures: dict[tuple[str, str], str],
     final_decisions: dict[tuple[str, str], str],
@@ -1193,18 +1223,14 @@ def _build_editable_df(
         "Yes" if (row["gse_accession"], row["gsm_accession"]) in edited_keys else ""
         for row in df_base.to_dict("records")
     ]
-    df_editable.insert(2, "Decision", [
-        final_decisions.get((row["gse_accession"], row["gsm_accession"]), "")
+    status_values = [
+        _decision_icon(
+            final_decisions.get((row["gse_accession"], row["gsm_accession"]), "")
+        )
         for row in df_base.to_dict("records")
-    ])
-    df_editable.insert(3, "Edited", edited_values)
-
-    attention_values = []
-    for row in df_base.to_dict("records"):
-        key = (row["gse_accession"], row["gsm_accession"])
-        flags = triage_flags.get(key, {})
-        attention_values.append("ATTN" if flags.get("needs_attention") else "")
-    df_editable.insert(4, "Needs attention", attention_values)
+    ]
+    df_editable[STATUS_COLUMN] = status_values
+    df_editable["Edited"] = edited_values
 
     review_values = []
     terminal_values = []
@@ -1224,18 +1250,18 @@ def _build_editable_df(
         if summary is None:
             summary = build_flag_category_summary([], {})
         summary_values.append(format_flag_category_summary(summary))
-    df_editable.insert(5, "Review flags", review_values)
-    df_editable.insert(6, "Terminal fallbacks", terminal_values)
-    df_editable.insert(7, "Outliers", outlier_values)
-    df_editable.insert(8, "Primary failure", primary_values)
-    df_editable.insert(9, "Flag summary", summary_values)
+    df_editable["Review flags"] = review_values
+    df_editable["Terminal fallbacks"] = terminal_values
+    df_editable["Outliers"] = outlier_values
+    df_editable["Primary failure"] = primary_values
+    df_editable["Flag summary"] = summary_values
 
     flagged_values = []
     for row in df_base.to_dict("records"):
         flagged = flags_by_gsm.get((row["gse_accession"], row["gsm_accession"]), {})
         flagged_values.append(",".join(sorted(flagged)))
     df_editable["flagged_fields"] = flagged_values
-    return df_editable
+    return _reorder_table_columns(df_editable)
 
 
 def _disabled_columns(df: pd.DataFrame) -> list[str]:
@@ -1618,7 +1644,6 @@ def run_app() -> None:
             df_base,
             overrides,
             flags_by_gsm,
-            triage_flags,
             flag_summaries,
             primary_failures,
             final_decisions,
@@ -1658,18 +1683,14 @@ def run_app() -> None:
                 "Yes" if (row["gse_accession"], row["gsm_accession"]) in edited_keys else ""
                 for row in filtered_rows
             ]
-            decision_values = [
-                final_decisions.get((row["gse_accession"], row["gsm_accession"]), "")
+            status_values = [
+                _decision_icon(
+                    final_decisions.get((row["gse_accession"], row["gsm_accession"]), "")
+                )
                 for row in filtered_rows
             ]
-            df.insert(2, "Decision", decision_values)
-            df.insert(3, "Edited", edited_values)
-            attention_values = []
-            for row in filtered_rows:
-                key = (row["gse_accession"], row["gsm_accession"])
-                flags = triage_flags.get(key, {})
-                attention_values.append("ATTN" if flags.get("needs_attention") else "")
-            df.insert(4, "Needs attention", attention_values)
+            df[STATUS_COLUMN] = status_values
+            df["Edited"] = edited_values
             review_values = []
             terminal_values = []
             outlier_values = []
@@ -1688,11 +1709,12 @@ def run_app() -> None:
                 if summary is None:
                     summary = build_flag_category_summary([], {})
                 summary_values.append(format_flag_category_summary(summary))
-            df.insert(5, "Review flags", review_values)
-            df.insert(6, "Terminal fallbacks", terminal_values)
-            df.insert(7, "Outliers", outlier_values)
-            df.insert(8, "Primary failure", primary_values)
-            df.insert(9, "Flag summary", summary_values)
+            df["Review flags"] = review_values
+            df["Terminal fallbacks"] = terminal_values
+            df["Outliers"] = outlier_values
+            df["Primary failure"] = primary_values
+            df["Flag summary"] = summary_values
+            df = _reorder_table_columns(df)
         styled = style_curation_table(
             df,
             flags_by_gsm,

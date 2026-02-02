@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-TABLE_GUIDANCE_TEXT = "Click a GSM accession to open details."
+TABLE_GUIDANCE_TEXT = "Click the status icon (✅/🚩) or GSM accession to open details."
 GSM_ACCESSION_TOOLTIP = "Open details"
+STATUS_ICON_TOOLTIP = "Decision status (✅ = ACCEPT, 🚩 = FLAGGED)"
 TABLE_HELP_LINES = (
-    "Click a GSM accession row to open details in the modal.",
+    "Click the status icon (✅/🚩) or GSM accession to open details in the modal.",
     "Use the Close button in the modal to dismiss it.",
     "Edits are session-only until you export overrides.",
 )
@@ -23,11 +24,17 @@ def gsm_accession_tooltip() -> str:
     return GSM_ACCESSION_TOOLTIP
 
 
+def status_icon_tooltip() -> str:
+    return STATUS_ICON_TOOLTIP
+
+
 __all__ = [
     "GSM_ACCESSION_TOOLTIP",
+    "STATUS_ICON_TOOLTIP",
     "TABLE_GUIDANCE_TEXT",
     "TABLE_HELP_LINES",
     "gsm_accession_tooltip",
+    "status_icon_tooltip",
     "table_guidance_text",
     "table_help_lines",
 ]
