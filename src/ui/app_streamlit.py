@@ -142,6 +142,41 @@ def _inject_layout_styles() -> None:
         .pill-flagged { background: #fde2e2; color: #7d2f2f; }
         .pill-accept { background: #e9f7ef; color: #1f5a3f; }
         .pill-neutral { background: #f2f2f2; color: #404040; }
+        .section-divider {
+          border: none;
+          border-top: 1px solid #e6e0d5;
+          margin: 0.6rem 0 0.8rem 0;
+        }
+        .gse-biology-card {
+          background: #fffdfa;
+          border: 1px solid #eee5d8;
+          border-radius: 12px;
+          padding: 10px 14px;
+          margin-bottom: 8px;
+        }
+        .gse-biology-title {
+          font-size: 0.85rem;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          color: #6b5f4b;
+          margin: 0 0 6px 0;
+        }
+        .gse-biology-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+          gap: 6px 14px;
+        }
+        .gse-biology-item .label {
+          font-size: 0.72rem;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          color: #7b6e5b;
+        }
+        .gse-biology-item .value {
+          font-size: 0.92rem;
+          font-weight: 600;
+          color: #2b2b2b;
+        }
         div[data-testid="stDataFrame"] thead tr th:first-child:has(input),
         div[data-testid="stDataFrame"] tbody tr td:first-child:has(input),
         div[data-testid="stDataEditor"] thead tr th:first-child:has(input),
@@ -235,6 +270,10 @@ def _section_header(title: str, subtitle: str | None = None) -> None:
     st.markdown(f"### {title}")
     if subtitle:
         st.caption(subtitle)
+
+
+def _section_divider() -> None:
+    st.markdown('<hr class="section-divider" />', unsafe_allow_html=True)
 
 
 def _render_gse_identifier(active_gse: str | None) -> None:
@@ -1270,16 +1309,43 @@ def _render_gse_field_values_summary(gse_field_values: dict | None) -> None:
     fields = gse_field_values.get("fields")
     if not isinstance(fields, dict) or not fields:
         return
-    items = list(fields.items())
-    cols = st.columns(3)
-    for idx, (field, value) in enumerate(items):
+    preferred_fields = ["data_type", "organism", "tissue_type", "cell_line", "disease"]
+    ordered_fields = [field for field in preferred_fields if field in fields]
+    extras = [field for field in fields if field not in ordered_fields]
+    ordered_fields.extend(extras)
+
+    items: list[tuple[str, str]] = []
+    for field in ordered_fields:
+        value = fields.get(field)
         if isinstance(value, list):
             rendered = ", ".join(str(item) for item in value if item)
         else:
             rendered = str(value) if value is not None else ""
         if not rendered:
             rendered = "—"
-        cols[idx % 3].markdown(f"**{field}**\n{rendered}")
+        items.append((field, rendered))
+
+    if not items:
+        return
+
+    blocks = []
+    for field, rendered in items:
+        blocks.append(
+            "<div class=\"gse-biology-item\">"
+            f"<div class=\"label\">{html.escape(field)}</div>"
+            f"<div class=\"value\">{html.escape(rendered)}</div>"
+            "</div>"
+        )
+    html_block = (
+        "<div class=\"gse-biology-card\">"
+        "<div class=\"gse-biology-title\">"
+        "GSE-wide biology (not affected by filters)"
+        "</div>"
+        "<div class=\"gse-biology-grid\">"
+        + "".join(blocks)
+        + "</div></div>"
+    )
+    st.markdown(html_block, unsafe_allow_html=True)
 
 
 def _render_triage_filters() -> str:
@@ -1665,8 +1731,7 @@ def run_app() -> None:
         1 for categories in outlier_categories_by_gsm.values() if categories
     )
     _render_gse_identifier(active_gse or gse_id)
-    st.markdown("---")
-    _section_header("GSE-wide summary", "GSE-wide (not affected by filters).")
+    _section_divider()
     _render_gse_field_values_summary(gse_field_values)
     _render_gse_metrics(
         total=len(rows),
@@ -1675,8 +1740,8 @@ def run_app() -> None:
         overrides_session=len(session_override_keys),
         outliers=outlier_count,
     )
-    st.markdown("---")
-    _section_header("Table controls", "Filters apply to table only.")
+    _section_divider()
+    _section_header("Table controls")
     triage_filter = _render_triage_filters()
     primary_failure_options = sorted(
         {
@@ -1721,13 +1786,12 @@ def run_app() -> None:
         outlier_categories_by_gsm,
     )
     st.caption(f"Rows: {len(filtered_rows)}")
-    st.caption("Table reflects current filters.")
 
     if not filtered_rows:
         _render_unsaved_indicator(indicator, overrides)
         st.info("No records match the current filters.")
         st.stop()
-    st.markdown("---")
+    _section_divider()
     _section_header("Curation table")
     st.caption(table_guidance_text())
 
@@ -1765,7 +1829,6 @@ def run_app() -> None:
             terminal_fallback_counts,
             outlier_categories_by_gsm,
         )
-        st.subheader("Curation Table (Editable)")
         editor_kwargs = {
             "disabled": _disabled_columns(df_editable),
             "hide_index": True,
@@ -1841,7 +1904,6 @@ def run_app() -> None:
             primary_failures=primary_failures,
             enable_tooltips=False,
         )
-        st.subheader("Curation Table")
         selection_event = None
         selection_supported = _supports_table_selection(st.dataframe)
         table_data = styled
