@@ -16,6 +16,8 @@ class InputPaths:
     suggestions_present: bool
     audit_path: Path
     audit_present: bool
+    gse_field_values_path: Path
+    gse_field_values_present: bool
 
 
 @dataclass(frozen=True)
@@ -52,6 +54,8 @@ def resolve_input_paths(input_dir: str) -> InputPaths:
     suggestions_present = suggestions_path.is_file()
     audit_path = base_dir / "audit.jsonl"
     audit_present = audit_path.is_file()
+    gse_field_values_path = base_dir / "gse_field_values.jsonl"
+    gse_field_values_present = gse_field_values_path.is_file()
 
     return InputPaths(
         input_dir=base_dir,
@@ -61,6 +65,8 @@ def resolve_input_paths(input_dir: str) -> InputPaths:
         suggestions_present=suggestions_present,
         audit_path=audit_path,
         audit_present=audit_present,
+        gse_field_values_path=gse_field_values_path,
+        gse_field_values_present=gse_field_values_present,
     )
 
 

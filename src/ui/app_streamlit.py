@@ -41,6 +41,7 @@ from ui.loaders import (
     load_audit_jsonl_optional,
     load_curation_jsonl,
     load_evidence_jsonl,
+    load_gse_field_values_jsonl_optional,
     load_suggestions_jsonl_optional,
 )
 from ui.overrides import (
@@ -166,6 +167,7 @@ def _load_records_for_paths(paths: InputPaths) -> tuple[
     list[dict],
     list[dict],
     list[dict],
+    dict | None,
     str | None,
 ]:
     curation_records = load_curation_jsonl(str(paths.curation_path))
@@ -179,11 +181,20 @@ def _load_records_for_paths(paths: InputPaths) -> tuple[
         audit_records = load_audit_jsonl_optional(str(paths.audit_path))
     except Exception as exc:
         audit_error = str(exc)
+    gse_field_values = None
+    if paths.gse_field_values_present:
+        try:
+            gse_field_values = load_gse_field_values_jsonl_optional(
+                str(paths.gse_field_values_path)
+            )
+        except Exception as exc:
+            st.warning(f"Failed to load gse_field_values.jsonl: {exc}")
     return (
         curation_records,
         evidence_records,
         suggestions_records,
         audit_records,
+        gse_field_values,
         audit_error,
     )
 
@@ -212,8 +223,12 @@ def _render_header(
             st.caption(f"Audit: {paths.audit_path}")
         else:
             st.caption("Audit: not loaded")
+        if paths.gse_field_values_present:
+            st.caption(f"GSE field values: {paths.gse_field_values_path}")
+        else:
+            st.caption("GSE field values: not loaded")
     if active_gse:
-        st.subheader(f"Active GSE: {active_gse}")
+        st.subheader(active_gse)
 
 
 def _gse_options(rows: list[dict]) -> list[str]:
@@ -1216,30 +1231,50 @@ def _render_unsaved_indicator(container: st.delta_generator.DeltaGenerator, over
     )
 
 
-def _render_summary_strip(
-    rows: list[TableRow],
-    triage_flags: dict[tuple[str, str], dict[str, bool]],
+def _render_gse_metrics(
+    total: int,
+    flagged: int,
+    overrides_saved: int,
+    overrides_session: int,
+    outliers: int,
 ) -> None:
-    total = len(rows)
-    needs_attention = sum(
-        1 for flags in triage_flags.values() if flags.get("needs_attention")
-    )
-    has_overrides = sum(
-        1 for flags in triage_flags.values() if flags.get("has_overrides")
-    )
-    clean = sum(1 for flags in triage_flags.values() if flags.get("is_clean"))
+    flagged_fraction = flagged / total if total else 0.0
+    unsaved = max(0, overrides_session - overrides_saved)
+    overrides_display = f"{overrides_saved} saved"
+    if unsaved:
+        overrides_display = f"{overrides_saved} saved (+{unsaved} session)"
 
     cols = st.columns(4)
     cols[0].markdown(f"**Total GSMs**\n{total}")
-    cols[1].markdown(f"**Needs attention**\n{needs_attention}")
-    cols[2].markdown(f"**Has overrides**\n{has_overrides}")
-    cols[3].markdown(f"**Clean**\n{clean}")
-    st.caption("Summary reflects current GSE/search filters.")
+    cols[1].markdown(f"**FLAGGED**\n{flagged} ({flagged_fraction:.0%})")
+    cols[2].markdown(f"**Overrides**\n{overrides_display}")
+    cols[3].markdown(f"**Outliers**\n{outliers}")
+
+
+def _render_gse_field_values_summary(gse_field_values: dict | None) -> None:
+    if not isinstance(gse_field_values, dict):
+        return
+    fields = gse_field_values.get("fields")
+    if not isinstance(fields, dict) or not fields:
+        return
+    st.markdown("### GSE-wide summary")
+    st.caption("GSE-wide (not affected by filters).")
+    items = list(fields.items())
+    cols = st.columns(3)
+    for idx, (field, value) in enumerate(items):
+        if isinstance(value, list):
+            rendered = ", ".join(str(item) for item in value if item)
+        else:
+            rendered = str(value) if value is not None else ""
+        if not rendered:
+            rendered = "—"
+        cols[idx % 3].markdown(f"**{field}**\n{rendered}")
 
 
 def _render_triage_filters() -> str:
-    st.markdown("**Quick filter (single choice)**")
-    return st.radio(
+    cols = st.columns([1, 5])
+    cols[0].markdown("**Quick filter:**")
+    return cols[1].radio(
         "Table filter",
         TRIAGE_FILTERS,
         index=0,
@@ -1527,6 +1562,7 @@ def run_app() -> None:
             evidence_records,
             suggestions_records,
             audit_records,
+            gse_field_values,
             audit_error,
         ) = _load_records_for_paths(active_paths)
     except Exception as exc:
@@ -1609,14 +1645,21 @@ def run_app() -> None:
     indicator = st.empty()
 
     triage_flags = build_triage_flags(base_rows, evidence_lookup, overrides)
-    _render_summary_strip(base_rows, triage_flags)
-    _render_gse_summary_panel(
-        base_rows,
-        final_decisions,
-        primary_failures,
-        combined_flags_by_gsm,
-        overrides,
-        outlier_categories_by_gsm,
+    saved_override_keys = {(gse, gsm) for gse, gsm, _ in saved_overrides}
+    session_override_keys = {(gse, gsm) for gse, gsm, _ in overrides}
+    flagged_count = sum(
+        1 for decision in final_decisions.values() if decision != "ACCEPT"
+    )
+    outlier_count = sum(
+        1 for categories in outlier_categories_by_gsm.values() if categories
+    )
+    _render_gse_field_values_summary(gse_field_values)
+    _render_gse_metrics(
+        total=len(rows),
+        flagged=flagged_count,
+        overrides_saved=len(saved_override_keys),
+        overrides_session=len(session_override_keys),
+        outliers=outlier_count,
     )
     triage_filter = _render_triage_filters()
     primary_failure_options = sorted(
@@ -1668,6 +1711,7 @@ def run_app() -> None:
         st.info("No records match the current filters.")
         st.stop()
 
+    st.caption("Table reflects current filters.")
     st.caption(table_guidance_text())
 
     column_config = _table_column_config()

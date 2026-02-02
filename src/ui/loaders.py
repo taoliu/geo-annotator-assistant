@@ -165,10 +165,27 @@ def load_audit_jsonl_optional(path: str) -> list[AuditRecord]:
     return normalized
 
 
+def load_gse_field_values_jsonl_optional(path: str) -> dict[str, Any] | None:
+    """Load gse_field_values.jsonl if present; returns None when missing."""
+    path_obj = Path(path)
+    if not path_obj.exists():
+        print(f"[UI] gse_field_values.jsonl not found at {path_obj}; skipping")
+        return None
+    records = load_jsonl(path)
+    if not records:
+        return None
+    if len(records) > 1:
+        print(
+            "[UI] gse_field_values.jsonl contained multiple records; using first."
+        )
+    return records[0]
+
+
 __all__ = [
     "load_jsonl",
     "load_curation_jsonl",
     "load_evidence_jsonl",
     "load_suggestions_jsonl_optional",
     "load_audit_jsonl_optional",
+    "load_gse_field_values_jsonl_optional",
 ]
