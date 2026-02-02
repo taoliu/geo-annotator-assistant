@@ -7,7 +7,13 @@ from typing import Mapping
 
 import pandas as pd
 
-from ui.schema import CANONICAL_FIELDS, CANONICAL_FIELDS_SET, NormalizedCurationRecord
+from ui.schema import (
+    CANONICAL_FIELDS,
+    CANONICAL_FIELDS_SET,
+    GSE_ACCESSION_RAW_COLUMN,
+    GSM_ACCESSION_RAW_COLUMN,
+    NormalizedCurationRecord,
+)
 
 OverrideKey = tuple[str, str, str]
 OverrideValue = str | list[str]
@@ -209,11 +215,23 @@ def _normalize_edited_value(value: object) -> OverrideValue:
     return str(value)
 
 
+def _normalize_accession(value: object) -> str | None:
+    if not isinstance(value, str) or not value:
+        return None
+    if "acc=" in value:
+        return value.split("acc=", 1)[-1]
+    return value
+
+
 def _index_rows_by_key(df: pd.DataFrame) -> dict[tuple[str, str], dict[str, object]]:
     indexed: dict[tuple[str, str], dict[str, object]] = {}
     for _, row in df.iterrows():
-        gse = row.get("gse_accession")
-        gsm = row.get("gsm_accession")
+        gse = _normalize_accession(
+            row.get(GSE_ACCESSION_RAW_COLUMN) or row.get("gse_accession")
+        )
+        gsm = _normalize_accession(
+            row.get(GSM_ACCESSION_RAW_COLUMN) or row.get("gsm_accession")
+        )
         if isinstance(gse, str) and isinstance(gsm, str):
             indexed[(gse, gsm)] = row.to_dict()
     return indexed
@@ -224,8 +242,12 @@ def _iter_rows_by_key(
 ) -> list[tuple[tuple[str, str], dict[str, object]]]:
     rows: list[tuple[tuple[str, str], dict[str, object]]] = []
     for _, row in df.iterrows():
-        gse = row.get("gse_accession")
-        gsm = row.get("gsm_accession")
+        gse = _normalize_accession(
+            row.get(GSE_ACCESSION_RAW_COLUMN) or row.get("gse_accession")
+        )
+        gsm = _normalize_accession(
+            row.get(GSM_ACCESSION_RAW_COLUMN) or row.get("gsm_accession")
+        )
         if isinstance(gse, str) and isinstance(gsm, str):
             rows.append(((gse, gsm), row.to_dict()))
     return rows

@@ -57,7 +57,11 @@ from ui.overrides import (
     set_override,
 )
 from ui.paths import InputPaths, InputScanResult, resolve_input_directory
-from ui.schema import CANONICAL_FIELDS
+from ui.schema import (
+    CANONICAL_FIELDS,
+    GSE_ACCESSION_RAW_COLUMN,
+    GSM_ACCESSION_RAW_COLUMN,
+)
 from ui.state import (
     DetailsContext,
     TableRow,
@@ -87,6 +91,8 @@ from ui.override_safety import (
 st.set_page_config(layout="wide")
 
 STATUS_COLUMN = "Status"
+GEO_ACCESSION_URL = "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc="
+RAW_ACCESSION_COLUMNS = (GSE_ACCESSION_RAW_COLUMN, GSM_ACCESSION_RAW_COLUMN)
 
 
 def _inject_layout_styles() -> None:
@@ -271,6 +277,39 @@ def _supports_table_selection(widget: object) -> bool:
     return "on_select" in params and "selection_mode" in params
 
 
+def _supports_column_order(widget: object) -> bool:
+    try:
+        params = inspect.signature(widget).parameters
+    except (TypeError, ValueError):
+        return False
+    return "column_order" in params
+
+
+def _geo_accession_url(value: object) -> str:
+    if not isinstance(value, str) or not value:
+        return ""
+    return f"{GEO_ACCESSION_URL}{value}"
+
+
+def _with_geo_links(df: pd.DataFrame, include_raw: bool = True) -> pd.DataFrame:
+    if "gse_accession" not in df.columns or "gsm_accession" not in df.columns:
+        return df
+    if include_raw:
+        if GSE_ACCESSION_RAW_COLUMN not in df.columns:
+            df[GSE_ACCESSION_RAW_COLUMN] = df["gse_accession"]
+        if GSM_ACCESSION_RAW_COLUMN not in df.columns:
+            df[GSM_ACCESSION_RAW_COLUMN] = df["gsm_accession"]
+    df["gse_accession"] = df["gse_accession"].map(_geo_accession_url)
+    df["gsm_accession"] = df["gsm_accession"].map(_geo_accession_url)
+    return df
+
+
+def _table_column_order(df: pd.DataFrame, widget: object) -> list[str] | None:
+    if not _supports_column_order(widget):
+        return None
+    return [column for column in df.columns if column not in RAW_ACCESSION_COLUMNS]
+
+
 def _decision_icon(final_decision: str) -> str:
     normalized = final_decision.strip().upper()
     if normalized == "ACCEPT":
@@ -290,12 +329,25 @@ def _reorder_table_columns(df: pd.DataFrame) -> pd.DataFrame:
 def _table_column_config() -> dict[str, object]:
     column_config = getattr(st, "column_config", None)
     text_column = getattr(column_config, "TextColumn", None) if column_config else None
+    link_column = getattr(column_config, "LinkColumn", None) if column_config else None
     if text_column is None:
         return {}
-    return {
+    config: dict[str, object] = {
         STATUS_COLUMN: text_column(help=status_icon_tooltip()),
-        "gsm_accession": text_column(help=gsm_accession_tooltip()),
     }
+    if link_column is not None:
+        config["gse_accession"] = link_column(
+            help="Open GEO series page",
+            display_text=r"acc=([A-Za-z0-9]+)",
+        )
+        config["gsm_accession"] = link_column(
+            help="Open GEO sample page",
+            display_text=r"acc=([A-Za-z0-9]+)",
+        )
+    else:
+        config["gse_accession"] = text_column(help="GEO series accession")
+        config["gsm_accession"] = text_column(help=gsm_accession_tooltip())
+    return config
 
 
 def _extract_selected_rows(source: object) -> list[int]:
@@ -1261,6 +1313,7 @@ def _build_editable_df(
         flagged = flags_by_gsm.get((row["gse_accession"], row["gsm_accession"]), {})
         flagged_values.append(",".join(sorted(flagged)))
     df_editable["flagged_fields"] = flagged_values
+    df_editable = _with_geo_links(df_editable)
     return _reorder_table_columns(df_editable)
 
 
@@ -1658,6 +1711,9 @@ def run_app() -> None:
             "key": "curation_table_edit",
             "column_config": column_config,
         }
+        column_order = _table_column_order(df_editable, st.data_editor)
+        if column_order is not None:
+            editor_kwargs["column_order"] = column_order
         if _supports_table_selection(st.data_editor):
             editor_kwargs.update(
                 {"on_select": "rerun", "selection_mode": "single-row"}
@@ -1714,6 +1770,7 @@ def run_app() -> None:
             df["Outliers"] = outlier_values
             df["Primary failure"] = primary_values
             df["Flag summary"] = summary_values
+            df = _with_geo_links(df, include_raw=False)
             df = _reorder_table_columns(df)
         styled = style_curation_table(
             df,
@@ -1721,29 +1778,30 @@ def run_app() -> None:
             active_row_idx=active_row_idx,
             flag_summaries=flag_summaries,
             primary_failures=primary_failures,
+            enable_tooltips=False,
         )
         st.subheader("Curation Table")
         selection_event = None
         selection_supported = _supports_table_selection(st.dataframe)
-        table_data = df if selection_supported else styled
+        table_data = styled
+        column_order = _table_column_order(df, st.dataframe)
+        table_kwargs = {
+            "width": "stretch",
+            "hide_index": True,
+            "column_config": column_config,
+            "key": "curation_table_view",
+        }
+        if column_order is not None:
+            table_kwargs["column_order"] = column_order
         if selection_supported:
             selection_event = st.dataframe(
                 table_data,
-                width="stretch",
-                hide_index=True,
                 on_select="rerun",
                 selection_mode="single-row",
-                column_config=column_config,
-                key="curation_table_view",
+                **table_kwargs,
             )
         else:
-            st.dataframe(
-                table_data,
-                width="stretch",
-                hide_index=True,
-                column_config=column_config,
-                key="curation_table_view",
-            )
+            st.dataframe(table_data, **table_kwargs)
         selected_rows = _extract_selected_rows(
             selection_event or st.session_state.get("curation_table_view")
         )

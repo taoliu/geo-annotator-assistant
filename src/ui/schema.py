@@ -13,6 +13,8 @@ CANONICAL_FIELDS: tuple[str, ...] = (
     "treatment",
 )
 CANONICAL_FIELDS_SET = set(CANONICAL_FIELDS)
+GSE_ACCESSION_RAW_COLUMN = "_gse_accession_raw"
+GSM_ACCESSION_RAW_COLUMN = "_gsm_accession_raw"
 
 CanonicalField = Literal[
     "data_type",
@@ -62,6 +64,8 @@ class SuggestionRecord(TypedDict):
 __all__ = [
     "CANONICAL_FIELDS",
     "CANONICAL_FIELDS_SET",
+    "GSE_ACCESSION_RAW_COLUMN",
+    "GSM_ACCESSION_RAW_COLUMN",
     "CanonicalField",
     "CurationFields",
     "NormalizedCurationRecord",

@@ -105,7 +105,7 @@ def test_style_curation_table_highlights_flagged_cell() -> None:
     styler = style_curation_table(df, flags_by_gsm)
     html = styler.to_html()
 
-    assert "#fff3cd" in html
+    assert "#ffeaea" in html
 
 
 def test_active_row_style_marks_selected_row() -> None:

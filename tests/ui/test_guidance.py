@@ -23,4 +23,4 @@ def test_table_help_lines_include_session_only() -> None:
 
     assert any("session-only" in line for line in lines)
     assert any("close" in line.casefold() for line in lines)
-    assert gsm_accession_tooltip() == "Open details"
+    assert gsm_accession_tooltip() == "Open GEO page"

@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import html
+
 import pandas as pd
 
 from ui.flags import FLAG_CATEGORY_COLORS, categorize_flag
-from ui.schema import CANONICAL_FIELDS
+from ui.schema import (
+    GSE_ACCESSION_RAW_COLUMN,
+    GSM_ACCESSION_RAW_COLUMN,
+)
 
-_HIGHLIGHT_CELL = "background-color: #fff3cd"
+_HIGHLIGHT_CELL = "background-color: #ffeaea"
 _HIGHLIGHT_ROW = "background-color: #f7f7f7"
 _ACTIVE_ROW = "background-color: #e8f4ff"
 _GSM_ACCESSION_STYLE = (
@@ -20,6 +25,7 @@ _STATUS_COLUMN = "Status"
 _REVIEW_FLAGS_COLUMN = "Review flags"
 _TERMINAL_FALLBACK_COLUMN = "Terminal fallbacks"
 _OUTLIER_COLUMN = "Outliers"
+_CORE_FLAG_FIELDS = ("data_type", "organism", "tissue_type", "cell_line", "disease")
 
 _DECISION_FLAGGED = "background-color: #fde2e2"
 _DECISION_ACCEPT = "background-color: #e9f7ef"
@@ -34,20 +40,34 @@ def active_row_style(row_index: int, active_row_idx: int | None) -> str:
     return _ACTIVE_ROW if row_index == active_row_idx else ""
 
 
+def _normalize_accession(value: object) -> str | None:
+    if not isinstance(value, str) or not value:
+        return None
+    if "acc=" in value:
+        return value.split("acc=", 1)[-1]
+    return value
+
+
 def style_curation_table(
     df: pd.DataFrame,
     flags_by_gsm: dict[tuple[str, str], dict[str, list[str]]],
     active_row_idx: int | None = None,
     flag_summaries: dict[tuple[str, str], dict[str, object]] | None = None,
     primary_failures: dict[tuple[str, str], str] | None = None,
+    enable_tooltips: bool = True,
 ) -> pd.io.formats.style.Styler:
+    def _row_accessions(row: pd.Series) -> tuple[str | None, str | None]:
+        gse = row.get(GSE_ACCESSION_RAW_COLUMN) or row.get("gse_accession")
+        gsm = row.get(GSM_ACCESSION_RAW_COLUMN) or row.get("gsm_accession")
+        return _normalize_accession(gse), _normalize_accession(gsm)
+
     def _style_row(row: pd.Series) -> list[str]:
-        gse = row.get("gse_accession")
-        gsm = row.get("gsm_accession")
-        flagged_fields = set()
+        gse, gsm = _row_accessions(row)
+        field_flags = {}
         if isinstance(gse, str) and isinstance(gsm, str):
-            flagged_fields = set(flags_by_gsm.get((gse, gsm), {}))
-        row_has_flags = bool(flagged_fields)
+            field_flags = flags_by_gsm.get((gse, gsm), {})
+        flagged_fields = set(field_flags)
+        row_has_flags = bool(field_flags)
         row_index = row.name if isinstance(row.name, int) else -1
         active_style = active_row_style(row_index, active_row_idx)
 
@@ -66,7 +86,7 @@ def style_curation_table(
         styles: list[str] = []
         for column in row.index:
             cell_styles: list[str] = []
-            if column in CANONICAL_FIELDS and column in flagged_fields:
+            if column in _CORE_FLAG_FIELDS and column in flagged_fields:
                 cell_styles.append(_HIGHLIGHT_CELL)
             elif active_style:
                 cell_styles.append(active_style)
@@ -108,7 +128,25 @@ def style_curation_table(
             styles.append("; ".join(cell_styles))
         return styles
 
-    return df.style.apply(_style_row, axis=1)
+    styler = df.style.apply(_style_row, axis=1)
+    if not enable_tooltips:
+        return styler
+
+    tooltip_df = pd.DataFrame("", index=df.index, columns=df.columns)
+    if not df.empty:
+        for row_idx, row in df.iterrows():
+            gse, gsm = _row_accessions(row)
+            if not (isinstance(gse, str) and isinstance(gsm, str)):
+                continue
+            field_flags = flags_by_gsm.get((gse, gsm), {})
+            for field, flags in field_flags.items():
+                if field not in _CORE_FLAG_FIELDS or not flags:
+                    continue
+                tooltip_df.at[row_idx, field] = html.escape(", ".join(flags), quote=True)
+
+    if not tooltip_df.empty:
+        styler = styler.set_tooltips(tooltip_df)
+    return styler
 
 
 __all__ = ["active_row_style", "style_curation_table"]
