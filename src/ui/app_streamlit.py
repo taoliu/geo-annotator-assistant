@@ -145,7 +145,7 @@ def _inject_layout_styles() -> None:
         .section-divider {
           border: none;
           border-top: 1px solid #e6e0d5;
-          margin: 0.6rem 0 0.8rem 0;
+          margin: 0.4rem 0 0.5rem 0;
         }
         .gse-biology-card {
           background: #fffdfa;
@@ -174,6 +174,36 @@ def _inject_layout_styles() -> None:
         }
         .gse-biology-item .value {
           font-size: 0.92rem;
+          font-weight: 600;
+          color: #2b2b2b;
+        }
+        .gse-counts-card {
+          background: #fffdfa;
+          border: 1px solid #eee5d8;
+          border-radius: 12px;
+          padding: 10px 14px;
+          margin-bottom: 8px;
+        }
+        .gse-counts-title {
+          font-size: 0.85rem;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          color: #6b5f4b;
+          margin: 0 0 6px 0;
+        }
+        .gse-counts-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+          gap: 6px 14px;
+        }
+        .gse-counts-item .label {
+          font-size: 0.72rem;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          color: #7b6e5b;
+        }
+        .gse-counts-item .value {
+          font-size: 0.95rem;
           font-weight: 600;
           color: #2b2b2b;
         }
@@ -243,7 +273,9 @@ def _render_header(
     root_dir: Path | None = None,
     active_gse: str | None = None,
 ) -> None:
-    st.title("GEO GSM Curator UI")
+    active_title = active_gse or st.session_state.get("active_gse_label")
+    if active_title:
+        st.title(active_title)
     with st.expander("Input details", expanded=False):
         if root_dir and root_dir != paths.input_dir:
             st.caption(f"Input root: {root_dir}")
@@ -276,11 +308,6 @@ def _section_divider() -> None:
     st.markdown('<hr class="section-divider" />', unsafe_allow_html=True)
 
 
-def _render_gse_identifier(active_gse: str | None) -> None:
-    if not active_gse:
-        return
-    _section_header("GSE Identifier")
-    st.markdown(f"**{active_gse}**")
 
 
 def _gse_options(rows: list[dict]) -> list[str]:
@@ -1295,12 +1322,30 @@ def _render_gse_metrics(
     overrides_display = f"{overrides_saved} saved"
     if unsaved:
         overrides_display = f"{overrides_saved} saved (+{unsaved} session)"
-
-    cols = st.columns(4)
-    cols[0].markdown(f"**Total GSMs**\n{total}")
-    cols[1].markdown(f"**FLAGGED**\n{flagged} ({flagged_fraction:.0%})")
-    cols[2].markdown(f"**Overrides**\n{overrides_display}")
-    cols[3].markdown(f"**Outliers**\n{outliers}")
+    items = [
+        ("Total GSMs", str(total)),
+        ("FLAGGED", f"{flagged} ({flagged_fraction:.0%})"),
+        ("Overrides", overrides_display),
+        ("Outliers", str(outliers)),
+    ]
+    blocks = []
+    for label, value in items:
+        blocks.append(
+            "<div class=\"gse-counts-item\">"
+            f"<div class=\"label\">{html.escape(label)}</div>"
+            f"<div class=\"value\">{html.escape(value)}</div>"
+            "</div>"
+        )
+    html_block = (
+        "<div class=\"gse-counts-card\">"
+        "<div class=\"gse-counts-title\">"
+        "GSE-wide counts (not affected by filters)"
+        "</div>"
+        "<div class=\"gse-counts-grid\">"
+        + "".join(blocks)
+        + "</div></div>"
+    )
+    st.markdown(html_block, unsafe_allow_html=True)
 
 
 def _render_gse_field_values_summary(gse_field_values: dict | None) -> None:
@@ -1348,10 +1393,9 @@ def _render_gse_field_values_summary(gse_field_values: dict | None) -> None:
     st.markdown(html_block, unsafe_allow_html=True)
 
 
-def _render_triage_filters() -> str:
-    cols = st.columns([1, 5])
-    cols[0].markdown("**Quick filter:**")
-    return cols[1].radio(
+def _render_triage_filters_inline(container: st.delta_generator.DeltaGenerator) -> str:
+    container.markdown("**Quick filter:**")
+    return container.radio(
         "Table filter",
         TRIAGE_FILTERS,
         index=0,
@@ -1730,8 +1774,6 @@ def run_app() -> None:
     outlier_count = sum(
         1 for categories in outlier_categories_by_gsm.values() if categories
     )
-    _render_gse_identifier(active_gse or gse_id)
-    _section_divider()
     _render_gse_field_values_summary(gse_field_values)
     _render_gse_metrics(
         total=len(rows),
@@ -1741,8 +1783,9 @@ def run_app() -> None:
         outliers=outlier_count,
     )
     _section_divider()
-    _section_header("Table controls")
-    triage_filter = _render_triage_filters()
+    header_cols = st.columns([3, 5])
+    header_cols[0].markdown("### Curation table")
+    triage_filter = _render_triage_filters_inline(header_cols[1])
     primary_failure_options = sorted(
         {
             primary_failures.get(_row_key(row), "")
@@ -1791,8 +1834,6 @@ def run_app() -> None:
         _render_unsaved_indicator(indicator, overrides)
         st.info("No records match the current filters.")
         st.stop()
-    _section_divider()
-    _section_header("Curation table")
     st.caption(table_guidance_text())
 
     column_config = _table_column_config()
