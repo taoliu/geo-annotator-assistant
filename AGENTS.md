@@ -134,15 +134,32 @@ If a ticket changes validation, repair, fallback, flags, or audit semantics, the
 
 Unless a ticket explicitly says otherwise, Codex must run unit tests with:
 
-```
-uv run pytest -q
-```
+`uv run pytest -q`
 
 If tests fail, fix them within the same ticket scope before reporting completion.
 
 ---
 
-## 6. Documentation Hierarchy
+## 6. UI Governance and Authority Boundaries (v1.0+)
+
+The curator UI is **non-authoritative** and must not change backend semantics.
+
+Agents working on UI code must respect the following rules:
+
+* Backend outputs (`curation.jsonl`, `evidence.jsonl`, `audit.jsonl`) are immutable inputs.
+* UI may **persist curator overrides** (`overrides.jsonl`) as explicit input artifacts.
+* UI must **not**:
+  - re-run backend validation, repair, or ontology grounding
+  - reinterpret backend flags or decisions
+  - infer correctness from ontology confidence
+* Any UI change that appears to require backend behavior changes must be
+  **stopped and raised as a backend ticket**.
+
+UI persistence is limited to explicit, user-triggered actions only.
+
+---
+
+## 7. Documentation Hierarchy
 
 Agents must respect the following authority order:
 
@@ -158,7 +175,7 @@ not by local code changes.
 
 ---
 
-## 7. What Is Explicitly Out of Scope
+## 8. What Is Explicitly Out of Scope
 
 Agents must not introduce:
 
@@ -171,7 +188,7 @@ These are architectural violations unless explicitly approved.
 
 ---
 
-## 8. Summary
+## 9. Summary
 
 This document exists to prevent drift across:
 

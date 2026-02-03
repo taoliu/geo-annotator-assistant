@@ -98,21 +98,24 @@ All rules are documented in `docs/policies/policy-spec.md`.
 ### Human-in-the-Loop Overrides
 
 - Curator overrides are first-class inputs
-- Overrides are explicit and session-scoped
+- Overrides are explicit and persisted per GSE
 - Overrides never retrigger backend logic
 - Full diff visibility and revert support
 - Backend semantics remain unchanged
 
 ---
 
-## Curator UI (v0.7)
+## Curator UI (v1.0)
 
-- Table-first interface for large GSEs
-- Modal-based GSM inspection
-- Field status dashboard (locked, canonicalized, ambiguous, fallback)
-- Structured evidence and audit panels
-- Safe override ergonomics
-- Dataset-level triage and filtering
+- Production-ready curator interface for large, multi-GSE workloads
+- Load and switch among multiple GSEs in a single session
+- Compact GSE-wide biology and count summaries
+- Table-first GSM review with icon-based status indicators
+- Field-level flag highlighting directly in the curation table
+- Direct GEO links for GSE and GSM accessions
+- Persistent override storage (`overrides.jsonl`) with reload support
+- Explicit export of final annotations with overrides applied
+- Full audit visibility, including original LLM outputs
 
 The UI is strictly non-authoritative and never alters backend semantics.
 
@@ -137,7 +140,7 @@ These invariants are defined in `docs/whitepaper.md`.
 ## Current Status
 
 - Backend stable and policy-hardened through **v0.9**
-- Curator UI completed and frozen in v0.7
+- **Curator UI redesigned and completed in v1.0**
 - v0.8 focused on robustness and cache safety
 - v0.9 consolidated validation, repair, and reporting behavior
 - Policy layer explicitly documented (`docs/policies/`)
