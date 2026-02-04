@@ -45,6 +45,8 @@ def _launch_streamlit(input_dir: str) -> None:
         "streamlit",
         "run",
         os.fspath(script_path),
+        "--client.toolbarMode",
+        "minimal",
         "--",
         "--input-dir",
         input_dir,
