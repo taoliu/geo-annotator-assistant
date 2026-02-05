@@ -1525,27 +1525,48 @@ def _append_aggrid_meta_columns(
 
 
 def _extract_aggrid_selected_rows(grid_response: dict | None) -> list[int]:
-    if not isinstance(grid_response, dict):
+    if grid_response is None:
         return []
-    selected = grid_response.get("selected_rows")
-    if not isinstance(selected, list):
-        return []
+
+    selected_rows = None
+    if hasattr(grid_response, "selected_rows"):
+        selected_rows = grid_response.selected_rows
+    elif isinstance(grid_response, Mapping):
+        selected_rows = (
+            grid_response.get("selected_rows")
+            or grid_response.get("selectedRows")
+            or grid_response.get("selected_data")
+        )
+
     indices: list[int] = []
-    for row in selected:
-        if not isinstance(row, dict):
-            continue
-        raw_index = row.get(AGGRID_ROW_INDEX_COLUMN)
-        if isinstance(raw_index, int):
-            indices.append(raw_index)
-            continue
-        if isinstance(raw_index, str) and raw_index.isdigit():
-            indices.append(int(raw_index))
-            continue
-        node_info = row.get("_selectedRowNodeInfo")
-        if isinstance(node_info, dict):
-            node_index = node_info.get("nodeRowIndex")
-            if isinstance(node_index, int):
-                indices.append(node_index)
+    if isinstance(selected_rows, pd.DataFrame):
+        if AGGRID_ROW_INDEX_COLUMN in selected_rows.columns:
+            raw_values = selected_rows[AGGRID_ROW_INDEX_COLUMN].tolist()
+            for value in raw_values:
+                if isinstance(value, int):
+                    indices.append(value)
+                elif isinstance(value, str) and value.isdigit():
+                    indices.append(int(value))
+        else:
+            indices.extend([int(idx) for idx in selected_rows.index if isinstance(idx, int)])
+        return indices
+
+    if isinstance(selected_rows, list):
+        for row in selected_rows:
+            if not isinstance(row, dict):
+                continue
+            raw_index = row.get(AGGRID_ROW_INDEX_COLUMN)
+            if isinstance(raw_index, int):
+                indices.append(raw_index)
+                continue
+            if isinstance(raw_index, str) and raw_index.isdigit():
+                indices.append(int(raw_index))
+                continue
+            node_info = row.get("_selectedRowNodeInfo")
+            if isinstance(node_info, dict):
+                node_index = node_info.get("nodeRowIndex")
+                if isinstance(node_index, int):
+                    indices.append(node_index)
     return indices
 
 
@@ -1553,13 +1574,21 @@ def _extract_aggrid_data(
     grid_response: dict | None,
     fallback: pd.DataFrame,
 ) -> pd.DataFrame:
-    if not isinstance(grid_response, dict):
+    if grid_response is None:
         return fallback
-    data = grid_response.get("data")
-    if isinstance(data, pd.DataFrame):
-        return data
-    if isinstance(data, list):
-        return pd.DataFrame(data)
+    if hasattr(grid_response, "data"):
+        data = grid_response.data
+        if isinstance(data, pd.DataFrame):
+            return data
+        if isinstance(data, list):
+            return pd.DataFrame(data)
+        return fallback
+    if isinstance(grid_response, Mapping):
+        data = grid_response.get("data")
+        if isinstance(data, pd.DataFrame):
+            return data
+        if isinstance(data, list):
+            return pd.DataFrame(data)
     return fallback
 
 
@@ -1639,7 +1668,12 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
     for field in CANONICAL_FIELDS:
         cell_rules = {}
         if field in AGGRID_FLAG_FIELDS:
-            cell_rules["ag-cell-flagged"] = f"data.__flag_{field} === true"
+            cell_rules["ag-cell-flagged"] = (
+                f"data.__flag_{field} === true || "
+                f"data.__flag_{field} === 'true' || "
+                f"data.__flag_{field} === 'True' || "
+                f"data.__flag_{field} === 1"
+            )
         gb.configure_column(
             field,
             editable=edit_mode,
