@@ -10,6 +10,7 @@ import inspect
 import io
 import os
 from collections import Counter
+from datetime import datetime, timezone
 from collections.abc import Mapping
 from pathlib import Path
 from urllib.parse import quote
@@ -97,6 +98,7 @@ from ui.override_safety import (
 st.set_page_config(layout="wide")
 
 STATUS_COLUMN = "Status"
+CHECKED_COLUMN = "checked"
 GEO_ACCESSION_URL = "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc="
 RAW_ACCESSION_COLUMNS = (GSE_ACCESSION_RAW_COLUMN, GSM_ACCESSION_RAW_COLUMN)
 AGGRID_ROW_INDEX_COLUMN = "__row_index"
@@ -503,7 +505,13 @@ def _decision_icon(final_decision: str) -> str:
 
 
 def _reorder_table_columns(df: pd.DataFrame) -> pd.DataFrame:
-    preferred = [STATUS_COLUMN, "gse_accession", "gsm_accession", *CANONICAL_FIELDS]
+    preferred = [
+        STATUS_COLUMN,
+        CHECKED_COLUMN,
+        "gse_accession",
+        "gsm_accession",
+        *CANONICAL_FIELDS,
+    ]
     ordered = [column for column in preferred if column in df.columns]
     remainder = [column for column in df.columns if column not in ordered]
     return df[ordered + remainder]
@@ -1806,12 +1814,21 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
 
     gb.configure_column(
         STATUS_COLUMN,
+        header_name="",
         cellClass="ag-status-cell",
         cellClassRules={
             "ag-status-flagged": f"value === '🚩'",
             "ag-status-accept": f"value === '✅'",
         },
         width=70,
+    )
+    gb.configure_column(
+        CHECKED_COLUMN,
+        header_name=CHECKED_COLUMN,
+        editable=True,
+        cellRenderer="agCheckboxCellRenderer",
+        cellEditor="agCheckboxCellEditor",
+        width=80,
     )
     gb.configure_column(
         "Review flags",
@@ -1898,9 +1915,7 @@ def _render_aggrid_table(
     key: str,
 ) -> dict:
     grid_options = _build_aggrid_options(df, edit_mode=edit_mode)
-    update_mode = GridUpdateMode.SELECTION_CHANGED
-    if edit_mode:
-        update_mode = GridUpdateMode.SELECTION_CHANGED | GridUpdateMode.VALUE_CHANGED
+    update_mode = GridUpdateMode.SELECTION_CHANGED | GridUpdateMode.VALUE_CHANGED
     return AgGrid(
         df,
         gridOptions=grid_options,
@@ -2140,6 +2155,7 @@ def _build_editable_df(
     review_counts: dict[tuple[str, str], int],
     terminal_fallback_counts: dict[tuple[str, str], int],
     outlier_categories_by_gsm: dict[tuple[str, str], list[str]],
+    checked_state: dict[tuple[str, str], bool],
 ) -> pd.DataFrame:
     df_editable = df_base.copy()
     for (gse, gsm, field), value in overrides.items():
@@ -2189,6 +2205,12 @@ def _build_editable_df(
     df_editable["Primary failure"] = primary_values
     df_editable["Flag summary"] = summary_values
 
+    checked_values = []
+    for row in df_base.to_dict("records"):
+        key = (row["gse_accession"], row["gsm_accession"])
+        checked_values.append(bool(checked_state.get(key, False)))
+    df_editable[CHECKED_COLUMN] = checked_values
+
     flagged_values = []
     for row in df_base.to_dict("records"):
         key = (row["gse_accession"], row["gsm_accession"])
@@ -2218,6 +2240,124 @@ def _merge_overrides(
 
 def _overrides_path(active_paths: InputPaths) -> Path:
     return active_paths.input_dir / "overrides.jsonl"
+
+
+def _checked_path(active_paths: InputPaths) -> Path:
+    return active_paths.input_dir / "checked.jsonl"
+
+
+def _load_checked_jsonl(path: Path, gse_accession: str) -> dict[tuple[str, str], bool]:
+    if not path.exists():
+        return {}
+    checked: dict[tuple[str, str], bool] = {}
+    with path.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                record = json.loads(stripped)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(record, dict):
+                continue
+            gse = record.get("gse_accession")
+            gsm = record.get("gsm_accession")
+            if not isinstance(gse, str) or not isinstance(gsm, str):
+                continue
+            if gse != gse_accession:
+                continue
+            checked_value = record.get("checked")
+            if not isinstance(checked_value, bool):
+                continue
+            checked[(gse, gsm)] = checked_value
+    return checked
+
+
+def _ensure_checked_state(
+    gse_accession: str,
+    active_paths: InputPaths,
+) -> tuple[dict, bool]:
+    checked_by_gse = st.session_state.get("checked_by_gse", {})
+    if not isinstance(checked_by_gse, dict):
+        checked_by_gse = {}
+
+    path = _checked_path(active_paths)
+    checked_present = path.is_file()
+    if gse_accession not in checked_by_gse:
+        if checked_present:
+            checked_by_gse[gse_accession] = _load_checked_jsonl(
+                path, gse_accession
+            )
+        else:
+            checked_by_gse[gse_accession] = {}
+
+    st.session_state["checked_by_gse"] = checked_by_gse
+    return checked_by_gse, checked_present
+
+
+def _normalize_checked_value(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "yes", "1"}:
+            return True
+        if normalized in {"false", "no", "0", ""}:
+            return False
+    return False
+
+
+def _extract_checked_updates(df: pd.DataFrame) -> dict[tuple[str, str], bool]:
+    updates: dict[tuple[str, str], bool] = {}
+    for row in df.to_dict("records"):
+        gse = row.get("gse_accession")
+        gsm = row.get("gsm_accession")
+        if not isinstance(gse, str) or not isinstance(gsm, str):
+            continue
+        updates[(gse, gsm)] = _normalize_checked_value(row.get(CHECKED_COLUMN))
+    return updates
+
+
+def _merge_checked(
+    existing: dict[tuple[str, str], bool],
+    updates: dict[tuple[str, str], bool],
+    visible_keys: set[tuple[str, str]],
+) -> dict[tuple[str, str], bool]:
+    merged = {
+        key: value for key, value in existing.items() if key not in visible_keys
+    }
+    merged.update(updates)
+    return merged
+
+
+def _persist_checked_updates(
+    active_paths: InputPaths,
+    gse_accession: str,
+    updates: dict[tuple[str, str], bool],
+) -> None:
+    if not updates:
+        return
+    path = _checked_path(active_paths)
+    timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    lines: list[str] = []
+    for (gse, gsm), checked in updates.items():
+        if gse != gse_accession:
+            continue
+        record = {
+            "gse_accession": gse,
+            "gsm_accession": gsm,
+            "checked": checked,
+            "updated_at": timestamp,
+        }
+        lines.append(json.dumps(record))
+    if not lines:
+        return
+    with path.open("a", encoding="utf-8") as handle:
+        for line in lines:
+            handle.write(line + "\n")
 
 
 def _ensure_saved_overrides(
@@ -2494,8 +2634,10 @@ def run_app() -> None:
         gse_id,
         active_paths,
     )
+    checked_by_gse, checked_present = _ensure_checked_state(gse_id, active_paths)
     overrides = overrides_by_gse.get(gse_id, {})
     saved_overrides = saved_by_gse.get(gse_id, {})
+    checked_state = checked_by_gse.get(gse_id, {})
     active_row_idx = st.session_state.get("active_row_idx")
     if not isinstance(active_row_idx, int):
         active_row_idx = None
@@ -2609,6 +2751,7 @@ def run_app() -> None:
             review_counts,
             terminal_fallback_counts,
             outlier_categories_by_gsm,
+            checked_state,
         )
         df_editable = _append_aggrid_meta_columns(
             df_editable,
@@ -2632,6 +2775,18 @@ def run_app() -> None:
         overrides = _merge_overrides(overrides, overrides_visible, visible_keys)
         overrides_by_gse[gse_id] = overrides
         st.session_state["overrides_by_gse"] = overrides_by_gse
+        checked_updates = _extract_checked_updates(df_edited)
+        merged_checked = _merge_checked(checked_state, checked_updates, visible_keys)
+        checked_changes = {
+            key: value
+            for key, value in merged_checked.items()
+            if checked_state.get(key) != value
+        }
+        if checked_changes:
+            _persist_checked_updates(active_paths, gse_id, checked_changes)
+            checked_state = merged_checked
+            checked_by_gse[gse_id] = checked_state
+            st.session_state["checked_by_gse"] = checked_by_gse
         _render_unsaved_indicator(indicator, overrides)
     else:
         _render_unsaved_indicator(indicator, overrides)
@@ -2673,6 +2828,11 @@ def run_app() -> None:
             df["Outliers"] = outlier_values
             df["Primary failure"] = primary_values
             df["Flag summary"] = summary_values
+            checked_values = []
+            for row in filtered_rows:
+                key = (row["gse_accession"], row["gsm_accession"])
+                checked_values.append(bool(checked_state.get(key, False)))
+            df[CHECKED_COLUMN] = checked_values
             flagged_values = []
             for row in filtered_rows:
                 key = (row["gse_accession"], row["gsm_accession"])
@@ -2695,6 +2855,22 @@ def run_app() -> None:
                 key="curation_table_view",
             )
             selected_rows = _extract_aggrid_selected_rows(grid_response)
+            df_edited = _extract_aggrid_data(grid_response, df)
+            checked_updates = _extract_checked_updates(df_edited)
+            visible_keys = {
+                (row["gse_accession"], row["gsm_accession"]) for row in filtered_rows
+            }
+            merged_checked = _merge_checked(checked_state, checked_updates, visible_keys)
+            checked_changes = {
+                key: value
+                for key, value in merged_checked.items()
+                if checked_state.get(key) != value
+            }
+            if checked_changes:
+                _persist_checked_updates(active_paths, gse_id, checked_changes)
+                checked_state = merged_checked
+                checked_by_gse[gse_id] = checked_state
+                st.session_state["checked_by_gse"] = checked_by_gse
 
     if selected_rows:
         row_idx = selected_rows[0]
