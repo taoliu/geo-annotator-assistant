@@ -164,6 +164,22 @@ def _inject_layout_styles() -> None:
           color: #6b5f4b;
           margin: 0;
         }
+        .gse-biology-heading {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+        .gse-biology-meta {
+          font-size: 0.72rem;
+          color: #7b6e5b;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+        }
+        .gse-biology-note {
+          font-size: 0.72rem;
+          color: #8a6b5b;
+          letter-spacing: 0.02em;
+        }
         .gse-biology-header {
           display: flex;
           align-items: center;
@@ -1387,6 +1403,16 @@ def _render_gse_field_value(value: object) -> str:
     return rendered or "—"
 
 
+def _has_biology_session_edits(overrides: dict) -> bool:
+    for key in overrides:
+        if not isinstance(key, tuple) or len(key) < 3:
+            continue
+        field = key[2]
+        if field in _GSE_BIOLOGY_FIELDS:
+            return True
+    return False
+
+
 def _build_gse_biology_csv(gse_accession: str, fields: dict) -> str:
     output = io.StringIO()
     writer = csv.writer(output, lineterminator="\n")
@@ -1417,7 +1443,10 @@ def _build_final_annotations_csv(rows: list[dict[str, object]]) -> str:
     return output.getvalue()
 
 
-def _render_gse_field_values_summary(gse_field_values: dict | None) -> None:
+def _render_gse_field_values_summary(
+    gse_field_values: dict | None,
+    has_session_edits: bool,
+) -> None:
     if not isinstance(gse_field_values, dict):
         return
     fields = gse_field_values.get("fields")
@@ -1451,11 +1480,24 @@ def _render_gse_field_values_summary(gse_field_values: dict | None) -> None:
             f"<div class=\"value\">{html.escape(rendered)}</div>"
             "</div>"
         )
+    session_note = ""
+    if has_session_edits:
+        session_note = (
+            "<div class=\"gse-biology-note\">"
+            "Session edits present in biology fields."
+            "</div>"
+        )
     html_block = (
         "<div class=\"gse-biology-card\">"
         "<div class=\"gse-biology-header\">"
+        "<div class=\"gse-biology-heading\">"
         "<div class=\"gse-biology-title\">"
         "GSE-wide biology (not affected by filters)"
+        "</div>"
+        "<div class=\"gse-biology-meta\">"
+        "Backend-derived summary (ignores session edits)"
+        "</div>"
+        + session_note +
         "</div>"
         "<a class=\"gse-biology-export\" "
         f"download=\"{html.escape(download_name, quote=True)}\" "
@@ -1865,7 +1907,8 @@ def run_app() -> None:
     outlier_count = sum(
         1 for categories in outlier_categories_by_gsm.values() if categories
     )
-    _render_gse_field_values_summary(gse_field_values)
+    has_biology_edits = _has_biology_session_edits(overrides)
+    _render_gse_field_values_summary(gse_field_values, has_biology_edits)
     _render_gse_metrics(
         total=len(rows),
         flagged=flagged_count,
