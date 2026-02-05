@@ -1433,8 +1433,8 @@ def _extract_ontology_alternates_by_field(
 def _append_aggrid_meta_columns(
     df: pd.DataFrame,
     curation_lookup: dict[tuple[str, str], dict],
+    evidence_lookup: dict[tuple[str, str], dict],
     audit_lookup: dict[tuple[str, str], dict],
-    flags_by_gsm: dict[tuple[str, str], dict[str, list[str]]],
     flag_summaries: dict[tuple[str, str], dict[str, object]],
     primary_failures: dict[tuple[str, str], str],
 ) -> pd.DataFrame:
@@ -1445,7 +1445,12 @@ def _append_aggrid_meta_columns(
     row_has_flags: list[bool] = []
     primary_colors: list[str] = []
     summary_colors: list[str] = []
-    flag_columns: dict[str, list[bool]] = {field: [] for field in CANONICAL_FIELDS}
+    evidence_flag_columns: dict[str, list[list[str]]] = {
+        field: [] for field in AGGRID_FLAG_FIELDS
+    }
+    evidence_flagged_columns: dict[str, list[bool]] = {
+        field: [] for field in AGGRID_FLAG_FIELDS
+    }
 
     backend_columns: dict[str, list[str]] = {
         field: [] for field in AGGRID_TOOLTIP_FIELDS
@@ -1461,24 +1466,30 @@ def _append_aggrid_meta_columns(
         gsm = row.get("gsm_accession")
         key = (gse, gsm) if isinstance(gse, str) and isinstance(gsm, str) else None
 
-        flagged_set: set[str] = set()
-        flagged_fields = flags_by_gsm.get(key, {}) if key else {}
-        flagged_set.update(field for field in flagged_fields if isinstance(field, str))
+        evidence = evidence_lookup.get(key) if key else None
+        evidence_raw = evidence.get("raw") if isinstance(evidence, dict) else None
+        evidence_by_field = (
+            evidence_raw.get("evidence_by_field")
+            if isinstance(evidence_raw, dict)
+            else None
+        )
 
-        flagged_from_row = row.get("flagged_fields")
-        if isinstance(flagged_from_row, str):
-            for item in flagged_from_row.split(","):
-                item = item.strip()
-                if item:
-                    flagged_set.add(item)
-        elif isinstance(flagged_from_row, (list, tuple, set)):
-            for item in flagged_from_row:
-                if isinstance(item, str) and item:
-                    flagged_set.add(item)
+        row_flagged = False
+        for field in AGGRID_FLAG_FIELDS:
+            flags: list[str] = []
+            if isinstance(evidence_by_field, dict):
+                field_evidence = evidence_by_field.get(field)
+                if isinstance(field_evidence, dict):
+                    raw_flags = field_evidence.get("flags")
+                    if isinstance(raw_flags, list):
+                        flags = [str(flag) for flag in raw_flags if isinstance(flag, str) and flag]
+            evidence_flag_columns[field].append(flags)
+            flagged = bool(flags)
+            evidence_flagged_columns[field].append(flagged)
+            if flagged:
+                row_flagged = True
 
-        row_has_flags.append(bool(flagged_set))
-        for field in CANONICAL_FIELDS:
-            flag_columns[field].append(field in flagged_set)
+        row_has_flags.append(row_flagged)
 
         primary_failure = primary_failures.get(key, "") if key else ""
         if primary_failure:
@@ -1528,8 +1539,10 @@ def _append_aggrid_meta_columns(
     updated[AGGRID_ROW_HAS_FLAGS_COLUMN] = row_has_flags
     updated[AGGRID_PRIMARY_FAILURE_COLOR_COLUMN] = primary_colors
     updated[AGGRID_FLAG_SUMMARY_COLOR_COLUMN] = summary_colors
-    for field, values in flag_columns.items():
-        updated[f"__flag_{field}"] = values
+    for field, values in evidence_flag_columns.items():
+        updated[f"evidence_flags_{field}"] = values
+    for field, values in evidence_flagged_columns.items():
+        updated[f"__evidence_flagged_{field}"] = values
     for field in AGGRID_TOOLTIP_FIELDS:
         updated[f"__backend_{field}"] = backend_columns[field]
         updated[f"__llm_{field}"] = llm_columns[field]
@@ -1681,18 +1694,32 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
 
     for field in CANONICAL_FIELDS:
         cell_rules = {}
+        column_props: dict[str, object] = {}
         if field in AGGRID_FLAG_FIELDS:
-            cell_rules["ag-cell-flagged"] = (
-                f"data.__flag_{field} === true || "
-                f"data.__flag_{field} === 'true' || "
-                f"data.__flag_{field} === 'True' || "
-                f"data.__flag_{field} === 1"
+            flag_style = JsCode(
+                f"""
+                function(params) {{
+                  const flagged = params.data.__evidence_flagged_{field};
+                  if (flagged === true || flagged === 1 || flagged === "true" || flagged === "True") {{
+                    return {{ backgroundColor: "#ffeaea" }};
+                  }}
+                  return {{}};
+                }}
+                """
             )
+            cell_rules["ag-cell-flagged"] = (
+                f"data.__evidence_flagged_{field} === true || "
+                f"data.__evidence_flagged_{field} === 'true' || "
+                f"data.__evidence_flagged_{field} === 'True' || "
+                f"data.__evidence_flagged_{field} === 1"
+            )
+            column_props["cellStyle"] = flag_style
         gb.configure_column(
             field,
             editable=edit_mode,
             tooltipValueGetter=_aggrid_tooltip_getter(field),
             cellClassRules=cell_rules,
+            **column_props,
         )
 
     gb.configure_column(
@@ -1749,7 +1776,10 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
         AGGRID_PRIMARY_FAILURE_COLOR_COLUMN,
         AGGRID_FLAG_SUMMARY_COLOR_COLUMN,
     ]
-    hidden_columns.extend([f"__flag_{field}" for field in CANONICAL_FIELDS])
+    hidden_columns.extend([f"evidence_flags_{field}" for field in AGGRID_FLAG_FIELDS])
+    hidden_columns.extend(
+        [f"__evidence_flagged_{field}" for field in AGGRID_FLAG_FIELDS]
+    )
     for field in AGGRID_TOOLTIP_FIELDS:
         hidden_columns.append(f"__backend_{field}")
         hidden_columns.append(f"__llm_{field}")
@@ -2479,8 +2509,8 @@ def run_app() -> None:
         df_editable = _append_aggrid_meta_columns(
             df_editable,
             curation_lookup,
+            evidence_lookup,
             audit_lookup,
-            flags_by_gsm,
             flag_summaries,
             primary_failures,
         )
@@ -2551,8 +2581,8 @@ def run_app() -> None:
             df = _append_aggrid_meta_columns(
                 df,
                 curation_lookup,
+                evidence_lookup,
                 audit_lookup,
-                flags_by_gsm,
                 flag_summaries,
                 primary_failures,
             )
