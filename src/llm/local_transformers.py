@@ -77,17 +77,21 @@ class LocalTransformersClient:
     def _resolve_device(self, device: Optional[str]) -> str:
         device = (device or "auto").lower()
         if device == "auto":
-            if self._torch.backends.mps.is_available():
+            mps_backend = getattr(self._torch, "mps", None)
+            cuda_backend = getattr(self._torch, "cuda", None)
+            if mps_backend is not None and mps_backend.is_available():
                 return "mps"
-            elif self._torch.backends.cuda.is_available():
+            if cuda_backend is not None and cuda_backend.is_available():
                 return "cuda"
             return "cpu"
         if device == "mps":
-            if not self._torch.backends.mps.is_available():
+            mps_backend = getattr(self._torch, "mps", None)
+            if mps_backend is None or not mps_backend.is_available():
                 raise RuntimeError("llm.device is mps but MPS is not available")
             return "mps"
         if device == "cuda":
-            if not self._torch.backends.cuda.is_available():
+            cuda_backend = getattr(self._torch, "cuda", None)
+            if cuda_backend is None or not cuda_backend.is_available():
                 raise RuntimeError("llm.device is cuda but CUDA is not available")
             return "cuda"
         if device == "cpu":
