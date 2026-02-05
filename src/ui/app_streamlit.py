@@ -291,9 +291,10 @@ def _inject_layout_styles() -> None:
         .ag-theme-streamlit .ag-cell.ag-status-cell {
           cursor: pointer;
         }
-        .ag-theme-streamlit .geo-link {
+        .ag-theme-streamlit .ag-cell.ag-geo-link {
           color: #1a73e8;
           text-decoration: underline;
+          cursor: pointer;
         }
         div[data-testid="stDataFrame"] thead tr th:first-child:has(input),
         div[data-testid="stDataFrame"] tbody tr td:first-child:has(input),
@@ -1588,20 +1589,6 @@ def _aggrid_tooltip_getter(field: str) -> JsCode:
     )
 
 
-def _aggrid_geo_link_renderer() -> JsCode:
-    return JsCode(
-        f"""
-        function(params) {{
-          if (!params.value) {{
-            return "";
-          }}
-          const value = params.value;
-          return '<a class="geo-link" href="{GEO_ACCESSION_URL}' + value + '" target="_blank" rel="noopener noreferrer">' + value + '</a>';
-        }}
-        """
-    )
-
-
 def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
     gb = GridOptionsBuilder.from_dataframe(df)
     gb.configure_default_column(
@@ -1627,21 +1614,25 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
               if (event.colDef && event.colDef.field === "{STATUS_COLUMN}") {{
                 event.api.deselectAll();
                 event.node.setSelected(true);
+                return;
+              }}
+              if (event.colDef && (event.colDef.field === "gse_accession" || event.colDef.field === "gsm_accession")) {{
+                if (event.value) {{
+                  window.open("{GEO_ACCESSION_URL}" + event.value, "_blank", "noopener,noreferrer");
+                }}
               }}
             }}
             """
         ),
     )
-
-    geo_renderer = _aggrid_geo_link_renderer()
     gb.configure_column(
         "gse_accession",
-        cellRenderer=geo_renderer,
+        cellClass="ag-geo-link",
         tooltipValueGetter=_aggrid_tooltip_getter("gse_accession"),
     )
     gb.configure_column(
         "gsm_accession",
-        cellRenderer=geo_renderer,
+        cellClass="ag-geo-link",
         tooltipValueGetter=_aggrid_tooltip_getter("gsm_accession"),
     )
 
