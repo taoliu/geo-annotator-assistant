@@ -1451,6 +1451,15 @@ def _append_aggrid_meta_columns(
     evidence_flagged_columns: dict[str, list[bool]] = {
         field: [] for field in AGGRID_FLAG_FIELDS
     }
+    evidence_attempts_columns: dict[str, list[int]] = {
+        field: [] for field in AGGRID_FLAG_FIELDS
+    }
+    evidence_status_columns: dict[str, list[str]] = {
+        field: [] for field in AGGRID_FLAG_FIELDS
+    }
+    evidence_terminal_columns: dict[str, list[bool]] = {
+        field: [] for field in AGGRID_FLAG_FIELDS
+    }
 
     backend_columns: dict[str, list[str]] = {
         field: [] for field in AGGRID_TOOLTIP_FIELDS
@@ -1477,15 +1486,30 @@ def _append_aggrid_meta_columns(
         row_flagged = False
         for field in AGGRID_FLAG_FIELDS:
             flags: list[str] = []
+            attempts = 0
+            status = ""
+            terminal = False
             if isinstance(evidence_by_field, dict):
                 field_evidence = evidence_by_field.get(field)
                 if isinstance(field_evidence, dict):
                     raw_flags = field_evidence.get("flags")
                     if isinstance(raw_flags, list):
                         flags = [str(flag) for flag in raw_flags if isinstance(flag, str) and flag]
+                    attempts_value = field_evidence.get("attempts", 0)
+                    try:
+                        attempts = int(attempts_value)
+                    except (TypeError, ValueError):
+                        attempts = 0
+                    status_value = field_evidence.get("ontology_status")
+                    if isinstance(status_value, str):
+                        status = status_value
+                    terminal = field_evidence.get("terminal_fallback") is True
             evidence_flag_columns[field].append(flags)
             flagged = bool(flags)
             evidence_flagged_columns[field].append(flagged)
+            evidence_attempts_columns[field].append(attempts)
+            evidence_status_columns[field].append(status)
+            evidence_terminal_columns[field].append(terminal)
             if flagged:
                 row_flagged = True
 
@@ -1543,6 +1567,12 @@ def _append_aggrid_meta_columns(
         updated[f"evidence_flags_{field}"] = values
     for field, values in evidence_flagged_columns.items():
         updated[f"__evidence_flagged_{field}"] = values
+    for field, values in evidence_attempts_columns.items():
+        updated[f"evidence_attempts_{field}"] = values
+    for field, values in evidence_status_columns.items():
+        updated[f"evidence_status_{field}"] = values
+    for field, values in evidence_terminal_columns.items():
+        updated[f"evidence_terminal_{field}"] = values
     for field in AGGRID_TOOLTIP_FIELDS:
         updated[f"__backend_{field}"] = backend_columns[field]
         updated[f"__llm_{field}"] = llm_columns[field]
@@ -1643,7 +1673,32 @@ def _extract_aggrid_data(
     return fallback
 
 
-def _aggrid_tooltip_getter(field: str) -> JsCode:
+def _aggrid_tooltip_getter(field: str, include_evidence: bool = False) -> JsCode:
+    evidence_block = ""
+    if include_evidence:
+        evidence_block = f"""
+          const attempts = params.data["evidence_attempts_{field}"];
+          const attemptsValue = (attempts === null || attempts === undefined) ? "" : String(attempts);
+          const status = params.data["evidence_status_{field}"] || "";
+          const terminal = params.data["evidence_terminal_{field}"];
+          const terminalValue = (terminal === true || terminal === "true" || terminal === "True" || terminal === 1) ? "true" : "false";
+          let flagsValue = "none";
+          const flags = params.data["evidence_flags_{field}"];
+          if (Array.isArray(flags)) {{
+            if (flags.length > 0) {{
+              flagsValue = flags.join(", ");
+            }}
+          }} else if (typeof flags === "string") {{
+            const trimmed = flags.trim();
+            if (trimmed && trimmed !== "[]") {{
+              flagsValue = trimmed;
+            }}
+          }}
+          lines.push("Attempts: " + attemptsValue);
+          lines.push("Ontology status: " + status);
+          lines.push("Terminal fallback: " + terminalValue);
+          lines.push("Evidence flags: " + flagsValue);
+        """
     return JsCode(
         f"""
         function(params) {{
@@ -1663,6 +1718,7 @@ def _aggrid_tooltip_getter(field: str) -> JsCode:
           if (ontology) {{
             lines.push("Ontology alternates: " + ontology);
           }}
+          {evidence_block}
           return lines.join("\\n");
         }}
         """
@@ -1741,7 +1797,9 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
         gb.configure_column(
             field,
             editable=edit_mode,
-            tooltipValueGetter=_aggrid_tooltip_getter(field),
+            tooltipValueGetter=_aggrid_tooltip_getter(
+                field, include_evidence=field in AGGRID_FLAG_FIELDS
+            ),
             cellClassRules=cell_rules,
             **column_props,
         )
@@ -1803,6 +1861,25 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
     hidden_columns.extend([f"evidence_flags_{field}" for field in AGGRID_FLAG_FIELDS])
     hidden_columns.extend(
         [f"__evidence_flagged_{field}" for field in AGGRID_FLAG_FIELDS]
+    )
+    hidden_columns.extend(
+        [f"evidence_attempts_{field}" for field in AGGRID_FLAG_FIELDS]
+    )
+    hidden_columns.extend(
+        [f"evidence_status_{field}" for field in AGGRID_FLAG_FIELDS]
+    )
+    hidden_columns.extend(
+        [f"evidence_terminal_{field}" for field in AGGRID_FLAG_FIELDS]
+    )
+    hidden_columns.extend(
+        [
+            "Review flags",
+            "Terminal fallbacks",
+            "Outliers",
+            "Primary failure",
+            "Flag summary",
+            "flagged_fields",
+        ]
     )
     for field in AGGRID_TOOLTIP_FIELDS:
         hidden_columns.append(f"__backend_{field}")
