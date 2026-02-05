@@ -79,11 +79,17 @@ class LocalTransformersClient:
         if device == "auto":
             if self._torch.backends.mps.is_available():
                 return "mps"
+            elif self._torch.backends.cuda.is_available():
+                return "cuda"
             return "cpu"
         if device == "mps":
             if not self._torch.backends.mps.is_available():
                 raise RuntimeError("llm.device is mps but MPS is not available")
             return "mps"
+        if device == "cuda":
+            if not self._torch.backends.cuda.is_available():
+                raise RuntimeError("llm.device is cuda but CUDA is not available")
+            return "cuda"
         if device == "cpu":
             return "cpu"
         raise ValueError(f"Unsupported device: {device}")
