@@ -20,6 +20,7 @@ dependencies = [
   "tqdm",
   "requests",
   "streamlit",
+  "streamlit-aggrid",
   "pandas",
   "torch>=2.5",
   "transformers",

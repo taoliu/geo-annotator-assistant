@@ -10,14 +10,17 @@ import inspect
 import io
 import os
 from collections import Counter
+from collections.abc import Mapping
 from pathlib import Path
 from urllib.parse import quote
 
 import pandas as pd
 import streamlit as st
+from st_aggrid import AgGrid, DataReturnMode, GridOptionsBuilder, GridUpdateMode, JsCode
 
 from ui.flags import (
     FLAG_CATEGORY_BADGES,
+    FLAG_CATEGORY_COLORS,
     FLAG_CATEGORY_LABELS,
     FLAG_CATEGORY_ORDER,
     FLAG_CATEGORY_REVIEW,
@@ -79,7 +82,6 @@ from ui.state import (
     index_suggestion_records,
     resolve_selected_key,
 )
-from ui.styling import style_curation_table
 from ui.triage import (
     TRIAGE_FILTERS,
     apply_triage_filter,
@@ -97,6 +99,12 @@ st.set_page_config(layout="wide")
 STATUS_COLUMN = "Status"
 GEO_ACCESSION_URL = "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc="
 RAW_ACCESSION_COLUMNS = (GSE_ACCESSION_RAW_COLUMN, GSM_ACCESSION_RAW_COLUMN)
+AGGRID_ROW_INDEX_COLUMN = "__row_index"
+AGGRID_ROW_HAS_FLAGS_COLUMN = "__row_has_flags"
+AGGRID_PRIMARY_FAILURE_COLOR_COLUMN = "__primary_failure_color"
+AGGRID_FLAG_SUMMARY_COLOR_COLUMN = "__flag_summary_color"
+AGGRID_TOOLTIP_FIELDS = ("gse_accession", "gsm_accession", *CANONICAL_FIELDS)
+AGGRID_FLAG_FIELDS = ("data_type", "organism", "tissue_type", "cell_line", "disease")
 
 
 def _inject_layout_styles() -> None:
@@ -251,6 +259,41 @@ def _inject_layout_styles() -> None:
           font-size: 0.95rem;
           font-weight: 600;
           color: #2b2b2b;
+        }
+        .ag-theme-streamlit .ag-row.ag-row-has-flags .ag-cell {
+          background-color: #f7f7f7;
+        }
+        .ag-theme-streamlit .ag-row.ag-row-selected .ag-cell {
+          background-color: #e8f4ff !important;
+        }
+        .ag-theme-streamlit .ag-cell.ag-cell-flagged {
+          background-color: #ffeaea !important;
+        }
+        .ag-theme-streamlit .ag-cell.ag-status-flagged {
+          background-color: #fde2e2 !important;
+          font-weight: 600;
+          text-align: center;
+        }
+        .ag-theme-streamlit .ag-cell.ag-status-accept {
+          background-color: #e9f7ef !important;
+          font-weight: 600;
+          text-align: center;
+        }
+        .ag-theme-streamlit .ag-cell.ag-review-bg {
+          background-color: #fff4e5 !important;
+        }
+        .ag-theme-streamlit .ag-cell.ag-terminal-bg {
+          background-color: #fde2e2 !important;
+        }
+        .ag-theme-streamlit .ag-cell.ag-outlier-bg {
+          background-color: #fff4e5 !important;
+        }
+        .ag-theme-streamlit .ag-cell.ag-status-cell {
+          cursor: pointer;
+        }
+        .ag-theme-streamlit .geo-link {
+          color: #1a73e8;
+          text-decoration: underline;
         }
         div[data-testid="stDataFrame"] thead tr th:first-child:has(input),
         div[data-testid="stDataFrame"] tbody tr td:first-child:has(input),
@@ -1307,6 +1350,399 @@ def _format_override_display(value: object) -> str:
     return str(value)
 
 
+def _tooltip_safe_value(value: object) -> str:
+    formatted = _format_override_display(value)
+    if formatted:
+        return formatted
+    return "(not available)"
+
+
+def _format_confidence(value: object) -> str | None:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    return f"{numeric:.2f}"
+
+
+def _format_ontology_alternate_entry(entry: Mapping[str, object]) -> str | None:
+    label = entry.get("label") or entry.get("matched_label")
+    term_id = entry.get("term_id") or entry.get("matched_term_id")
+    source = entry.get("source") or entry.get("matched_source")
+    confidence = entry.get("confidence") or entry.get("score")
+    confidence_str = _format_confidence(confidence)
+    parts: list[str] = []
+    if term_id:
+        parts.append(str(term_id))
+    if source:
+        parts.append(str(source))
+    if confidence_str:
+        parts.append(f"conf={confidence_str}")
+    suffix = f" ({', '.join(parts)})" if parts else ""
+    if label:
+        return f"{label}{suffix}"
+    if parts:
+        return ", ".join(parts)
+    return None
+
+
+def _format_ontology_alternates(alternates: object, limit: int = 3) -> str | None:
+    if not isinstance(alternates, list) or not alternates:
+        return None
+    formatted: list[str] = []
+    for entry in alternates:
+        if not isinstance(entry, Mapping):
+            continue
+        rendered = _format_ontology_alternate_entry(entry)
+        if rendered:
+            formatted.append(rendered)
+        if len(formatted) >= limit:
+            break
+    if not formatted:
+        return None
+    extra = max(0, len(alternates) - len(formatted))
+    if extra:
+        formatted.append(f"+{extra} more")
+    return "; ".join(formatted)
+
+
+def _extract_ontology_alternates_by_field(
+    audit_raw: Mapping[str, object] | None,
+) -> dict[str, str]:
+    if not isinstance(audit_raw, Mapping):
+        return {}
+    validation = audit_raw.get("validation")
+    if not isinstance(validation, Mapping):
+        return {}
+    matches = validation.get("ontology_matches")
+    if not isinstance(matches, Mapping):
+        return {}
+    alternates_by_field: dict[str, str] = {}
+    for field, match in matches.items():
+        if not isinstance(field, str) or field not in CANONICAL_FIELDS:
+            continue
+        if not isinstance(match, Mapping):
+            continue
+        formatted = _format_ontology_alternates(match.get("alternates"))
+        if formatted:
+            alternates_by_field[field] = formatted
+    return alternates_by_field
+
+
+def _append_aggrid_meta_columns(
+    df: pd.DataFrame,
+    curation_lookup: dict[tuple[str, str], dict],
+    audit_lookup: dict[tuple[str, str], dict],
+    flags_by_gsm: dict[tuple[str, str], dict[str, list[str]]],
+    flag_summaries: dict[tuple[str, str], dict[str, object]],
+    primary_failures: dict[tuple[str, str], str],
+) -> pd.DataFrame:
+    updated = df.copy()
+    records = updated.to_dict("records")
+
+    row_indices: list[int] = []
+    row_has_flags: list[bool] = []
+    primary_colors: list[str] = []
+    summary_colors: list[str] = []
+    flag_columns: dict[str, list[bool]] = {field: [] for field in CANONICAL_FIELDS}
+
+    backend_columns: dict[str, list[str]] = {
+        field: [] for field in AGGRID_TOOLTIP_FIELDS
+    }
+    llm_columns: dict[str, list[str]] = {field: [] for field in AGGRID_TOOLTIP_FIELDS}
+    ontology_columns: dict[str, list[str]] = {
+        field: [] for field in AGGRID_TOOLTIP_FIELDS
+    }
+
+    for idx, row in enumerate(records):
+        row_indices.append(idx)
+        gse = row.get("gse_accession")
+        gsm = row.get("gsm_accession")
+        key = (gse, gsm) if isinstance(gse, str) and isinstance(gsm, str) else None
+
+        flagged_fields = flags_by_gsm.get(key, {}) if key else {}
+        row_has_flags.append(bool(flagged_fields))
+        for field in CANONICAL_FIELDS:
+            flag_columns[field].append(field in flagged_fields)
+
+        primary_failure = primary_failures.get(key, "") if key else ""
+        if primary_failure:
+            category = categorize_flag(primary_failure)
+            primary_colors.append(FLAG_CATEGORY_COLORS.get(category, ""))
+        else:
+            primary_colors.append("")
+
+        summary = flag_summaries.get(key) if key else None
+        highest = summary.get("highest") if isinstance(summary, dict) else None
+        if isinstance(highest, str) and highest:
+            summary_colors.append(FLAG_CATEGORY_COLORS.get(highest, ""))
+        else:
+            summary_colors.append("")
+
+        curation = curation_lookup.get(key) if key else None
+        backend_fields = curation.get("fields", {}) if isinstance(curation, dict) else {}
+        backend_gse = None
+        backend_gsm = None
+        if isinstance(curation, dict):
+            backend_gse = curation.get("gse_accession")
+            backend_gsm = curation.get("gsm_accession")
+        if not backend_gse:
+            backend_gse = gse
+        if not backend_gsm:
+            backend_gsm = gsm
+
+        audit = audit_lookup.get(key) if key else None
+        audit_raw = audit.get("raw") if isinstance(audit, dict) else None
+        llm_originals = _extract_llm_originals(audit_raw if isinstance(audit_raw, dict) else None)
+        alternates_by_field = _extract_ontology_alternates_by_field(
+            audit_raw if isinstance(audit_raw, dict) else None
+        )
+
+        for field in AGGRID_TOOLTIP_FIELDS:
+            if field == "gse_accession":
+                backend_value = backend_gse
+            elif field == "gsm_accession":
+                backend_value = backend_gsm
+            else:
+                backend_value = backend_fields.get(field)
+            backend_columns[field].append(_tooltip_safe_value(backend_value))
+            llm_columns[field].append(llm_originals.get(field, ""))
+            ontology_columns[field].append(alternates_by_field.get(field, ""))
+
+    updated[AGGRID_ROW_INDEX_COLUMN] = row_indices
+    updated[AGGRID_ROW_HAS_FLAGS_COLUMN] = row_has_flags
+    updated[AGGRID_PRIMARY_FAILURE_COLOR_COLUMN] = primary_colors
+    updated[AGGRID_FLAG_SUMMARY_COLOR_COLUMN] = summary_colors
+    for field, values in flag_columns.items():
+        updated[f"__flag_{field}"] = values
+    for field in AGGRID_TOOLTIP_FIELDS:
+        updated[f"__backend_{field}"] = backend_columns[field]
+        updated[f"__llm_{field}"] = llm_columns[field]
+        updated[f"__ontology_{field}"] = ontology_columns[field]
+
+    return updated
+
+
+def _extract_aggrid_selected_rows(grid_response: dict | None) -> list[int]:
+    if not isinstance(grid_response, dict):
+        return []
+    selected = grid_response.get("selected_rows")
+    if not isinstance(selected, list):
+        return []
+    indices: list[int] = []
+    for row in selected:
+        if not isinstance(row, dict):
+            continue
+        raw_index = row.get(AGGRID_ROW_INDEX_COLUMN)
+        if isinstance(raw_index, int):
+            indices.append(raw_index)
+            continue
+        if isinstance(raw_index, str) and raw_index.isdigit():
+            indices.append(int(raw_index))
+            continue
+        node_info = row.get("_selectedRowNodeInfo")
+        if isinstance(node_info, dict):
+            node_index = node_info.get("nodeRowIndex")
+            if isinstance(node_index, int):
+                indices.append(node_index)
+    return indices
+
+
+def _extract_aggrid_data(
+    grid_response: dict | None,
+    fallback: pd.DataFrame,
+) -> pd.DataFrame:
+    if not isinstance(grid_response, dict):
+        return fallback
+    data = grid_response.get("data")
+    if isinstance(data, pd.DataFrame):
+        return data
+    if isinstance(data, list):
+        return pd.DataFrame(data)
+    return fallback
+
+
+def _aggrid_tooltip_getter(field: str) -> JsCode:
+    return JsCode(
+        f"""
+        function(params) {{
+          const displayed = params.value;
+          const displayedValue = (displayed === null || displayed === undefined || displayed === "")
+            ? "(not available)"
+            : String(displayed);
+          const backend = params.data["__backend_{field}"] || "(not available)";
+          const llm = params.data["__llm_{field}"];
+          const ontology = params.data["__ontology_{field}"];
+          const lines = [];
+          lines.push("Displayed: " + displayedValue);
+          lines.push("Backend: " + backend);
+          if (llm) {{
+            lines.push("LLM original: " + llm);
+          }}
+          if (ontology) {{
+            lines.push("Ontology alternates: " + ontology);
+          }}
+          return lines.join("\\n");
+        }}
+        """
+    )
+
+
+def _aggrid_geo_link_renderer() -> JsCode:
+    return JsCode(
+        f"""
+        function(params) {{
+          if (!params.value) {{
+            return "";
+          }}
+          const value = params.value;
+          return '<a class="geo-link" href="{GEO_ACCESSION_URL}' + value + '" target="_blank" rel="noopener noreferrer">' + value + '</a>';
+        }}
+        """
+    )
+
+
+def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
+    gb = GridOptionsBuilder.from_dataframe(df)
+    gb.configure_default_column(
+        resizable=True,
+        sortable=True,
+        filter=False,
+        editable=False,
+    )
+    gb.configure_grid_options(
+        suppressRowClickSelection=True,
+        rowSelection="single",
+        enableBrowserTooltips=True,
+        tooltipShowDelay=0,
+        getRowId=JsCode(
+            f"function(params) {{ return params.data.{AGGRID_ROW_INDEX_COLUMN}; }}"
+        ),
+        rowClassRules={
+            "ag-row-has-flags": f"data.{AGGRID_ROW_HAS_FLAGS_COLUMN} === true"
+        },
+        onCellClicked=JsCode(
+            f"""
+            function(event) {{
+              if (event.colDef && event.colDef.field === "{STATUS_COLUMN}") {{
+                event.api.deselectAll();
+                event.node.setSelected(true);
+              }}
+            }}
+            """
+        ),
+    )
+
+    geo_renderer = _aggrid_geo_link_renderer()
+    gb.configure_column(
+        "gse_accession",
+        cellRenderer=geo_renderer,
+        tooltipValueGetter=_aggrid_tooltip_getter("gse_accession"),
+    )
+    gb.configure_column(
+        "gsm_accession",
+        cellRenderer=geo_renderer,
+        tooltipValueGetter=_aggrid_tooltip_getter("gsm_accession"),
+    )
+
+    for field in CANONICAL_FIELDS:
+        cell_rules = {}
+        if field in AGGRID_FLAG_FIELDS:
+            cell_rules["ag-cell-flagged"] = f"data.__flag_{field} === true"
+        gb.configure_column(
+            field,
+            editable=edit_mode,
+            tooltipValueGetter=_aggrid_tooltip_getter(field),
+            cellClassRules=cell_rules,
+        )
+
+    gb.configure_column(
+        STATUS_COLUMN,
+        cellClass="ag-status-cell",
+        cellClassRules={
+            "ag-status-flagged": f"value === '🚩'",
+            "ag-status-accept": f"value === '✅'",
+        },
+        width=70,
+    )
+    gb.configure_column(
+        "Review flags",
+        cellClassRules={"ag-review-bg": "value !== '' && value != null"},
+    )
+    gb.configure_column(
+        "Terminal fallbacks",
+        cellClassRules={"ag-terminal-bg": "value !== '' && value != null"},
+    )
+    gb.configure_column(
+        "Outliers",
+        cellClassRules={"ag-outlier-bg": "value !== '' && value != null"},
+    )
+
+    primary_style = JsCode(
+        f"""
+        function(params) {{
+          const color = params.data.{AGGRID_PRIMARY_FAILURE_COLOR_COLUMN};
+          if (!color) {{
+            return {{}};
+          }}
+          return {{ backgroundColor: color, fontWeight: "600" }};
+        }}
+        """
+    )
+    summary_style = JsCode(
+        f"""
+        function(params) {{
+          const color = params.data.{AGGRID_FLAG_SUMMARY_COLOR_COLUMN};
+          if (!color) {{
+            return {{}};
+          }}
+          return {{ backgroundColor: color, fontWeight: "600" }};
+        }}
+        """
+    )
+
+    gb.configure_column("Primary failure", cellStyle=primary_style)
+    gb.configure_column("Flag summary", cellStyle=summary_style)
+
+    hidden_columns = [
+        AGGRID_ROW_INDEX_COLUMN,
+        AGGRID_ROW_HAS_FLAGS_COLUMN,
+        AGGRID_PRIMARY_FAILURE_COLOR_COLUMN,
+        AGGRID_FLAG_SUMMARY_COLOR_COLUMN,
+    ]
+    hidden_columns.extend([f"__flag_{field}" for field in CANONICAL_FIELDS])
+    for field in AGGRID_TOOLTIP_FIELDS:
+        hidden_columns.append(f"__backend_{field}")
+        hidden_columns.append(f"__llm_{field}")
+        hidden_columns.append(f"__ontology_{field}")
+    for field in hidden_columns:
+        if field in df.columns:
+            gb.configure_column(field, hide=True)
+
+    return gb.build()
+
+
+def _render_aggrid_table(
+    df: pd.DataFrame,
+    edit_mode: bool,
+    key: str,
+) -> dict:
+    grid_options = _build_aggrid_options(df, edit_mode=edit_mode)
+    update_mode = GridUpdateMode.SELECTION_CHANGED
+    if edit_mode:
+        update_mode = GridUpdateMode.SELECTION_CHANGED | GridUpdateMode.VALUE_CHANGED
+    return AgGrid(
+        df,
+        gridOptions=grid_options,
+        update_mode=update_mode,
+        data_return_mode=DataReturnMode.AS_INPUT,
+        allow_unsafe_jscode=True,
+        fit_columns_on_grid_load=True,
+        theme="streamlit",
+        key=key,
+    )
+
+
 def _override_matches_backend(
     backend_value: object,
     override_value: object,
@@ -1587,7 +2023,6 @@ def _build_editable_df(
         flagged = flags_by_gsm.get((row["gse_accession"], row["gsm_accession"]), {})
         flagged_values.append(",".join(sorted(flagged)))
     df_editable["flagged_fields"] = flagged_values
-    df_editable = _with_geo_links(df_editable)
     return _reorder_table_columns(df_editable)
 
 
@@ -1970,8 +2405,6 @@ def run_app() -> None:
         st.stop()
     st.caption(table_guidance_text())
 
-    column_config = _table_column_config()
-
     selected_rows: list[int] = []
     if edit_mode:
         action_cols = st.columns(2)
@@ -2004,23 +2437,21 @@ def run_app() -> None:
             terminal_fallback_counts,
             outlier_categories_by_gsm,
         )
-        editor_kwargs = {
-            "disabled": _disabled_columns(df_editable),
-            "hide_index": True,
-            "key": "curation_table_edit",
-            "column_config": column_config,
-        }
-        column_order = _table_column_order(df_editable, st.data_editor)
-        if column_order is not None:
-            editor_kwargs["column_order"] = column_order
-        if _supports_table_selection(st.data_editor):
-            editor_kwargs.update(
-                {"on_select": "rerun", "selection_mode": "single-row"}
-            )
-        df_edited = st.data_editor(df_editable, **editor_kwargs)
-        selected_rows = _extract_selected_rows(
-            st.session_state.get("curation_table_edit")
+        df_editable = _append_aggrid_meta_columns(
+            df_editable,
+            curation_lookup,
+            audit_lookup,
+            flags_by_gsm,
+            flag_summaries,
+            primary_failures,
         )
+        grid_response = _render_aggrid_table(
+            df_editable,
+            edit_mode=True,
+            key="curation_table_edit",
+        )
+        selected_rows = _extract_aggrid_selected_rows(grid_response)
+        df_edited = _extract_aggrid_data(grid_response, df_editable)
         overrides_visible = compute_overrides(df_base, df_edited)
         visible_keys = {
             (row["gse_accession"], row["gsm_accession"]) for row in filtered_rows
@@ -2069,40 +2500,22 @@ def run_app() -> None:
             df["Outliers"] = outlier_values
             df["Primary failure"] = primary_values
             df["Flag summary"] = summary_values
-            df = _with_geo_links(df, include_raw=False)
             df = _reorder_table_columns(df)
-        styled = style_curation_table(
-            df,
-            flags_by_gsm,
-            active_row_idx=active_row_idx,
-            flag_summaries=flag_summaries,
-            primary_failures=primary_failures,
-            enable_tooltips=False,
-        )
-        selection_event = None
-        selection_supported = _supports_table_selection(st.dataframe)
-        table_data = styled
-        column_order = _table_column_order(df, st.dataframe)
-        table_kwargs = {
-            "width": "stretch",
-            "hide_index": True,
-            "column_config": column_config,
-            "key": "curation_table_view",
-        }
-        if column_order is not None:
-            table_kwargs["column_order"] = column_order
-        if selection_supported:
-            selection_event = st.dataframe(
-                table_data,
-                on_select="rerun",
-                selection_mode="single-row",
-                **table_kwargs,
+        if not df.empty:
+            df = _append_aggrid_meta_columns(
+                df,
+                curation_lookup,
+                audit_lookup,
+                flags_by_gsm,
+                flag_summaries,
+                primary_failures,
             )
-        else:
-            st.dataframe(table_data, **table_kwargs)
-        selected_rows = _extract_selected_rows(
-            selection_event or st.session_state.get("curation_table_view")
-        )
+            grid_response = _render_aggrid_table(
+                df,
+                edit_mode=False,
+                key="curation_table_view",
+            )
+            selected_rows = _extract_aggrid_selected_rows(grid_response)
 
     if selected_rows:
         row_idx = selected_rows[0]
