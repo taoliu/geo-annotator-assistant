@@ -1399,6 +1399,24 @@ def _build_gse_biology_csv(gse_accession: str, fields: dict) -> str:
     return output.getvalue()
 
 
+def _stringify_csv_value(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
+
+
+def _build_final_annotations_csv(rows: list[dict[str, object]]) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output, lineterminator="\n")
+    header = ["gse_accession", "gsm_accession", *CANONICAL_FIELDS]
+    writer.writerow(header)
+    for row in rows:
+        writer.writerow([_stringify_csv_value(row.get(col, "")) for col in header])
+    return output.getvalue()
+
+
 def _render_gse_field_values_summary(gse_field_values: dict | None) -> None:
     if not isinstance(gse_field_values, dict):
         return
@@ -1671,8 +1689,8 @@ def _render_export_final_annotations(
         "or ontology grounding."
     )
 
-    def _final_annotation_lines() -> list[str]:
-        lines: list[str] = []
+    def _final_annotation_rows() -> list[dict[str, object]]:
+        rows: list[dict[str, object]] = []
         for record in curation_records:
             gse = record["gse_accession"]
             gsm = record["gsm_accession"]
@@ -1690,23 +1708,38 @@ def _render_export_final_annotations(
                 "disease": effective_fields.get("disease", ""),
                 "treatment": effective_fields.get("treatment", ""),
             }
-            lines.append(json.dumps(output))
-        return lines
+            rows.append(output)
+        return rows
 
-    lines = _final_annotation_lines()
+    rows = _final_annotation_rows()
+    lines = [json.dumps(row) for row in rows]
     preview = "\n".join(lines)
+    gse_accession = "Unknown"
+    if curation_records:
+        candidate = curation_records[0].get("gse_accession")
+        if isinstance(candidate, str) and candidate:
+            gse_accession = candidate
+    csv_content = _build_final_annotations_csv(rows)
     st.text_area(
         "Preview (annotations.final.jsonl)",
         value=preview,
         height=200,
         disabled=True,
     )
-    st.download_button(
+    export_cols = st.columns(2)
+    export_cols[0].download_button(
         "Export final annotations",
         data=preview,
         file_name="annotations.final.jsonl",
         mime="application/jsonl",
-        disabled=not lines,
+        disabled=not rows,
+    )
+    export_cols[1].download_button(
+        "Export final annotations as CSV",
+        data=csv_content,
+        file_name=f"{gse_accession}_final_annotations.csv",
+        mime="text/csv",
+        disabled=not rows,
     )
 
 
