@@ -17,7 +17,8 @@
 │   │   ├── 2026-01-09_checkpoint.md
 │   │   ├── 2026-01-14_checkpoint.md
 │   │   ├── 2026-01-26_checkpoint.md
-│   │   └── 2026-01-29_checkpoint.md
+│   │   ├── 2026-01-29_checkpoint.md
+│   │   └── 2026-02-03_checkpoint.md
 │   ├── milestones
 │   │   ├── v0.1-llm.md
 │   │   ├── v0.2-ontology-grounding.md
@@ -27,7 +28,8 @@
 │   │   ├── v0.6-rag-validation.md
 │   │   ├── v0.7-curator-ui.md
 │   │   ├── v0.8-backend-robustness.md
-│   │   └── v0.9-validation-repair-reporting.md
+│   │   ├── v0.9-validation-repair-reporting.md
+│   │   └── v1.0-curator-UI.md
 │   ├── policies
 │   │   └── policy-spec.md
 │   ├── repo_structure.md
@@ -36,7 +38,24 @@
 │   │   ├── TICKET_INSTRUCTIONS.md
 │   │   ├── ticket-1.md
 │   │   ├── ticket-10.md
+│   │   ├── ticket-100.md
+│   │   ├── ticket-101.md
+│   │   ├── ticket-102.md
+│   │   ├── ticket-103.md
+│   │   ├── ticket-104.md
+│   │   ├── ticket-105.md
+│   │   ├── ticket-106.md
+│   │   ├── ticket-107.md
+│   │   ├── ticket-108.md
+│   │   ├── ticket-109.md
 │   │   ├── ticket-11.md
+│   │   ├── ticket-110.md
+│   │   ├── ticket-111.md
+│   │   ├── ticket-112.md
+│   │   ├── ticket-113.md
+│   │   ├── ticket-114.md
+│   │   ├── ticket-115.md
+│   │   ├── ticket-116.md
 │   │   ├── ticket-12.md
 │   │   ├── ticket-13.md
 │   │   ├── ticket-14.md
@@ -254,6 +273,7 @@
 │   ├── test_disease_healthy_normalization.py
 │   ├── test_disease_model_identifier_fallback.py
 │   ├── test_disease_ncit_trigger_configurable.py
+│   ├── test_disease_parenthetical_acronym.py
 │   ├── test_disease_sloppy_tumor_generalization.py
 │   ├── test_disease_token_equiv_matching.py
 │   ├── test_failure_codes_evidence_first.py
@@ -315,4 +335,4 @@
 │       └── test_triage.py
 └── uv.lock
 
-19 directories, 297 files
+19 directories, 317 files
