@@ -1551,6 +1551,30 @@ def _append_aggrid_meta_columns(
     return updated
 
 
+def _evidence_flagged_fields(
+    evidence_lookup: dict[tuple[str, str], dict],
+    key: tuple[str, str],
+) -> list[str]:
+    evidence = evidence_lookup.get(key)
+    evidence_raw = evidence.get("raw") if isinstance(evidence, dict) else None
+    if not isinstance(evidence_raw, dict):
+        return []
+    evidence_by_field = evidence_raw.get("evidence_by_field")
+    if not isinstance(evidence_by_field, dict):
+        return []
+    flagged: list[str] = []
+    for field in AGGRID_FLAG_FIELDS:
+        field_evidence = evidence_by_field.get(field)
+        if not isinstance(field_evidence, dict):
+            continue
+        flags = field_evidence.get("flags")
+        if isinstance(flags, list) and any(
+            isinstance(flag, str) and flag for flag in flags
+        ):
+            flagged.append(field)
+    return flagged
+
+
 def _extract_aggrid_selected_rows(grid_response: dict | None) -> list[int]:
     if grid_response is None:
         return []
@@ -2031,6 +2055,7 @@ def _render_triage_filters_inline(container: st.delta_generator.DeltaGenerator) 
 def _build_editable_df(
     df_base: pd.DataFrame,
     overrides: dict,
+    evidence_lookup: dict[tuple[str, str], dict],
     flags_by_gsm: dict[tuple[str, str], dict[str, list[str]]],
     flag_summaries: dict[tuple[str, str], dict[str, object]],
     primary_failures: dict[tuple[str, str], str],
@@ -2089,7 +2114,8 @@ def _build_editable_df(
 
     flagged_values = []
     for row in df_base.to_dict("records"):
-        flagged = flags_by_gsm.get((row["gse_accession"], row["gsm_accession"]), {})
+        key = (row["gse_accession"], row["gsm_accession"])
+        flagged = _evidence_flagged_fields(evidence_lookup, key)
         flagged_values.append(",".join(sorted(flagged)))
     df_editable["flagged_fields"] = flagged_values
     return _reorder_table_columns(df_editable)
@@ -2498,6 +2524,7 @@ def run_app() -> None:
         df_editable = _build_editable_df(
             df_base,
             overrides,
+            evidence_lookup,
             flags_by_gsm,
             flag_summaries,
             primary_failures,
@@ -2571,9 +2598,8 @@ def run_app() -> None:
             df["Flag summary"] = summary_values
             flagged_values = []
             for row in filtered_rows:
-                flagged = flags_by_gsm.get(
-                    (row["gse_accession"], row["gsm_accession"]), {}
-                )
+                key = (row["gse_accession"], row["gsm_accession"])
+                flagged = _evidence_flagged_fields(evidence_lookup, key)
                 flagged_values.append(",".join(sorted(flagged)))
             df["flagged_fields"] = flagged_values
             df = _reorder_table_columns(df)
