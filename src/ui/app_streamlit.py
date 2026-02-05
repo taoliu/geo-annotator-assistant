@@ -1461,10 +1461,24 @@ def _append_aggrid_meta_columns(
         gsm = row.get("gsm_accession")
         key = (gse, gsm) if isinstance(gse, str) and isinstance(gsm, str) else None
 
+        flagged_set: set[str] = set()
         flagged_fields = flags_by_gsm.get(key, {}) if key else {}
-        row_has_flags.append(bool(flagged_fields))
+        flagged_set.update(field for field in flagged_fields if isinstance(field, str))
+
+        flagged_from_row = row.get("flagged_fields")
+        if isinstance(flagged_from_row, str):
+            for item in flagged_from_row.split(","):
+                item = item.strip()
+                if item:
+                    flagged_set.add(item)
+        elif isinstance(flagged_from_row, (list, tuple, set)):
+            for item in flagged_from_row:
+                if isinstance(item, str) and item:
+                    flagged_set.add(item)
+
+        row_has_flags.append(bool(flagged_set))
         for field in CANONICAL_FIELDS:
-            flag_columns[field].append(field in flagged_fields)
+            flag_columns[field].append(field in flagged_set)
 
         primary_failure = primary_failures.get(key, "") if key else ""
         if primary_failure:
@@ -2525,6 +2539,13 @@ def run_app() -> None:
             df["Outliers"] = outlier_values
             df["Primary failure"] = primary_values
             df["Flag summary"] = summary_values
+            flagged_values = []
+            for row in filtered_rows:
+                flagged = flags_by_gsm.get(
+                    (row["gse_accession"], row["gsm_accession"]), {}
+                )
+                flagged_values.append(",".join(sorted(flagged)))
+            df["flagged_fields"] = flagged_values
             df = _reorder_table_columns(df)
         if not df.empty:
             df = _append_aggrid_meta_columns(
