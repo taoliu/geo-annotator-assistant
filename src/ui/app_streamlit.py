@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import html
 import inspect
+import io
 import os
 from collections import Counter
 from pathlib import Path
+from urllib.parse import quote
 
 import pandas as pd
 import streamlit as st
@@ -159,7 +162,33 @@ def _inject_layout_styles() -> None:
           text-transform: uppercase;
           letter-spacing: 0.08em;
           color: #6b5f4b;
+          margin: 0;
+        }
+        .gse-biology-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
           margin: 0 0 6px 0;
+        }
+        .gse-biology-export {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 4px 10px;
+          border-radius: 999px;
+          border: 1px solid #e1d6c4;
+          background: #f9f2e7;
+          color: #5a4f3f;
+          font-size: 0.72rem;
+          font-weight: 600;
+          letter-spacing: 0.03em;
+          text-transform: uppercase;
+          text-decoration: none;
+          white-space: nowrap;
+        }
+        .gse-biology-export:hover {
+          background: #f1e7d8;
         }
         .gse-biology-grid {
           display: grid;
@@ -1347,6 +1376,28 @@ def _render_gse_metrics(
     )
     st.markdown(html_block, unsafe_allow_html=True)
 
+_GSE_BIOLOGY_FIELDS = ("data_type", "organism", "tissue_type", "cell_line", "disease")
+
+
+def _render_gse_field_value(value: object) -> str:
+    if isinstance(value, list):
+        rendered = ", ".join(str(item) for item in value if item)
+    else:
+        rendered = str(value) if value is not None else ""
+    return rendered or "—"
+
+
+def _build_gse_biology_csv(gse_accession: str, fields: dict) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output, lineterminator="\n")
+    header = ["gse_accession", *_GSE_BIOLOGY_FIELDS]
+    writer.writerow(header)
+    row = [gse_accession]
+    for field in _GSE_BIOLOGY_FIELDS:
+        row.append(_render_gse_field_value(fields.get(field)))
+    writer.writerow(row)
+    return output.getvalue()
+
 
 def _render_gse_field_values_summary(gse_field_values: dict | None) -> None:
     if not isinstance(gse_field_values, dict):
@@ -1354,20 +1405,21 @@ def _render_gse_field_values_summary(gse_field_values: dict | None) -> None:
     fields = gse_field_values.get("fields")
     if not isinstance(fields, dict) or not fields:
         return
-    preferred_fields = ["data_type", "organism", "tissue_type", "cell_line", "disease"]
+    preferred_fields = list(_GSE_BIOLOGY_FIELDS)
     ordered_fields = [field for field in preferred_fields if field in fields]
     extras = [field for field in fields if field not in ordered_fields]
     ordered_fields.extend(extras)
 
+    gse_accession = gse_field_values.get("gse_accession")
+    if not isinstance(gse_accession, str) or not gse_accession:
+        gse_accession = "Unknown"
+    csv_content = _build_gse_biology_csv(gse_accession, fields)
+    csv_href = f"data:text/csv;charset=utf-8,{quote(csv_content)}"
+    download_name = f"{gse_accession}_gse_wide_biology.csv"
+
     items: list[tuple[str, str]] = []
     for field in ordered_fields:
-        value = fields.get(field)
-        if isinstance(value, list):
-            rendered = ", ".join(str(item) for item in value if item)
-        else:
-            rendered = str(value) if value is not None else ""
-        if not rendered:
-            rendered = "—"
+        rendered = _render_gse_field_value(fields.get(field))
         items.append((field, rendered))
 
     if not items:
@@ -1383,8 +1435,14 @@ def _render_gse_field_values_summary(gse_field_values: dict | None) -> None:
         )
     html_block = (
         "<div class=\"gse-biology-card\">"
+        "<div class=\"gse-biology-header\">"
         "<div class=\"gse-biology-title\">"
         "GSE-wide biology (not affected by filters)"
+        "</div>"
+        "<a class=\"gse-biology-export\" "
+        f"download=\"{html.escape(download_name, quote=True)}\" "
+        f"href=\"{html.escape(csv_href, quote=True)}\">"
+        "Export CSV</a>"
         "</div>"
         "<div class=\"gse-biology-grid\">"
         + "".join(blocks)
