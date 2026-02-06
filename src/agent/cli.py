@@ -20,6 +20,7 @@ from agent.run_single import run_single_gsm
 from agent.suggestions import build_gse_suggestions
 from agent import standardize_cli
 from agent.writer import write_run_outputs
+from llm.factory import create_llm_client
 
 
 class _ArgumentParser(argparse.ArgumentParser):
@@ -204,6 +205,11 @@ def main(argv: list[str] | None = None) -> None:
                 else output_dir_arg
             )
 
+        llm_client = None
+        if args.gse_file or args.gse or args.gse_soft or args.jsonl:
+            llm_cfg = config.get("llm", {}) if isinstance(config.get("llm"), dict) else {}
+            llm_client = create_llm_client(llm_cfg)
+
         if args.gsm:
             annotation, audit, is_flagged = run_single_gsm(args.gsm, config)
             annotations = [annotation]
@@ -225,7 +231,7 @@ def main(argv: list[str] | None = None) -> None:
                 summary,
                 gse_report,
                 gse_values,
-            ) = run_gse_from_jsonl(args.jsonl, config)
+            ) = run_gse_from_jsonl(args.jsonl, config, llm_client=llm_client)
         elif args.gse:
             (
                 annotations,
@@ -234,7 +240,12 @@ def main(argv: list[str] | None = None) -> None:
                 summary,
                 gse_report,
                 gse_values,
-            ) = run_gse_from_accession(args.gse, config, output_base_dir)
+            ) = run_gse_from_accession(
+                args.gse,
+                config,
+                output_base_dir,
+                llm_client=llm_client,
+            )
         elif args.gse_file:
             for gse_accession in gse_ids:
                 (
@@ -244,7 +255,12 @@ def main(argv: list[str] | None = None) -> None:
                     summary,
                     gse_report,
                     gse_values,
-                ) = run_gse_from_accession(gse_accession, config, output_base_dir)
+                ) = run_gse_from_accession(
+                    gse_accession,
+                    config,
+                    output_base_dir,
+                    llm_client=llm_client,
+                )
 
                 output_dir = _resolve_output_dir(
                     output_base_dir,
@@ -286,7 +302,12 @@ def main(argv: list[str] | None = None) -> None:
                 summary,
                 gse_report,
                 gse_values,
-            ) = run_gse_from_soft_file(args.gse_soft, config, output_base_dir)
+            ) = run_gse_from_soft_file(
+                args.gse_soft,
+                config,
+                output_base_dir,
+                llm_client=llm_client,
+            )
         else:
             raise ValueError("No input mode selected.")
 

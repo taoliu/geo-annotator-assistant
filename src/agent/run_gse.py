@@ -65,12 +65,13 @@ def _build_failure_audit(record: dict, error_message: str) -> Dict[str, str]:
 def run_gse_from_jsonl(
     jsonl_path: str,
     cfg: dict,
+    llm_client: Any | None = None,
 ) -> tuple[list[dict], list[dict], list[dict], dict, dict | None, dict | None]:
     annotations: List[Dict[str, Any]] = []
     audits: List[Dict[str, Any]] = []
     flagged: List[Dict[str, Any]] = []
     n_flagged = 0
-    llm_client = None
+    llm_client_local = llm_client
     reuse_logged = False
     llm_cfg = cfg.get("llm", {}) if isinstance(cfg.get("llm"), dict) else {}
     llm_transport = llm_cfg.get("transport") or llm_cfg.get("mode", "stub")
@@ -83,8 +84,8 @@ def run_gse_from_jsonl(
 
     for record in iter_gsm_contexts(jsonl_path):
         try:
-            if llm_client is None:
-                llm_client = create_llm_client(llm_cfg)
+            if llm_client_local is None:
+                llm_client_local = create_llm_client(llm_cfg)
             elif not reuse_logged and llm_transport in {"local_transformers", "transformers"}:
                 print("[LLM] Reusing existing model instance")
                 reuse_logged = True
@@ -92,7 +93,7 @@ def run_gse_from_jsonl(
             annotation, audit, is_flagged = run_single_from_context_record(
                 record,
                 cfg,
-                llm_client=llm_client,
+                llm_client=llm_client_local,
                 llm_cache=llm_cache,
             )
         except Exception as exc:
@@ -124,6 +125,7 @@ def run_gse_from_accession(
     gse_accession: str,
     cfg: dict,
     work_dir: str,
+    llm_client: Any | None = None,
 ) -> tuple[list[dict], list[dict], list[dict], dict, dict | None, dict | None]:
     paths_cfg = cfg.get("paths") if isinstance(cfg.get("paths"), dict) else {}
     jsonl_path = soft_to_context_jsonl(
@@ -131,16 +133,17 @@ def run_gse_from_accession(
         work_dir=work_dir,
         soft_cache_dir=paths_cfg.get("soft_cache_dir"),
     )
-    return run_gse_from_jsonl(jsonl_path, cfg)
+    return run_gse_from_jsonl(jsonl_path, cfg, llm_client=llm_client)
 
 
 def run_gse_from_soft_file(
     soft_path: str,
     cfg: dict,
     work_dir: str,
+    llm_client: Any | None = None,
 ) -> tuple[list[dict], list[dict], list[dict], dict, dict | None, dict | None]:
     jsonl_path = soft_to_context_jsonl(
         soft_path=soft_path,
         work_dir=work_dir,
     )
-    return run_gse_from_jsonl(jsonl_path, cfg)
+    return run_gse_from_jsonl(jsonl_path, cfg, llm_client=llm_client)
