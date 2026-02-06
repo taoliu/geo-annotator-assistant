@@ -134,6 +134,8 @@ def run_gse_from_accession(
         work_dir=work_dir,
         soft_cache_dir=paths_cfg.get("soft_cache_dir"),
         geo_soft_local_dir=ingest_cfg.get("geo_soft_local_dir"),
+        geo_soft_on_missing=ingest_cfg.get("geo_soft_on_missing", "remote"),
+        geo_soft_remote_transport=ingest_cfg.get("geo_soft_remote_transport", "https"),
     )
     return run_gse_from_jsonl(jsonl_path, cfg, llm_client=llm_client)
 

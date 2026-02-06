@@ -159,7 +159,11 @@ class RagConfig:
 
 
 _DEFAULT_RAG_CONFIG = RagConfig().to_dict()
-_DEFAULT_INGEST_CONFIG = {"geo_soft_local_dir": None}
+_DEFAULT_INGEST_CONFIG = {
+    "geo_soft_local_dir": None,
+    "geo_soft_on_missing": "remote",
+    "geo_soft_remote_transport": "https",
+}
 _DEFAULT_PATHS_CONFIG = {"soft_cache_dir": None, "overrides_path": None}
 _DEFAULT_POSTPASS_CONFIG = {
     "gse_consistency": {
@@ -200,6 +204,8 @@ _LEGACY_KEYS = {
     "ontology_thresholds",
 }
 _ALLOWED_EMBEDDING_DEVICES = {"cpu", "cuda", "mps"}
+_ALLOWED_INGEST_ON_MISSING = {"remote", "skip", "error"}
+_ALLOWED_INGEST_REMOTE_TRANSPORT = {"https", "ftp"}
 
 
 def _deep_merge(base: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]:
@@ -352,9 +358,29 @@ def _validate_ingest_config(config: dict[str, Any]) -> None:
     if not isinstance(ingest_cfg, dict):
         raise ValueError("Invalid ingest config. Expected a mapping.")
     local_dir = ingest_cfg.get("geo_soft_local_dir")
-    if local_dir is None:
-        return
-    if not isinstance(local_dir, str):
+    if local_dir is not None and not isinstance(local_dir, str):
         raise ValueError(
             "Invalid ingest.geo_soft_local_dir. Expected a string or null."
+        )
+    on_missing = ingest_cfg.get("geo_soft_on_missing")
+    if not isinstance(on_missing, str):
+        raise ValueError(
+            "Invalid ingest.geo_soft_on_missing. Expected one of "
+            f"{sorted(_ALLOWED_INGEST_ON_MISSING)}."
+        )
+    if on_missing not in _ALLOWED_INGEST_ON_MISSING:
+        raise ValueError(
+            "Invalid ingest.geo_soft_on_missing. Expected one of "
+            f"{sorted(_ALLOWED_INGEST_ON_MISSING)}, got {on_missing!r}."
+        )
+    remote_transport = ingest_cfg.get("geo_soft_remote_transport")
+    if not isinstance(remote_transport, str):
+        raise ValueError(
+            "Invalid ingest.geo_soft_remote_transport. Expected one of "
+            f"{sorted(_ALLOWED_INGEST_REMOTE_TRANSPORT)}."
+        )
+    if remote_transport not in _ALLOWED_INGEST_REMOTE_TRANSPORT:
+        raise ValueError(
+            "Invalid ingest.geo_soft_remote_transport. Expected one of "
+            f"{sorted(_ALLOWED_INGEST_REMOTE_TRANSPORT)}, got {remote_transport!r}."
         )

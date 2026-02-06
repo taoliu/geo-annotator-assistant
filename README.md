@@ -143,13 +143,21 @@ Other backend subcommands exist for single GSM runs and diagnostics. See `geo-gs
 
 ### Local GEO SOFT mirror (optional)
 
-To resolve GSE SOFT files from a local mirror (and skip missing files without remote fetch),
-set the following config key:
+To prefer a local SOFT mirror with explicit fallback policy and remote transport selection,
+set ingest options like:
 
 ```yaml
 ingest:
   geo_soft_local_dir: "/abs/path/to/geo/soft/mirror"
+  geo_soft_on_missing: "remote"      # remote | skip | error
+  geo_soft_remote_transport: "https" # https | ftp
 ```
+
+Behavior summary:
+* local file hit: use local file
+* local miss + `remote`: download via selected transport and continue
+* local miss + `skip`: emit warning and skip that GSE
+* local miss + `error`: abort with an error
 
 ### Term standardization utility
 

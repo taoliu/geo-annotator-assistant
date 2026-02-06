@@ -88,6 +88,8 @@ rag:
 
 ingest:
   geo_soft_local_dir: null
+  geo_soft_on_missing: "remote"
+  geo_soft_remote_transport: "https"
 
 paths:
   soft_cache_dir: null
