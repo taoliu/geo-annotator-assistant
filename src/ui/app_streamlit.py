@@ -2001,6 +2001,16 @@ def _render_unsaved_indicator(container: st.delta_generator.DeltaGenerator, over
     )
 
 
+def _request_rerun() -> None:
+    rerun = getattr(st, "rerun", None)
+    if callable(rerun):
+        rerun()
+        return
+    experimental_rerun = getattr(st, "experimental_rerun", None)
+    if callable(experimental_rerun):
+        experimental_rerun()
+
+
 def _render_gse_metrics(
     total: int,
     flagged: int,
@@ -2172,6 +2182,7 @@ def _render_triage_filters_inline(container: st.delta_generator.DeltaGenerator) 
 def _build_editable_df(
     df_base: pd.DataFrame,
     overrides: dict,
+    saved_overrides: dict,
     evidence_lookup: dict[tuple[str, str], dict],
     flags_by_gsm: dict[tuple[str, str], dict[str, list[str]]],
     flag_summaries: dict[tuple[str, str], dict[str, object]],
@@ -2192,7 +2203,11 @@ def _build_editable_df(
         if mask.any():
             df_editable.loc[mask, field] = format_override_value(value)
 
-    edited_keys = {(gse, gsm) for gse, gsm, _ in overrides}
+    edited_keys = {
+        (gse, gsm) for gse, gsm, _ in overrides
+    } | {
+        (gse, gsm) for gse, gsm, _ in saved_overrides
+    }
     edited_values = [
         EDITED_ICON
         if (row["gse_accession"], row["gsm_accession"]) in edited_keys
@@ -2788,10 +2803,13 @@ def run_app() -> None:
         overrides_by_gse[gse_id] = overrides
         st.session_state["overrides_by_gse"] = overrides_by_gse
 
+    overrides_snapshot = dict(overrides)
+
     df_base = pd.DataFrame(filtered_rows)
     df_editable = _build_editable_df(
         df_base,
         overrides,
+        saved_overrides,
         evidence_lookup,
         flags_by_gsm,
         flag_summaries,
@@ -2822,6 +2840,7 @@ def run_app() -> None:
         (row["gse_accession"], row["gsm_accession"]) for row in filtered_rows
     }
     overrides = _merge_overrides(overrides, overrides_visible, visible_keys)
+    overrides_changed = overrides != overrides_snapshot
     overrides_by_gse[gse_id] = overrides
     st.session_state["overrides_by_gse"] = overrides_by_gse
     checked_updates = _extract_checked_updates(df_edited)
@@ -2843,6 +2862,9 @@ def run_app() -> None:
         st.session_state["active_row_idx"] = row_idx
         active_row_idx = row_idx
 
+    overrides_before_persistence = dict(overrides)
+    saved_overrides_snapshot = dict(saved_overrides)
+    saved_present_snapshot = saved_present
     overrides, saved_overrides, saved_present = _apply_overrides_persistence_actions(
         active_paths,
         gse_id,
@@ -2854,12 +2876,22 @@ def run_app() -> None:
         discard_saved_clicked,
         discard_confirm,
     )
+    persistence_changed = (
+        overrides != overrides_before_persistence
+        or saved_overrides != saved_overrides_snapshot
+        or saved_present != saved_present_snapshot
+    )
     _render_overrides_persistence_status(
         overrides,
         saved_overrides,
         saved_present,
     )
     _render_export_final_annotations(curation_records, overrides)
+    rerun_needed = overrides_changed or (
+        persistence_changed and (revert_saved_clicked or discard_saved_clicked)
+    )
+    if rerun_needed:
+        _request_rerun()
 
 
 
