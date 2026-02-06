@@ -2152,6 +2152,32 @@ def _build_final_annotations_csv(rows: list[dict[str, object]]) -> str:
     return output.getvalue()
 
 
+def _final_annotation_rows(
+    curation_records: list[dict],
+    overrides: dict,
+) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for record in curation_records:
+        gse = record["gse_accession"]
+        gsm = record["gsm_accession"]
+        selected = overrides_for_gsm(overrides, gse, gsm)
+        effective_fields = apply_overrides_to_record(record, selected)
+        if effective_fields is None:
+            continue
+        output = {
+            "gse_accession": gse,
+            "gsm_accession": gsm,
+            "data_type": effective_fields.get("data_type", ""),
+            "organism": effective_fields.get("organism", ""),
+            "tissue_type": effective_fields.get("tissue_type", ""),
+            "cell_line": effective_fields.get("cell_line", ""),
+            "disease": effective_fields.get("disease", ""),
+            "treatment": effective_fields.get("treatment", ""),
+        }
+        rows.append(output)
+    return rows
+
+
 def _render_gse_field_values_summary(
     gse_field_values: dict | None,
     has_session_edits: bool,
@@ -2578,29 +2604,7 @@ def _render_export_final_annotations(
         "or ontology grounding."
     )
 
-    def _final_annotation_rows() -> list[dict[str, object]]:
-        rows: list[dict[str, object]] = []
-        for record in curation_records:
-            gse = record["gse_accession"]
-            gsm = record["gsm_accession"]
-            selected = overrides_for_gsm(overrides, gse, gsm)
-            effective_fields = apply_overrides_to_record(record, selected)
-            if effective_fields is None:
-                continue
-            output = {
-                "gse_accession": gse,
-                "gsm_accession": gsm,
-                "data_type": effective_fields.get("data_type", ""),
-                "organism": effective_fields.get("organism", ""),
-                "tissue_type": effective_fields.get("tissue_type", ""),
-                "cell_line": effective_fields.get("cell_line", ""),
-                "disease": effective_fields.get("disease", ""),
-                "treatment": effective_fields.get("treatment", ""),
-            }
-            rows.append(output)
-        return rows
-
-    rows = _final_annotation_rows()
+    rows = _final_annotation_rows(curation_records, overrides)
     lines = [json.dumps(row) for row in rows]
     preview = "\n".join(lines)
     gse_accession = "Unknown"
@@ -2632,6 +2636,115 @@ def _render_export_final_annotations(
     )
 
 
+def _iter_all_export_paths(
+    inputs: InputScanResult,
+) -> list[tuple[str, InputPaths]]:
+    if inputs.mode == "multi":
+        return [
+            (gse, inputs.gse_paths[gse])
+            for gse in sorted(inputs.gse_paths.keys())
+        ]
+    if inputs.single_paths is None:
+        return []
+    return [(inputs.input_dir.name, inputs.single_paths)]
+
+
+def _all_export_signature(inputs: InputScanResult) -> tuple[object, ...]:
+    entries: list[object] = [str(inputs.input_dir)]
+    for gse_name, paths in _iter_all_export_paths(inputs):
+        try:
+            curation_mtime = paths.curation_path.stat().st_mtime_ns
+        except OSError:
+            curation_mtime = None
+        overrides_path = _overrides_path(paths)
+        try:
+            overrides_mtime = (
+                overrides_path.stat().st_mtime_ns
+                if overrides_path.exists()
+                else None
+            )
+        except OSError:
+            overrides_mtime = None
+        entries.append((gse_name, curation_mtime, overrides_mtime))
+    return tuple(entries)
+
+
+def _collect_all_final_annotations(
+    inputs: InputScanResult,
+) -> tuple[list[dict[str, object]], list[str], list[str]]:
+    skipped = [f"{name}: {reason}" for name, reason in sorted(inputs.skipped.items())]
+    override_errors: list[str] = []
+    rows: list[dict[str, object]] = []
+    for gse_name, paths in _iter_all_export_paths(inputs):
+        try:
+            curation_records = load_curation_jsonl(str(paths.curation_path))
+        except Exception as exc:
+            skipped.append(f"{gse_name}: {exc}")
+            continue
+        gse_accession = gse_name
+        if curation_records:
+            candidate = curation_records[0].get("gse_accession")
+            if isinstance(candidate, str) and candidate:
+                gse_accession = candidate
+        overrides: dict = {}
+        overrides_path = _overrides_path(paths)
+        if overrides_path.is_file():
+            try:
+                overrides = load_overrides_jsonl(
+                    str(overrides_path), gse_accession
+                )
+            except Exception as exc:
+                override_errors.append(f"{gse_accession}: {exc}")
+                overrides = {}
+        rows.extend(_final_annotation_rows(curation_records, overrides))
+    rows.sort(
+        key=lambda row: (
+            str(row.get("gse_accession", "")),
+            str(row.get("gsm_accession", "")),
+        )
+    )
+    return rows, skipped, override_errors
+
+
+def _render_export_all_sidebar(inputs: InputScanResult) -> None:
+    st.sidebar.header("Exports")
+    signature = _all_export_signature(inputs)
+    cache = st.session_state.get("all_export_cache")
+    if isinstance(cache, dict) and cache.get("signature") == signature:
+        csv_content = cache.get("csv", "")
+        row_count = cache.get("row_count", 0)
+        skipped = cache.get("skipped", [])
+        override_errors = cache.get("override_errors", [])
+    else:
+        rows, skipped, override_errors = _collect_all_final_annotations(inputs)
+        csv_content = _build_final_annotations_csv(rows)
+        row_count = len(rows)
+        st.session_state["all_export_cache"] = {
+            "signature": signature,
+            "csv": csv_content,
+            "row_count": row_count,
+            "skipped": skipped,
+            "override_errors": override_errors,
+        }
+    if skipped:
+        st.sidebar.warning(
+            "Skipped GSEs for all-annotation export: "
+            + "; ".join(skipped)
+        )
+    if override_errors:
+        st.sidebar.warning(
+            "Overrides not applied for: " + "; ".join(override_errors)
+        )
+    file_name = f"{inputs.input_dir.name}_final_annotations.csv"
+    st.sidebar.download_button(
+        "Export ALL final annotations as CSV",
+        data=csv_content,
+        file_name=file_name,
+        mime="text/csv",
+        disabled=row_count == 0,
+    )
+
+
 def run_app() -> None:
     _inject_layout_styles()
     input_dir = _resolve_input_dir()
@@ -2649,6 +2762,7 @@ def run_app() -> None:
     if inputs.mode == "multi":
         gse_options = sorted(inputs.gse_paths.keys())
         active_gse = _render_gse_switcher(gse_options, inputs.skipped)
+        _render_export_all_sidebar(inputs)
         active_paths = inputs.gse_paths[active_gse]
     else:
         active_gse = None
@@ -2656,6 +2770,7 @@ def run_app() -> None:
         if active_paths is None:
             st.error("No valid input directory found.")
             st.stop()
+        _render_export_all_sidebar(inputs)
 
     try:
         (
