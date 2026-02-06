@@ -141,6 +141,16 @@ geo-gsm-annotate run-gse --gse GSEXXXXX
 
 Other backend subcommands exist for single GSM runs and diagnostics. See `geo-gsm-annotate --help`.
 
+### Local GEO SOFT mirror (optional)
+
+To resolve GSE SOFT files from a local mirror (and skip missing files without remote fetch),
+set the following config key:
+
+```yaml
+ingest:
+  geo_soft_local_dir: "/abs/path/to/geo/soft/mirror"
+```
+
 ### Term standardization utility
 
 ```bash

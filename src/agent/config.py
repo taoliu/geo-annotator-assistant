@@ -31,8 +31,11 @@ def load_config(path: str) -> dict[str, Any]:
         raise ValueError(f"Config file must contain a top-level mapping: {path}")
 
     merged = _apply_postpass_defaults(
-        _apply_paths_defaults(_apply_llm_defaults(_apply_rag_defaults(data)))
+        _apply_paths_defaults(
+            _apply_ingest_defaults(_apply_llm_defaults(_apply_rag_defaults(data)))
+        )
     )
+    _validate_ingest_config(merged)
     _validate_rag_config(merged)
     return merged
 
@@ -156,6 +159,7 @@ class RagConfig:
 
 
 _DEFAULT_RAG_CONFIG = RagConfig().to_dict()
+_DEFAULT_INGEST_CONFIG = {"geo_soft_local_dir": None}
 _DEFAULT_PATHS_CONFIG = {"soft_cache_dir": None, "overrides_path": None}
 _DEFAULT_POSTPASS_CONFIG = {
     "gse_consistency": {
@@ -287,6 +291,18 @@ def _apply_paths_defaults(config: dict[str, Any]) -> dict[str, Any]:
     return merged
 
 
+def _apply_ingest_defaults(config: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(config, dict):
+        return config
+    merged = dict(config)
+    ingest_cfg = merged.get("ingest")
+    if ingest_cfg is None:
+        merged["ingest"] = dict(_DEFAULT_INGEST_CONFIG)
+    elif isinstance(ingest_cfg, dict):
+        merged["ingest"] = _deep_merge(_DEFAULT_INGEST_CONFIG, ingest_cfg)
+    return merged
+
+
 def _apply_postpass_defaults(config: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(config, dict):
         return config
@@ -324,4 +340,21 @@ def _validate_rag_config(config: dict[str, Any]) -> None:
         raise ValueError(
             "Invalid rag.ontology.embedding.device. "
             f"Expected one of {sorted(_ALLOWED_EMBEDDING_DEVICES)}, got {device!r}."
+        )
+
+
+def _validate_ingest_config(config: dict[str, Any]) -> None:
+    if not isinstance(config, dict):
+        return
+    ingest_cfg = config.get("ingest")
+    if ingest_cfg is None:
+        return
+    if not isinstance(ingest_cfg, dict):
+        raise ValueError("Invalid ingest config. Expected a mapping.")
+    local_dir = ingest_cfg.get("geo_soft_local_dir")
+    if local_dir is None:
+        return
+    if not isinstance(local_dir, str):
+        raise ValueError(
+            "Invalid ingest.geo_soft_local_dir. Expected a string or null."
         )

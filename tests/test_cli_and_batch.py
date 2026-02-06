@@ -417,3 +417,68 @@ def test_cli_gse_file_skips_reuse_for_nonlocal(tmp_path: Path, monkeypatch) -> N
 
     assert counts["created"] == 0
     assert calls == [None, None]
+
+
+def test_cli_gse_file_skips_missing_local_soft(tmp_path: Path, monkeypatch, capsys) -> None:
+    from agent import cli
+    from ingest.soft_to_context_jsonl import LocalSoftMissingError
+
+    config_path = str(ROOT / "config" / "example_config.yaml")
+    gse_file = tmp_path / "gse_list.txt"
+    gse_file.write_text("GSE111\nGSE222\n", encoding="utf-8")
+
+    def _fake_run_gse_from_accession(
+        gse_accession: str,
+        cfg: dict,
+        work_dir: str,
+        llm_client=None,
+    ):
+        if gse_accession == "GSE111":
+            raise LocalSoftMissingError(
+                gse_accession,
+                "/mirror/GSEnnn/GSE111_family.soft.gz",
+            )
+        annotation = {
+            "gse_accession": gse_accession,
+            "gsm_accession": f"{gse_accession}_GSM1",
+            "data_type": "Unknown",
+            "organism": "Unknown",
+            "tissue_type": "Unknown",
+            "cell_line": "No",
+            "disease": "Healthy",
+            "treatment": "None",
+        }
+        audit = {
+            "gse_accession": gse_accession,
+            "gsm_accession": f"{gse_accession}_GSM1",
+            "final_decision": "ACCEPTED",
+            "final_output": dict(annotation),
+            "rationale": {
+                "final_decision": "ACCEPTED",
+                "primary_failure": None,
+                "terminal_fallback_fields": [],
+                "n_llm_calls": 0,
+                "attempts_by_field": {},
+                "ontology_status_by_field": {},
+                "flags": [],
+            },
+        }
+        summary = {"n_total": 1, "n_accepted": 1, "n_flagged": 0}
+        return [annotation], [audit], [], summary, None, None
+
+    monkeypatch.setattr(cli, "run_gse_from_accession", _fake_run_gse_from_accession)
+
+    cli.main(
+        [
+            "--gse-file",
+            str(gse_file),
+            "--config",
+            config_path,
+            "--output-dir",
+            str(tmp_path / "out"),
+        ]
+    )
+
+    warning = capsys.readouterr().err
+    assert "WARNING: GEO SOFT file not found for GSE111" in warning
+    assert (tmp_path / "out" / "GSE222" / "annotations.jsonl").exists()

@@ -11,6 +11,7 @@ if str(SRC) not in sys.path:
 import ingest.soft_to_context_jsonl as soft_module
 from agent.config import load_config
 from agent.run_gse import run_gse_from_accession, run_gse_from_soft_file
+from ingest.gse_soft_fetcher import get_local_path
 
 
 def _load_stub_config() -> dict:
@@ -95,4 +96,49 @@ def test_run_gse_from_accession_uses_cache(
     assert summary["n_flagged"] == 0
     assert annotations[0]["gse_accession"] == gse_accession
     assert annotations[0]["gsm_accession"] == "GSM002"
+    assert flagged == []
+
+
+def test_get_local_path_mapping() -> None:
+    assert (
+        get_local_path("GSE1", "/mirror")
+        == "/mirror/GSEnnn/GSE1_family.soft.gz"
+    )
+    assert (
+        get_local_path("GSE1234", "/mirror")
+        == "/mirror/GSE1nnn/GSE1234_family.soft.gz"
+    )
+
+
+def test_run_gse_from_accession_uses_local_mirror(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    gse_accession = "GSE777"
+    local_dir = tmp_path / "mirror"
+    local_dir.mkdir()
+    local_path = Path(get_local_path(gse_accession, str(local_dir)))
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+    local_path.write_text("FAKE SOFT", encoding="utf-8")
+
+    _patch_parser(monkeypatch, gse_accession, "GSM777")
+
+    def _no_download(*_args, **_kwargs):
+        raise AssertionError("download should not be called when local mirror exists")
+
+    monkeypatch.setattr(soft_module, "download_file_via_https", _no_download)
+
+    cfg = _load_stub_config()
+    cfg.setdefault("ingest", {})["geo_soft_local_dir"] = str(local_dir)
+    annotations, _, flagged, summary, _, _ = run_gse_from_accession(
+        gse_accession,
+        cfg,
+        str(tmp_path),
+    )
+
+    assert summary["n_total"] == 1
+    assert summary["n_accepted"] == 1
+    assert summary["n_flagged"] == 0
+    assert annotations[0]["gse_accession"] == gse_accession
+    assert annotations[0]["gsm_accession"] == "GSM777"
     assert flagged == []

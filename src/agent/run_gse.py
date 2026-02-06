@@ -128,10 +128,12 @@ def run_gse_from_accession(
     llm_client: Any | None = None,
 ) -> tuple[list[dict], list[dict], list[dict], dict, dict | None, dict | None]:
     paths_cfg = cfg.get("paths") if isinstance(cfg.get("paths"), dict) else {}
+    ingest_cfg = cfg.get("ingest") if isinstance(cfg.get("ingest"), dict) else {}
     jsonl_path = soft_to_context_jsonl(
         gse_accession=gse_accession,
         work_dir=work_dir,
         soft_cache_dir=paths_cfg.get("soft_cache_dir"),
+        geo_soft_local_dir=ingest_cfg.get("geo_soft_local_dir"),
     )
     return run_gse_from_jsonl(jsonl_path, cfg, llm_client=llm_client)
 

@@ -25,6 +25,23 @@ def get_remote_path(geo_id):
     return url
 
 
+def get_local_path(geo_id, local_dir):
+    file_path = ""
+    try:
+        assert geo_id[:3] == "GSE"
+        assert geo_id[3:].isdigit()
+        dir_name_n = int(geo_id[3:]) // 1000
+        if dir_name_n == 0:
+            dir_name = "GSEnnn"
+        else:
+            dir_name = f"GSE{dir_name_n}" + "nnn"
+        file_path = f"{local_dir}/{dir_name}/{geo_id}_family.soft.gz"
+    except AssertionError:
+        pass
+
+    return file_path
+
+
 def download_file_via_ftp(remote_file_path,
                           local_file_path,
                           ftp_server="ftp.ncbi.nih.gov",

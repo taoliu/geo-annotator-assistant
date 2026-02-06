@@ -5,7 +5,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ingest.gse_soft_fetcher import download_file_via_https, get_remote_path
+from ingest.gse_soft_fetcher import (
+    download_file_via_https,
+    get_local_path,
+    get_remote_path,
+)
 from ingest.gse_soft_parser import extract_sample_level_data
 from ingest.utils import gse_dict_to_prompt
 
@@ -52,6 +56,13 @@ def _context_basename(source: Path) -> str:
     return name or source.stem
 
 
+class LocalSoftMissingError(FileNotFoundError):
+    def __init__(self, gse_accession: str, path: str) -> None:
+        super().__init__(f"GEO SOFT file not found for {gse_accession} at {path}")
+        self.gse_accession = gse_accession
+        self.path = path
+
+
 def _write_context_jsonl(soft_path: Path, output_path: Path) -> str:
     gse_dict = extract_sample_level_data(str(soft_path))
     if not gse_dict:
@@ -72,6 +83,7 @@ def soft_to_context_jsonl(
     soft_path: str | None = None,
     work_dir: str | Path,
     soft_cache_dir: str | Path | None = None,
+    geo_soft_local_dir: str | Path | None = None,
 ) -> str:
     if (gse_accession is None) == (soft_path is None):
         raise ValueError("Provide exactly one of gse_accession or soft_path.")
@@ -92,6 +104,18 @@ def soft_to_context_jsonl(
     gse_accession = gse_accession or ""
     if not gse_accession:
         raise ValueError("gse_accession is required.")
+
+    if geo_soft_local_dir:
+        local_path = get_local_path(gse_accession, str(geo_soft_local_dir))
+        if not local_path:
+            raise ValueError(f"Invalid GSE accession: {gse_accession}")
+        soft_file = Path(local_path)
+        if not soft_file.is_file():
+            raise LocalSoftMissingError(gse_accession, str(soft_file))
+        jsonl_path = context_dir / f"{gse_accession}_contexts.jsonl"
+        if jsonl_path.is_file():
+            return str(jsonl_path)
+        return _write_context_jsonl(soft_file, jsonl_path)
 
     soft_file = None
     if soft_cache_dir:

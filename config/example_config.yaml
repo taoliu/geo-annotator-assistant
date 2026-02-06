@@ -78,6 +78,9 @@ rag:
       min_confidence_to_accept: 0.80
       max_delta_for_ambiguity: 0.05
 
+ingest:
+  geo_soft_local_dir: null
+
 paths:
   soft_cache_dir: null
   overrides_path: null

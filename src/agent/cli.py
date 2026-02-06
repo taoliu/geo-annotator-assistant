@@ -21,6 +21,7 @@ from agent.suggestions import build_gse_suggestions
 from agent import standardize_cli
 from agent.writer import write_run_outputs
 from llm.factory import create_llm_client
+from ingest.soft_to_context_jsonl import LocalSoftMissingError
 
 
 class _ArgumentParser(argparse.ArgumentParser):
@@ -235,21 +236,7 @@ def main(argv: list[str] | None = None) -> None:
                 gse_values,
             ) = run_gse_from_jsonl(args.jsonl, config, llm_client=llm_client)
         elif args.gse:
-            (
-                annotations,
-                audits,
-                flagged,
-                summary,
-                gse_report,
-                gse_values,
-            ) = run_gse_from_accession(
-                args.gse,
-                config,
-                output_base_dir,
-                llm_client=llm_client,
-            )
-        elif args.gse_file:
-            for gse_accession in gse_ids:
+            try:
                 (
                     annotations,
                     audits,
@@ -258,11 +245,39 @@ def main(argv: list[str] | None = None) -> None:
                     gse_report,
                     gse_values,
                 ) = run_gse_from_accession(
-                    gse_accession,
+                    args.gse,
                     config,
                     output_base_dir,
                     llm_client=llm_client,
                 )
+            except LocalSoftMissingError as exc:
+                print(
+                    f"WARNING: GEO SOFT file not found for {exc.gse_accession} at {exc.path}; skipping.",
+                    file=sys.stderr,
+                )
+                return
+        elif args.gse_file:
+            for gse_accession in gse_ids:
+                try:
+                    (
+                        annotations,
+                        audits,
+                        flagged,
+                        summary,
+                        gse_report,
+                        gse_values,
+                    ) = run_gse_from_accession(
+                        gse_accession,
+                        config,
+                        output_base_dir,
+                        llm_client=llm_client,
+                    )
+                except LocalSoftMissingError as exc:
+                    print(
+                        f"WARNING: GEO SOFT file not found for {exc.gse_accession} at {exc.path}; skipping.",
+                        file=sys.stderr,
+                    )
+                    continue
 
                 output_dir = _resolve_output_dir(
                     output_base_dir,
