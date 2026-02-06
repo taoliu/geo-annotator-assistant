@@ -208,7 +208,9 @@ def main(argv: list[str] | None = None) -> None:
         llm_client = None
         if args.gse_file or args.gse or args.gse_soft or args.jsonl:
             llm_cfg = config.get("llm", {}) if isinstance(config.get("llm"), dict) else {}
-            llm_client = create_llm_client(llm_cfg)
+            llm_transport = llm_cfg.get("transport") or llm_cfg.get("mode", "stub")
+            if llm_transport == "local_transformers":
+                llm_client = create_llm_client(llm_cfg)
 
         if args.gsm:
             annotation, audit, is_flagged = run_single_gsm(args.gsm, config)

@@ -259,8 +259,12 @@ def test_cli_gse_file_reuses_llm_client(tmp_path: Path, monkeypatch) -> None:
         summary = {"n_total": 1, "n_accepted": 1, "n_flagged": 0}
         return [annotation], [audit], [], summary, None, None
 
+    def _fake_load_config(_path: str) -> dict:
+        return {"llm": {"transport": "local_transformers"}}
+
     monkeypatch.setattr(cli, "create_llm_client", _fake_create_llm_client)
     monkeypatch.setattr(cli, "run_gse_from_accession", _fake_run_gse_from_accession)
+    monkeypatch.setattr(cli, "load_config", _fake_load_config)
 
     cli.main(
         [
@@ -324,8 +328,12 @@ def test_cli_single_gse_builds_llm_client_once(tmp_path: Path, monkeypatch) -> N
         summary = {"n_total": 1, "n_accepted": 1, "n_flagged": 0}
         return [annotation], [audit], [], summary, None, None
 
+    def _fake_load_config(_path: str) -> dict:
+        return {"llm": {"transport": "local_transformers"}}
+
     monkeypatch.setattr(cli, "create_llm_client", _fake_create_llm_client)
     monkeypatch.setattr(cli, "run_gse_from_accession", _fake_run_gse_from_accession)
+    monkeypatch.setattr(cli, "load_config", _fake_load_config)
 
     cli.main(
         [
@@ -339,3 +347,73 @@ def test_cli_single_gse_builds_llm_client_once(tmp_path: Path, monkeypatch) -> N
 
     assert counts["created"] == 1
     assert calls == [sentinel]
+
+
+def test_cli_gse_file_skips_reuse_for_nonlocal(tmp_path: Path, monkeypatch) -> None:
+    from agent import cli
+
+    config_path = str(ROOT / "config" / "example_config.yaml")
+    gse_file = tmp_path / "gse_list.txt"
+    gse_file.write_text("GSE801\nGSE802\n", encoding="utf-8")
+
+    counts = {"created": 0}
+    calls: list[object] = []
+
+    def _fake_create_llm_client(_cfg: dict):
+        counts["created"] += 1
+        return object()
+
+    def _fake_load_config(_path: str) -> dict:
+        return {"llm": {"transport": "openai_http"}}
+
+    def _fake_run_gse_from_accession(
+        gse_accession: str,
+        cfg: dict,
+        work_dir: str,
+        llm_client=None,
+    ):
+        calls.append(llm_client)
+        annotation = {
+            "gse_accession": gse_accession,
+            "gsm_accession": f"{gse_accession}_GSM1",
+            "data_type": "Unknown",
+            "organism": "Unknown",
+            "tissue_type": "Unknown",
+            "cell_line": "No",
+            "disease": "Healthy",
+            "treatment": "None",
+        }
+        audit = {
+            "gse_accession": gse_accession,
+            "gsm_accession": f"{gse_accession}_GSM1",
+            "final_decision": "ACCEPTED",
+            "final_output": dict(annotation),
+            "rationale": {
+                "final_decision": "ACCEPTED",
+                "primary_failure": None,
+                "terminal_fallback_fields": [],
+                "n_llm_calls": 0,
+                "attempts_by_field": {},
+                "ontology_status_by_field": {},
+                "flags": [],
+            },
+        }
+        summary = {"n_total": 1, "n_accepted": 1, "n_flagged": 0}
+        return [annotation], [audit], [], summary, None, None
+
+    monkeypatch.setattr(cli, "create_llm_client", _fake_create_llm_client)
+    monkeypatch.setattr(cli, "load_config", _fake_load_config)
+    monkeypatch.setattr(cli, "run_gse_from_accession", _fake_run_gse_from_accession)
+
+    cli.main(
+        [
+            "--gse-file",
+            str(gse_file),
+            "--config",
+            config_path,
+            "--dry-run",
+        ]
+    )
+
+    assert counts["created"] == 0
+    assert calls == [None, None]
