@@ -3,7 +3,7 @@ from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime, timezone
 
 from rag.candidate import OntologyCandidate
-from rag.chroma_client import get_chroma_client
+from rag.chroma_client import get_or_create_chroma_collection
 
 def retrieve_candidates(
     persist_path: str,
@@ -21,8 +21,10 @@ def retrieve_candidates(
     if not query_text:
         return [], {"collection_name": collection_name, "k": k, "field": field, "ts": datetime.now(timezone.utc).isoformat()}
 
-    client = get_chroma_client(persist_path)
-    col = client.get_or_create_collection(name=collection_name)  # NOTE: read-only intent; should not add.
+    col = get_or_create_chroma_collection(
+        persist_path=persist_path,
+        collection_name=collection_name,
+    )
     res = col.query(query_texts=[query_text], n_results=k, where=filters or None, include=["metadatas", "distances", "documents", "ids"])
     ids = (res.get("ids") or [[]])[0]
     dists = (res.get("distances") or [[]])[0]

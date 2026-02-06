@@ -96,3 +96,11 @@ def log_gsm_decision(gsm_accession: str, decision: str) -> None:
 
 def log_gse_outputs_written(gse_accession: str, output_dir: str) -> None:
     _trace_info(f"{gse_accession}: outputs written to {output_dir}")
+
+
+def log_chroma_client_initialized(persist_dir: str) -> None:
+    _trace_info(f"Chroma client initialized (persist_dir={persist_dir})")
+
+
+def log_chroma_collection_opened(name: str) -> None:
+    _trace_info(f"Chroma collection opened (name={name})")
