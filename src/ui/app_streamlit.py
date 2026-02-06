@@ -2764,14 +2764,18 @@ def run_app() -> None:
     )
     clear_all_clicked = action_cols[1].button("Clear all edits")
 
-    persist_cols = st.columns(3)
+    persist_cols = st.columns([1, 3])
     save_overrides_clicked = persist_cols[0].button("Save overrides")
-    revert_saved_clicked = persist_cols[1].button("Revert to saved")
-    discard_saved_clicked = persist_cols[2].button("Discard saved overrides")
-    discard_confirm = persist_cols[2].checkbox(
-        "Confirm discard saved overrides",
-        key=f"confirm_discard_overrides_{gse_id}",
-    )
+    revert_saved_clicked = False
+    discard_saved_clicked = False
+    discard_confirm = False
+    with persist_cols[1].expander("More actions"):
+        revert_saved_clicked = st.button("Revert to saved")
+        discard_confirm = st.checkbox(
+            "Confirm discard saved overrides",
+            key=f"confirm_discard_overrides_{gse_id}",
+        )
+        discard_saved_clicked = st.button("Discard saved overrides")
 
     if revert_row_clicked:
         overrides = clear_overrides_for_gsm(
