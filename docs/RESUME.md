@@ -2,11 +2,15 @@
 
 ## Project Overview
 
-**GEO GSM Annotator Agent** is a deterministic, audit-first system for annotating and standardizing GEO sample-level (GSM) metadata.
+**GEO GSM Annotator Agent** is a deterministic, audit-first system for annotating and
+standardizing GEO sample-level (GSM) metadata.
 
-It combines large language models for proposal generation with strict deterministic validation, ontology grounding, and bounded repair loops, followed by explicit human curator judgment.
+It combines large language models for proposal generation with strict deterministic
+validation, ontology grounding, and bounded repair loops, followed by explicit human
+curator judgment.
 
-The system is designed for correctness, transparency, and curator trust, not end-to-end automation.
+The system is designed for correctness, transparency, and curator trust, not end-to-end
+automation.
 
 ---
 
@@ -14,18 +18,19 @@ The system is designed for correctness, transparency, and curator trust, not end
 
 GEO GSM metadata is:
 
-- heterogeneous and inconsistently labeled  
-- partially free-text  
-- often ambiguous, underspecified, or sloppy  
+- heterogeneous and inconsistently labeled
+- partially free-text
+- often ambiguous, underspecified, or sloppy
 
-Purely rule-based systems fail to generalize, while unconstrained LLM systems hallucinate or over-normalize.
+Purely rule-based systems fail to generalize, while unconstrained LLM systems hallucinate
+or over-normalize.
 
 This project bridges the gap by **separating responsibilities**:
 
-- **proposal generation** → LLMs  
-- **decision making** → deterministic logic  
-- **normalization & confidence assessment** → ontologies  
-- **final judgment** → human curators  
+- proposal generation → LLMs
+- decision making → deterministic logic
+- normalization & confidence assessment → ontologies
+- final judgment → human curators
 
 ---
 
@@ -79,7 +84,7 @@ This project bridges the gap by **separating responsibilities**:
   - repairable failures
 - Non-anatomical tissue placeholders handled explicitly
 - Disease generalization applied conservatively and deterministically
-- Unknown / underspecified values handled via documented fallback rules
+- Unknown or underspecified values handled via documented fallback rules
 
 All rules are documented in `docs/policies/policy-spec.md`.
 
@@ -91,7 +96,7 @@ All rules are documented in `docs/policies/policy-spec.md`.
 - Machine-readable failure codes and flags
 - No free-text rationale
 - Fully explainable and replayable decisions
-- Clear separation of **flags** vs **fatal failures**
+- Clear separation of flags vs fatal failures
 
 ---
 
@@ -105,17 +110,31 @@ All rules are documented in `docs/policies/policy-spec.md`.
 
 ---
 
-## Curator UI (v1.0)
+## Curator UI (v1.1)
 
-- Production-ready curator interface for large, multi-GSE workloads
-- Load and switch among multiple GSEs in a single session
-- Compact GSE-wide biology and count summaries
-- Table-first GSM review with icon-based status indicators
-- Field-level flag highlighting directly in the curation table
-- Direct GEO links for GSE and GSM accessions
-- Persistent override storage (`overrides.jsonl`) with reload support
-- Explicit export of final annotations with overrides applied
-- Full audit visibility, including original LLM outputs
+The curator interface is production-ready for large-scale, real-world curation.
+
+Key features:
+
+- AG Grid–based curation table with always-on editing
+- Pinned, icon-based workflow columns:
+  - Status (row state)
+  - Checked (persistent curator review marker)
+  - Edited (live pencil indicator)
+- Evidence-driven transparency:
+  - all per-field diagnostics sourced exclusively from `evidence.jsonl`
+  - field-level hover tooltips for detailed inspection
+  - fallback states shown as informational, not warnings
+- Removal of redundant diagnostic columns and modal-based inspection
+- Explicit bulk editing:
+  - multi-row selection
+  - single-column, single-value apply
+  - preview before apply
+  - full reversibility
+- Progressive disclosure for destructive actions
+- Reporting-ready exports:
+  - per-GSE CSV
+  - aggregate CSV across all GSEs loaded via `--input-dir`
 
 The UI is strictly non-authoritative and never alters backend semantics.
 
@@ -129,7 +148,7 @@ The following are treated as **law**:
 - Deterministic decision routing
 - Ontology grounding as validation only
 - RAG as fallback only
-- No learning or persistence
+- No learning from curator edits
 - Explicit auditability
 - Human curator as final authority
 
@@ -140,13 +159,12 @@ These invariants are defined in `docs/whitepaper.md`.
 ## Current Status
 
 - Backend stable and policy-hardened through **v0.9**
-- **Curator UI redesigned and completed in v1.0**
-- v0.8 focused on robustness and cache safety
-- v0.9 consolidated validation, repair, and reporting behavior
-- Policy layer explicitly documented (`docs/policies/`)
+- Curator UI refined and production-ready as of **v1.1**
+- Validation, repair, and reporting behavior consolidated
+- Policy layer fully documented
 - Real-world GEO edge cases handled deterministically
 - Canonical output defined as `annotations.jsonl`
-- All ambiguity surfaced via flags, never hidden heuristics
+- All ambiguity surfaced via explicit flags, never hidden heuristics
 
 ---
 
@@ -154,7 +172,7 @@ These invariants are defined in `docs/whitepaper.md`.
 
 - Bioinformatics curators
 - Data integration teams
-- AI-assisted curation pipelines requiring auditability
+- AI-assisted curation pipelines requiring auditability and reproducibility
 
 ---
 
@@ -188,6 +206,8 @@ These invariants are defined in `docs/whitepaper.md`.
 
 ## Summary
 
-The GEO GSM Annotator Agent prioritizes **correctness, determinism, and trust** over automation.
+The GEO GSM Annotator Agent prioritizes **correctness, determinism, and curator trust**
+over automation.
 
-By making policy explicit and behavior auditable, the system scales across messy real-world GEO metadata while remaining curator-governed, explainable, and safe.
+By making policy explicit and behavior auditable, the system scales across messy
+real-world GEO metadata while remaining explainable, reproducible, and human-governed.
