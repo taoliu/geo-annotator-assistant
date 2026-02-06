@@ -14,13 +14,19 @@ from ui.help_text import gsm_accession_tooltip, table_guidance_text, table_help_
 def test_table_guidance_text_mentions_accession() -> None:
     text = table_guidance_text()
 
-    assert "GSM accession" in text
-    assert "open details" in text.casefold()
+    assert "GSM" in text
+    assert "GEO" in text
+    assert "hover" in text.casefold() or "tooltip" in text.casefold()
 
 
 def test_table_help_lines_include_session_only() -> None:
     lines = table_help_lines()
 
     assert any("session-only" in line for line in lines)
-    assert any("close" in line.casefold() for line in lines)
+    assert any(
+        "hover" in line.casefold()
+        or "diagnostic" in line.casefold()
+        or "tooltip" in line.casefold()
+        for line in lines
+    )
     assert gsm_accession_tooltip() == "Open GEO page"

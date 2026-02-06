@@ -99,6 +99,8 @@ st.set_page_config(layout="wide")
 
 STATUS_COLUMN = "Status"
 CHECKED_COLUMN = "checked"
+EDITED_COLUMN = "Edited"
+EDITED_ICON = "✏️"
 GEO_ACCESSION_URL = "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc="
 RAW_ACCESSION_COLUMNS = (GSE_ACCESSION_RAW_COLUMN, GSM_ACCESSION_RAW_COLUMN)
 AGGRID_ROW_INDEX_COLUMN = "__row_index"
@@ -291,7 +293,14 @@ def _inject_layout_styles() -> None:
           background-color: #fff4e5 !important;
         }
         .ag-theme-streamlit .ag-cell.ag-status-cell {
-          cursor: pointer;
+          cursor: default;
+          text-align: center;
+        }
+        .ag-theme-streamlit .ag-cell.ag-checked-cell {
+          text-align: center;
+        }
+        .ag-theme-streamlit .ag-cell.ag-edited-cell {
+          text-align: center;
         }
         .ag-theme-streamlit .ag-cell.ag-geo-link {
           color: #1a73e8;
@@ -412,14 +421,13 @@ def _gse_options(rows: list[dict]) -> list[str]:
     return options
 
 
-def _render_filters(rows: list[dict]) -> tuple[str | None, str, bool]:
+def _render_filters(rows: list[dict]) -> tuple[str | None, str]:
     st.sidebar.header("Filters")
     options = _gse_options(rows)
     selected_gse = st.sidebar.selectbox("GSE", options)
     search_text = st.sidebar.text_input("Search")
-    edit_mode = st.sidebar.checkbox("Enable editing", value=False)
     gse_filter = None if selected_gse == "All" else selected_gse
-    return gse_filter, search_text, edit_mode
+    return gse_filter, search_text
 
 
 def _render_gse_switcher(
@@ -436,8 +444,6 @@ def _render_gse_switcher(
     )
     if previous and previous != active:
         st.session_state["active_row_idx"] = None
-        st.session_state["modal_open"] = False
-        st.session_state["last_opened_row_idx"] = None
     if skipped:
         with st.sidebar.expander("Skipped GSE directories", expanded=False):
             for name, reason in sorted(skipped.items()):
@@ -508,6 +514,7 @@ def _reorder_table_columns(df: pd.DataFrame) -> pd.DataFrame:
     preferred = [
         STATUS_COLUMN,
         CHECKED_COLUMN,
+        EDITED_COLUMN,
         "gse_accession",
         "gsm_accession",
         *CANONICAL_FIELDS,
@@ -1742,7 +1749,7 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
         editable=False,
     )
     gb.configure_grid_options(
-        suppressRowClickSelection=True,
+        suppressRowClickSelection=False,
         rowSelection="single",
         enableBrowserTooltips=True,
         tooltipShowDelay=0,
@@ -1755,11 +1762,6 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
         onCellClicked=JsCode(
             f"""
             function(event) {{
-              if (event.colDef && event.colDef.field === "{STATUS_COLUMN}") {{
-                event.api.deselectAll();
-                event.node.setSelected(true);
-                return;
-              }}
               if (event.colDef && (event.colDef.field === "gse_accession" || event.colDef.field === "gsm_accession")) {{
                 if (event.value) {{
                   window.open("{GEO_ACCESSION_URL}" + event.value, "_blank", "noopener,noreferrer");
@@ -1820,15 +1822,38 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
             "ag-status-flagged": f"value === '🚩'",
             "ag-status-accept": f"value === '✅'",
         },
-        width=70,
+        pinned="left",
+        lockPosition=True,
+        lockPinned=True,
+        suppressMovable=True,
+        resizable=False,
+        width=60,
     )
     gb.configure_column(
         CHECKED_COLUMN,
-        header_name=CHECKED_COLUMN,
+        header_name="",
         editable=True,
         cellRenderer="agCheckboxCellRenderer",
         cellEditor="agCheckboxCellEditor",
-        width=80,
+        pinned="left",
+        lockPosition=True,
+        lockPinned=True,
+        suppressMovable=True,
+        resizable=False,
+        cellClass="ag-checked-cell",
+        width=70,
+    )
+    gb.configure_column(
+        EDITED_COLUMN,
+        header_name="",
+        editable=False,
+        pinned="left",
+        lockPosition=True,
+        lockPinned=True,
+        suppressMovable=True,
+        resizable=False,
+        cellClass="ag-edited-cell",
+        width=60,
     )
     gb.configure_column(
         "Review flags",
@@ -2169,7 +2194,9 @@ def _build_editable_df(
 
     edited_keys = {(gse, gsm) for gse, gsm, _ in overrides}
     edited_values = [
-        "Yes" if (row["gse_accession"], row["gsm_accession"]) in edited_keys else ""
+        EDITED_ICON
+        if (row["gse_accession"], row["gsm_accession"]) in edited_keys
+        else ""
         for row in df_base.to_dict("records")
     ]
     status_values = [
@@ -2179,7 +2206,7 @@ def _build_editable_df(
         for row in df_base.to_dict("records")
     ]
     df_editable[STATUS_COLUMN] = status_values
-    df_editable["Edited"] = edited_values
+    df_editable[EDITED_COLUMN] = edited_values
 
     review_values = []
     terminal_values = []
@@ -2585,7 +2612,7 @@ def run_app() -> None:
         _render_skipped_panel(inputs.skipped)
 
     rows = build_table_rows(curation_records)
-    gse_filter, search_text, edit_mode = _render_filters(rows)
+    gse_filter, search_text = _render_filters(rows)
     base_rows = filter_table_rows(rows, gse_filter, search_text)
 
     flags_by_gsm = build_flags_index(evidence_records)
@@ -2641,10 +2668,6 @@ def run_app() -> None:
     active_row_idx = st.session_state.get("active_row_idx")
     if not isinstance(active_row_idx, int):
         active_row_idx = None
-    modal_open = st.session_state.get("modal_open")
-    if not isinstance(modal_open, bool):
-        modal_open = False
-
     indicator = st.empty()
 
     triage_flags = build_triage_flags(base_rows, evidence_lookup, overrides)
@@ -2668,6 +2691,12 @@ def run_app() -> None:
     _section_divider()
     header_cols = st.columns([3, 5])
     header_cols[0].markdown("### Curation table")
+    header_cols[0].caption(
+        "Status: row state (flagged/clean). "
+        "Checked: curator review marker saved to disk. "
+        "Edited: pencil indicates curator overrides. "
+        "Details via hover tooltips."
+    )
     triage_filter = _render_triage_filters_inline(header_cols[1])
     primary_failure_options = sorted(
         {
@@ -2720,167 +2749,78 @@ def run_app() -> None:
     st.caption(table_guidance_text())
 
     selected_rows: list[int] = []
-    if edit_mode:
-        action_cols = st.columns(2)
-        active_selection = None
-        if isinstance(active_row_idx, int):
-            active_selection = resolve_selected_key(filtered_rows, [active_row_idx])
-        if action_cols[0].button(
-            "Revert selected row",
-            disabled=active_selection is None,
-        ):
-            overrides = clear_overrides_for_gsm(
-                overrides, active_selection[0], active_selection[1]
-            )
-            overrides_by_gse[gse_id] = overrides
-            st.session_state["overrides_by_gse"] = overrides_by_gse
-        if action_cols[1].button("Clear all edits"):
-            overrides = clear_all_overrides(overrides)
-            overrides_by_gse[gse_id] = overrides
-            st.session_state["overrides_by_gse"] = overrides_by_gse
-
-        df_base = pd.DataFrame(filtered_rows)
-        df_editable = _build_editable_df(
-            df_base,
-            overrides,
-            evidence_lookup,
-            flags_by_gsm,
-            flag_summaries,
-            primary_failures,
-            final_decisions,
-            review_counts,
-            terminal_fallback_counts,
-            outlier_categories_by_gsm,
-            checked_state,
+    action_cols = st.columns(2)
+    active_selection = None
+    if isinstance(active_row_idx, int):
+        active_selection = resolve_selected_key(filtered_rows, [active_row_idx])
+    if action_cols[0].button(
+        "Revert selected row",
+        disabled=active_selection is None,
+    ):
+        overrides = clear_overrides_for_gsm(
+            overrides, active_selection[0], active_selection[1]
         )
-        df_editable = _append_aggrid_meta_columns(
-            df_editable,
-            curation_lookup,
-            evidence_lookup,
-            audit_lookup,
-            flag_summaries,
-            primary_failures,
-        )
-        grid_response = _render_aggrid_table(
-            df_editable,
-            edit_mode=True,
-            key="curation_table_edit",
-        )
-        selected_rows = _extract_aggrid_selected_rows(grid_response)
-        df_edited = _extract_aggrid_data(grid_response, df_editable)
-        overrides_visible = compute_overrides(df_base, df_edited)
-        visible_keys = {
-            (row["gse_accession"], row["gsm_accession"]) for row in filtered_rows
-        }
-        overrides = _merge_overrides(overrides, overrides_visible, visible_keys)
         overrides_by_gse[gse_id] = overrides
         st.session_state["overrides_by_gse"] = overrides_by_gse
-        checked_updates = _extract_checked_updates(df_edited)
-        merged_checked = _merge_checked(checked_state, checked_updates, visible_keys)
-        checked_changes = {
-            key: value
-            for key, value in merged_checked.items()
-            if checked_state.get(key) != value
-        }
-        if checked_changes:
-            _persist_checked_updates(active_paths, gse_id, checked_changes)
-            checked_state = merged_checked
-            checked_by_gse[gse_id] = checked_state
-            st.session_state["checked_by_gse"] = checked_by_gse
-        _render_unsaved_indicator(indicator, overrides)
-    else:
-        _render_unsaved_indicator(indicator, overrides)
-        df = pd.DataFrame(filtered_rows)
-        if not df.empty:
-            edited_keys = {(gse, gsm) for gse, gsm, _ in overrides}
-            edited_values = [
-                "Yes" if (row["gse_accession"], row["gsm_accession"]) in edited_keys else ""
-                for row in filtered_rows
-            ]
-            status_values = [
-                _decision_icon(
-                    final_decisions.get((row["gse_accession"], row["gsm_accession"]), "")
-                )
-                for row in filtered_rows
-            ]
-            df[STATUS_COLUMN] = status_values
-            df["Edited"] = edited_values
-            review_values = []
-            terminal_values = []
-            outlier_values = []
-            primary_values = []
-            summary_values = []
-            for row in filtered_rows:
-                key = (row["gse_accession"], row["gsm_accession"])
-                review_count = review_counts.get(key, 0)
-                review_values.append(str(review_count) if review_count else "")
-                terminal_count = terminal_fallback_counts.get(key, 0)
-                terminal_values.append(str(terminal_count) if terminal_count else "")
-                outliers = outlier_categories_by_gsm.get(key, [])
-                outlier_values.append(",".join(outliers))
-                primary_values.append(primary_failures.get(key, ""))
-                summary = flag_summaries.get(key)
-                if summary is None:
-                    summary = build_flag_category_summary([], {})
-                summary_values.append(format_flag_category_summary(summary))
-            df["Review flags"] = review_values
-            df["Terminal fallbacks"] = terminal_values
-            df["Outliers"] = outlier_values
-            df["Primary failure"] = primary_values
-            df["Flag summary"] = summary_values
-            checked_values = []
-            for row in filtered_rows:
-                key = (row["gse_accession"], row["gsm_accession"])
-                checked_values.append(bool(checked_state.get(key, False)))
-            df[CHECKED_COLUMN] = checked_values
-            flagged_values = []
-            for row in filtered_rows:
-                key = (row["gse_accession"], row["gsm_accession"])
-                flagged = _evidence_flagged_fields(evidence_lookup, key)
-                flagged_values.append(",".join(sorted(flagged)))
-            df["flagged_fields"] = flagged_values
-            df = _reorder_table_columns(df)
-        if not df.empty:
-            df = _append_aggrid_meta_columns(
-                df,
-                curation_lookup,
-                evidence_lookup,
-                audit_lookup,
-                flag_summaries,
-                primary_failures,
-            )
-            grid_response = _render_aggrid_table(
-                df,
-                edit_mode=False,
-                key="curation_table_view",
-            )
-            selected_rows = _extract_aggrid_selected_rows(grid_response)
-            df_edited = _extract_aggrid_data(grid_response, df)
-            checked_updates = _extract_checked_updates(df_edited)
-            visible_keys = {
-                (row["gse_accession"], row["gsm_accession"]) for row in filtered_rows
-            }
-            merged_checked = _merge_checked(checked_state, checked_updates, visible_keys)
-            checked_changes = {
-                key: value
-                for key, value in merged_checked.items()
-                if checked_state.get(key) != value
-            }
-            if checked_changes:
-                _persist_checked_updates(active_paths, gse_id, checked_changes)
-                checked_state = merged_checked
-                checked_by_gse[gse_id] = checked_state
-                st.session_state["checked_by_gse"] = checked_by_gse
+    if action_cols[1].button("Clear all edits"):
+        overrides = clear_all_overrides(overrides)
+        overrides_by_gse[gse_id] = overrides
+        st.session_state["overrides_by_gse"] = overrides_by_gse
+
+    df_base = pd.DataFrame(filtered_rows)
+    df_editable = _build_editable_df(
+        df_base,
+        overrides,
+        evidence_lookup,
+        flags_by_gsm,
+        flag_summaries,
+        primary_failures,
+        final_decisions,
+        review_counts,
+        terminal_fallback_counts,
+        outlier_categories_by_gsm,
+        checked_state,
+    )
+    df_editable = _append_aggrid_meta_columns(
+        df_editable,
+        curation_lookup,
+        evidence_lookup,
+        audit_lookup,
+        flag_summaries,
+        primary_failures,
+    )
+    grid_response = _render_aggrid_table(
+        df_editable,
+        edit_mode=True,
+        key="curation_table_edit",
+    )
+    selected_rows = _extract_aggrid_selected_rows(grid_response)
+    df_edited = _extract_aggrid_data(grid_response, df_editable)
+    overrides_visible = compute_overrides(df_base, df_edited)
+    visible_keys = {
+        (row["gse_accession"], row["gsm_accession"]) for row in filtered_rows
+    }
+    overrides = _merge_overrides(overrides, overrides_visible, visible_keys)
+    overrides_by_gse[gse_id] = overrides
+    st.session_state["overrides_by_gse"] = overrides_by_gse
+    checked_updates = _extract_checked_updates(df_edited)
+    merged_checked = _merge_checked(checked_state, checked_updates, visible_keys)
+    checked_changes = {
+        key: value
+        for key, value in merged_checked.items()
+        if checked_state.get(key) != value
+    }
+    if checked_changes:
+        _persist_checked_updates(active_paths, gse_id, checked_changes)
+        checked_state = merged_checked
+        checked_by_gse[gse_id] = checked_state
+        st.session_state["checked_by_gse"] = checked_by_gse
+    _render_unsaved_indicator(indicator, overrides)
 
     if selected_rows:
         row_idx = selected_rows[0]
-        last_opened = st.session_state.get("last_opened_row_idx")
-        if row_idx != last_opened:
-            st.session_state["active_row_idx"] = row_idx
-            st.session_state["modal_open"] = True
-            st.session_state["last_opened_row_idx"] = row_idx
-            active_row_idx = row_idx
-            modal_open = True
+        st.session_state["active_row_idx"] = row_idx
+        active_row_idx = row_idx
 
     overrides = _render_overrides_persistence(
         active_paths,
@@ -2891,24 +2831,7 @@ def run_app() -> None:
     )
     _render_export_final_annotations(curation_records, overrides)
 
-    suggestions_lookup = index_suggestion_records(suggestions_records)
 
-    if modal_open and isinstance(active_row_idx, int):
-        selection_key = resolve_selected_key(filtered_rows, [active_row_idx])
-        if selection_key is None:
-            st.session_state["active_row_idx"] = None
-            st.session_state["modal_open"] = False
-        else:
-            details = build_details_context(
-                selection_key,
-                curation_lookup,
-                evidence_lookup,
-                audit_lookup,
-                suggestions_lookup,
-                flags_by_gsm,
-                overrides,
-            )
-            _render_details_modal(details, active_paths.suggestions_present, edit_mode)
 
 
 run_app()

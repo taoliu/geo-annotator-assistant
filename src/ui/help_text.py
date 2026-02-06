@@ -3,15 +3,13 @@
 from __future__ import annotations
 
 TABLE_GUIDANCE_TEXT = (
-    "Click the status icon (✅/🚩) to open details. "
-    "GSM accession links open GEO."
+    "Hover cells for diagnostics. GSE/GSM accessions open GEO."
 )
 GSM_ACCESSION_TOOLTIP = "Open GEO page"
 STATUS_ICON_TOOLTIP = "Decision status (✅ = ACCEPT, 🚩 = FLAGGED)"
 TABLE_HELP_LINES = (
-    "Click the status icon (✅/🚩) to open details in the modal.",
+    "Hover cells for diagnostics and backend context.",
     "GSE/GSM accessions link out to GEO.",
-    "Use the Close button in the modal to dismiss it.",
     "Edits are session-only until you export overrides.",
 )
 
