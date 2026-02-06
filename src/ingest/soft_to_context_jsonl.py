@@ -6,6 +6,12 @@ import json
 import sys
 from pathlib import Path
 
+from agent.runtime_trace import (
+    log_gse_soft_download_completed,
+    log_gse_soft_download_start,
+    log_gse_soft_parsed,
+    log_gse_using_local_soft,
+)
 from ingest.gse_soft_fetcher import (
     download_file_via_ftp,
     download_file_via_https,
@@ -148,6 +154,7 @@ def soft_to_context_jsonl(
                 f"INFO: {gse_accession}: using local SOFT at {soft_file}",
                 file=sys.stderr,
             )
+            log_gse_using_local_soft(gse_accession)
         elif geo_soft_on_missing == "skip":
             print(
                 f"WARNING: {gse_accession}: local SOFT missing at {soft_file}; skipping (geo_soft_on_missing=skip)",
@@ -167,6 +174,7 @@ def soft_to_context_jsonl(
                 f"WARNING: {gse_accession}: local SOFT missing at {soft_file}; downloading via {geo_soft_remote_transport}",
                 file=sys.stderr,
             )
+            log_gse_soft_download_start(gse_accession, geo_soft_remote_transport)
             soft_file = _download_soft(
                 gse_accession,
                 soft_file.parent,
@@ -176,10 +184,13 @@ def soft_to_context_jsonl(
                 f"INFO: {gse_accession}: downloaded SOFT to {soft_file}",
                 file=sys.stderr,
             )
+            log_gse_soft_download_completed(gse_accession)
         jsonl_path = context_dir / f"{gse_accession}_contexts.jsonl"
         if jsonl_path.is_file():
             return str(jsonl_path)
-        return _write_context_jsonl(soft_file, jsonl_path)
+        result = _write_context_jsonl(soft_file, jsonl_path)
+        log_gse_soft_parsed(gse_accession)
+        return result
 
     print(
         f"INFO: {gse_accession}: resolving SOFT (remote-only)",
@@ -207,6 +218,7 @@ def soft_to_context_jsonl(
             f"INFO: {gse_accession}: downloading SOFT via {geo_soft_remote_transport}",
             file=sys.stderr,
         )
+        log_gse_soft_download_start(gse_accession, geo_soft_remote_transport)
         soft_file = _download_soft(
             gse_accession,
             local_cache_dir,
@@ -216,8 +228,11 @@ def soft_to_context_jsonl(
             f"INFO: {gse_accession}: downloaded SOFT to {soft_file}",
             file=sys.stderr,
         )
+        log_gse_soft_download_completed(gse_accession)
 
     jsonl_path = context_dir / f"{gse_accession}_contexts.jsonl"
     if jsonl_path.is_file():
         return str(jsonl_path)
-    return _write_context_jsonl(soft_file, jsonl_path)
+    result = _write_context_jsonl(soft_file, jsonl_path)
+    log_gse_soft_parsed(gse_accession)
+    return result

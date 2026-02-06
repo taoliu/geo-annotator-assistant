@@ -10,6 +10,11 @@ from pathlib import Path
 
 from agent.config import load_config
 from agent.overrides import apply_overrides_to_outputs, load_overrides
+from agent.runtime_trace import (
+    log_gse_outputs_written,
+    log_gse_start_processing,
+    tracing_scope,
+)
 from agent.run_batch import run_batch
 from agent.run_gse import (
     run_gse_from_accession,
@@ -121,6 +126,15 @@ def _resolve_output_dir(
     return base_dir
 
 
+def _collect_gse_accessions(annotations: list[dict]) -> list[str]:
+    gse_values = {
+        str(record.get("gse_accession"))
+        for record in annotations
+        if record.get("gse_accession")
+    }
+    return sorted(gse_values)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     description = "Run the GEO GSM annotator agent."
     epilog = "\n".join(
@@ -168,6 +182,11 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Run the pipeline but skip writing output files.",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Emit runtime milestone tracing to stderr for pipeline execution steps.",
+    )
     return parser
 
 
@@ -181,62 +200,57 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(parsed_argv)
 
     try:
-        config = load_config(args.config)
-        overrides_path = args.overrides
-        if not overrides_path:
-            paths_cfg = config.get("paths") if isinstance(config.get("paths"), dict) else {}
-            overrides_path = paths_cfg.get("overrides_path") if paths_cfg else None
-        overrides = load_overrides(overrides_path) if overrides_path else {}
+        with tracing_scope(args.verbose):
+            config = load_config(args.config)
+            overrides_path = args.overrides
+            if not overrides_path:
+                paths_cfg = (
+                    config.get("paths") if isinstance(config.get("paths"), dict) else {}
+                )
+                overrides_path = paths_cfg.get("overrides_path") if paths_cfg else None
+            overrides = load_overrides(overrides_path) if overrides_path else {}
 
-        gse_report = None
-        gse_values = None
-        output_dir_arg = args.output_dir
-        output_base_dir = None
-        if args.gse_file:
-            gse_ids = _read_gse_file(args.gse_file)
-            output_base_dir = (
-                _default_gse_batch_output_dir(args.gse_file, gse_ids)
-                if output_dir_arg is _OUTPUT_DIR_SENTINEL
-                else output_dir_arg
-            )
-        else:
-            output_base_dir = (
-                "outputs"
-                if output_dir_arg is _OUTPUT_DIR_SENTINEL
-                else output_dir_arg
-            )
+            gse_report = None
+            gse_values = None
+            output_dir_arg = args.output_dir
+            output_base_dir = None
+            if args.gse_file:
+                gse_ids = _read_gse_file(args.gse_file)
+                output_base_dir = (
+                    _default_gse_batch_output_dir(args.gse_file, gse_ids)
+                    if output_dir_arg is _OUTPUT_DIR_SENTINEL
+                    else output_dir_arg
+                )
+            else:
+                output_base_dir = (
+                    "outputs"
+                    if output_dir_arg is _OUTPUT_DIR_SENTINEL
+                    else output_dir_arg
+                )
 
-        llm_client = None
-        if args.gse_file or args.gse or args.gse_soft or args.jsonl:
-            llm_cfg = config.get("llm", {}) if isinstance(config.get("llm"), dict) else {}
-            llm_transport = llm_cfg.get("transport") or llm_cfg.get("mode", "stub")
-            if llm_transport == "local_transformers":
-                llm_client = create_llm_client(llm_cfg)
+            llm_client = None
+            if args.gse_file or args.gse or args.gse_soft or args.jsonl:
+                llm_cfg = (
+                    config.get("llm", {}) if isinstance(config.get("llm"), dict) else {}
+                )
+                llm_transport = llm_cfg.get("transport") or llm_cfg.get("mode", "stub")
+                if llm_transport == "local_transformers":
+                    llm_client = create_llm_client(llm_cfg)
 
-        if args.gsm:
-            annotation, audit, is_flagged = run_single_gsm(args.gsm, config)
-            annotations = [annotation]
-            audits = [audit]
-            flagged = [annotation] if is_flagged else []
-            summary = {
-                "n_total": 1,
-                "n_accepted": 0 if is_flagged else 1,
-                "n_flagged": 1 if is_flagged else 0,
-            }
-        elif args.gsm_file:
-            gsm_ids = _read_gsm_file(args.gsm_file)
-            annotations, audits, flagged, summary = run_batch(gsm_ids, config)
-        elif args.jsonl:
-            (
-                annotations,
-                audits,
-                flagged,
-                summary,
-                gse_report,
-                gse_values,
-            ) = run_gse_from_jsonl(args.jsonl, config, llm_client=llm_client)
-        elif args.gse:
-            try:
+            if args.gsm:
+                annotation, audit, is_flagged = run_single_gsm(args.gsm, config)
+                annotations = [annotation]
+                audits = [audit]
+                flagged = [annotation] if is_flagged else []
+                summary = {
+                    "n_total": 1,
+                    "n_accepted": 0 if is_flagged else 1,
+                    "n_flagged": 1 if is_flagged else 0,
+                }
+            elif args.gsm_file:
+                gsm_ids = _read_gsm_file(args.gsm_file)
+                annotations, audits, flagged, summary = run_batch(gsm_ids, config)
+            elif args.jsonl:
                 (
                     annotations,
                     audits,
@@ -244,20 +258,9 @@ def main(argv: list[str] | None = None) -> None:
                     summary,
                     gse_report,
                     gse_values,
-                ) = run_gse_from_accession(
-                    args.gse,
-                    config,
-                    output_base_dir,
-                    llm_client=llm_client,
-                )
-            except LocalSoftMissingError as exc:
-                print(
-                    f"WARNING: GEO SOFT file not found for {exc.gse_accession} at {exc.path}; skipping.",
-                    file=sys.stderr,
-                )
-                return
-        elif args.gse_file:
-            for gse_accession in gse_ids:
+                ) = run_gse_from_jsonl(args.jsonl, config, llm_client=llm_client)
+            elif args.gse:
+                log_gse_start_processing(args.gse)
                 try:
                     (
                         annotations,
@@ -267,7 +270,7 @@ def main(argv: list[str] | None = None) -> None:
                         gse_report,
                         gse_values,
                     ) = run_gse_from_accession(
-                        gse_accession,
+                        args.gse,
                         config,
                         output_base_dir,
                         llm_client=llm_client,
@@ -277,86 +280,116 @@ def main(argv: list[str] | None = None) -> None:
                         f"WARNING: GEO SOFT file not found for {exc.gse_accession} at {exc.path}; skipping.",
                         file=sys.stderr,
                     )
-                    continue
-
-                output_dir = _resolve_output_dir(
-                    output_base_dir,
-                    annotations,
-                    True,
-                )
-                output_paths = None
-                if not args.dry_run:
-                    suggestions = None
-                    if args.emit_suggestions:
-                        suggestions = build_gse_suggestions(
-                            annotations, audits, config, emit_suggestions=True
+                    return
+            elif args.gse_file:
+                for gse_accession in gse_ids:
+                    log_gse_start_processing(gse_accession)
+                    try:
+                        (
+                            annotations,
+                            audits,
+                            flagged,
+                            summary,
+                            gse_report,
+                            gse_values,
+                        ) = run_gse_from_accession(
+                            gse_accession,
+                            config,
+                            output_base_dir,
+                            llm_client=llm_client,
                         )
-                    if overrides:
-                        apply_overrides_to_outputs(overrides, annotations, audits, flagged)
-                    extra_json = (
-                        {"gse_consistency.json": gse_report} if gse_report else None
-                    )
-                    extra_jsonl = (
-                        {"gse_field_values.jsonl": [gse_values]} if gse_values else None
-                    )
-                    output_paths = write_run_outputs(
-                        output_dir,
+                    except LocalSoftMissingError as exc:
+                        print(
+                            f"WARNING: GEO SOFT file not found for {exc.gse_accession} at {exc.path}; skipping.",
+                            file=sys.stderr,
+                        )
+                        continue
+
+                    output_dir = _resolve_output_dir(
+                        output_base_dir,
                         annotations,
-                        audits,
-                        flagged,
-                        suggestions=suggestions,
-                        extra_json=extra_json,
-                        extra_jsonl=extra_jsonl,
+                        True,
                     )
+                    output_paths = None
+                    if not args.dry_run:
+                        suggestions = None
+                        if args.emit_suggestions:
+                            suggestions = build_gse_suggestions(
+                                annotations, audits, config, emit_suggestions=True
+                            )
+                        if overrides:
+                            apply_overrides_to_outputs(
+                                overrides, annotations, audits, flagged
+                            )
+                        extra_json = (
+                            {"gse_consistency.json": gse_report} if gse_report else None
+                        )
+                        extra_jsonl = (
+                            {"gse_field_values.jsonl": [gse_values]}
+                            if gse_values
+                            else None
+                        )
+                        output_paths = write_run_outputs(
+                            output_dir,
+                            annotations,
+                            audits,
+                            flagged,
+                            suggestions=suggestions,
+                            extra_json=extra_json,
+                            extra_jsonl=extra_jsonl,
+                        )
+                        log_gse_outputs_written(gse_accession, output_dir)
 
-                _print_summary(summary, output_paths, args.dry_run)
-            return
-        elif args.gse_soft:
-            (
-                annotations,
-                audits,
-                flagged,
-                summary,
-                gse_report,
-                gse_values,
-            ) = run_gse_from_soft_file(
-                args.gse_soft,
-                config,
-                output_base_dir,
-                llm_client=llm_client,
-            )
-        else:
-            raise ValueError("No input mode selected.")
-
-        output_dir = _resolve_output_dir(
-            output_base_dir,
-            annotations,
-            bool(args.jsonl or args.gse or args.gse_soft),
-        )
-        output_paths = None
-        if not args.dry_run:
-            suggestions = None
-            if args.emit_suggestions:
-                suggestions = build_gse_suggestions(
-                    annotations, audits, config, emit_suggestions=True
+                    _print_summary(summary, output_paths, args.dry_run)
+                return
+            elif args.gse_soft:
+                (
+                    annotations,
+                    audits,
+                    flagged,
+                    summary,
+                    gse_report,
+                    gse_values,
+                ) = run_gse_from_soft_file(
+                    args.gse_soft,
+                    config,
+                    output_base_dir,
+                    llm_client=llm_client,
                 )
-            if overrides:
-                apply_overrides_to_outputs(overrides, annotations, audits, flagged)
-            extra_json = {"gse_consistency.json": gse_report} if gse_report else None
-            extra_jsonl = (
-                {"gse_field_values.jsonl": [gse_values]} if gse_values else None
-            )
-            output_paths = write_run_outputs(
-                output_dir,
-                annotations,
-                audits,
-                flagged,
-                suggestions=suggestions,
-                extra_json=extra_json,
-                extra_jsonl=extra_jsonl,
-            )
+            else:
+                raise ValueError("No input mode selected.")
 
-        _print_summary(summary, output_paths, args.dry_run)
+            output_dir = _resolve_output_dir(
+                output_base_dir,
+                annotations,
+                bool(args.jsonl or args.gse or args.gse_soft),
+            )
+            output_paths = None
+            if not args.dry_run:
+                suggestions = None
+                if args.emit_suggestions:
+                    suggestions = build_gse_suggestions(
+                        annotations, audits, config, emit_suggestions=True
+                    )
+                if overrides:
+                    apply_overrides_to_outputs(overrides, annotations, audits, flagged)
+                extra_json = {"gse_consistency.json": gse_report} if gse_report else None
+                extra_jsonl = (
+                    {"gse_field_values.jsonl": [gse_values]} if gse_values else None
+                )
+                output_paths = write_run_outputs(
+                    output_dir,
+                    annotations,
+                    audits,
+                    flagged,
+                    suggestions=suggestions,
+                    extra_json=extra_json,
+                    extra_jsonl=extra_jsonl,
+                )
+                for gse_accession in _collect_gse_accessions(annotations):
+                    log_gse_outputs_written(gse_accession, output_dir)
+
+            _print_summary(summary, output_paths, args.dry_run)
     except Exception as exc:
         print(f"runtime error: {exc}", file=sys.stderr)
         raise SystemExit(2) from exc

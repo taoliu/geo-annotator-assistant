@@ -23,6 +23,16 @@ from agent.ontology_canonicalization import (
 )
 from agent.prompts import load_prompt
 from agent.repair_loop import apply_repairs, merge_repair_output
+from agent.runtime_trace import (
+    log_gsm_calling_llm,
+    log_gsm_decision,
+    log_gsm_llm_received,
+    log_gsm_ontology_grounding_completed,
+    log_gsm_ontology_grounding_started,
+    log_gsm_repair_loop_completed,
+    log_gsm_repair_loop_entered,
+    log_gsm_validation_completed,
+)
 from agent.state import PipelineState
 from agent.context_fingerprint import compute_context_fingerprint
 from agent.llm_cache import LLMCache, LLMCacheEntry, build_llm_cache_key
@@ -361,12 +371,15 @@ def _update_validation_state(
     if state.locked_fields.get("tissue_type", {}).get("reason") == "tissue_type_non_anatomical_placeholder":
         preserved_tissue_match = state.ontology_matches.get("tissue_type")
     state.semantic_errors = semantic_validate(parsed_output, context_text)
+    log_gsm_validation_completed(state.gsm_accession)
     rag_cfg = cfg.get("rag", {}) if isinstance(cfg, dict) else {}
+    log_gsm_ontology_grounding_started(state.gsm_accession)
     matches, ontology_failures = ground_all_fields(
         parsed_output,
         context_text,
         rag_cfg,
     )
+    log_gsm_ontology_grounding_completed(state.gsm_accession)
     if preserved_disease_match is not None:
         matches["disease"] = preserved_disease_match
         ontology_failures.pop("disease", None)
@@ -485,8 +498,10 @@ def _generate_with_format_repairs(
             cache_hit = True
             return parsed_output, format_errors, cache_key, cache_hit
 
+    log_gsm_calling_llm(state.gsm_accession)
     raw_result = client.generate(request)
     raw_output = raw_result.text
+    log_gsm_llm_received(state.gsm_accession)
     _record_llm_output(state, raw_output, cache_hit=False)
 
     parsed_output, format_errors = validate_format(
@@ -713,6 +728,7 @@ def _run_llm_pipeline(
             state.gsm_accession,
             state.gse_accession,
         )
+        log_gsm_decision(state.gsm_accession, state.final_decision)
         audit_record = build_audit_record(state)
         return state.final_output, audit_record, True
     if format_errors:
@@ -722,6 +738,7 @@ def _run_llm_pipeline(
             context_text,
             cfg,
         )
+        log_gsm_decision(state.gsm_accession, state.final_decision or "FLAGGED")
         audit_record = build_audit_record(state)
         return state.final_output, audit_record, True
 
@@ -733,6 +750,7 @@ def _run_llm_pipeline(
     elif state.final_output is not None and state.final_decision is not None:
         _apply_locked_field_values(state)
         _apply_non_accept_flags(state)
+        log_gsm_decision(state.gsm_accession, state.final_decision)
         audit_record = build_audit_record(state)
         flagged = state.final_decision != "ACCEPT"
         return state.final_output, audit_record, flagged
@@ -749,6 +767,17 @@ def _run_llm_pipeline(
             cfg,
         )
 
+    repair_failures = _build_failures_by_field(
+        state.semantic_errors,
+        state.ontology_failures,
+        state.consistency_flags,
+    )
+    if state.locked_fields:
+        for locked_field in list(state.locked_fields):
+            repair_failures.pop(locked_field, None)
+    repair_loop_entered = bool(repair_failures)
+    if repair_loop_entered:
+        log_gsm_repair_loop_entered(state.gsm_accession)
     apply_repairs(
         state,
         decision_table,
@@ -760,6 +789,8 @@ def _run_llm_pipeline(
         validation_callback=_refresh_validation,
         format_salvage_limit=_resolve_format_salvage_limit(cfg),
     )
+    if repair_loop_entered:
+        log_gsm_repair_loop_completed(state.gsm_accession)
 
     state.final_output = _normalize_output(
         state.final_output or {},
@@ -773,6 +804,7 @@ def _run_llm_pipeline(
         )
         state.final_decision = "FLAGGED" if unresolved else "ACCEPT"
     _apply_non_accept_flags(state)
+    log_gsm_decision(state.gsm_accession, state.final_decision or "FLAGGED")
 
     audit_record = build_audit_record(state)
     flagged = state.final_decision != "ACCEPT"

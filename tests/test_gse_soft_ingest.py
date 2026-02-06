@@ -11,6 +11,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 import ingest.soft_to_context_jsonl as soft_module
+from agent.runtime_trace import tracing_scope
 from agent.config import load_config
 from agent.run_gse import run_gse_from_accession, run_gse_from_soft_file
 from ingest.gse_soft_fetcher import get_local_path
@@ -302,3 +303,59 @@ def test_local_miss_remote_downloads_to_local_mirror(
     assert f"INFO: {gse_accession}: resolving SOFT (local-first)" in stderr
     assert f"WARNING: {gse_accession}: local SOFT missing at {expected_local}; downloading via ftp" in stderr
     assert f"INFO: {gse_accession}: downloaded SOFT to {expected_local}" in stderr
+
+
+def test_verbose_traces_soft_download_and_parse(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    gse_accession = "GSE4555"
+    local_dir = tmp_path / "mirror"
+    _patch_parser(monkeypatch, gse_accession, "GSM4555")
+
+    def _ftp_download(_remote: str, local: str, **_kwargs) -> None:
+        local_path = Path(local)
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        local_path.write_text("FAKE SOFT", encoding="utf-8")
+
+    monkeypatch.setattr(soft_module, "download_file_via_https", lambda *_a, **_k: None)
+    monkeypatch.setattr(soft_module, "download_file_via_ftp", _ftp_download)
+
+    with tracing_scope(True):
+        soft_module.soft_to_context_jsonl(
+            gse_accession=gse_accession,
+            work_dir=tmp_path,
+            geo_soft_local_dir=local_dir,
+            geo_soft_on_missing="remote",
+            geo_soft_remote_transport="ftp",
+        )
+
+    lines = capsys.readouterr().err.splitlines()
+    assert f"INFO: {gse_accession}: SOFT downloaded" in lines
+    assert f"INFO: {gse_accession}: SOFT parsed" in lines
+
+
+def test_verbose_traces_using_local_soft_exact_line(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    gse_accession = "GSE4666"
+    local_dir = tmp_path / "mirror"
+    local_path = Path(get_local_path(gse_accession, str(local_dir)))
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+    local_path.write_text("FAKE SOFT", encoding="utf-8")
+    _patch_parser(monkeypatch, gse_accession, "GSM4666")
+
+    with tracing_scope(True):
+        soft_module.soft_to_context_jsonl(
+            gse_accession=gse_accession,
+            work_dir=tmp_path,
+            geo_soft_local_dir=local_dir,
+            geo_soft_on_missing="remote",
+        )
+
+    lines = capsys.readouterr().err.splitlines()
+    assert f"INFO: {gse_accession}: using local SOFT" in lines
+    assert f"INFO: {gse_accession}: SOFT parsed" in lines
