@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import re
 import sys
 from pathlib import Path
 
@@ -28,6 +30,9 @@ class _ArgumentParser(argparse.ArgumentParser):
         self.exit(1, f"error: {message}\n")
 
 
+_OUTPUT_DIR_SENTINEL = object()
+
+
 def _read_gsm_file(path: str) -> list[str]:
     gsm_path = Path(path)
     if not gsm_path.is_file():
@@ -42,6 +47,41 @@ def _read_gsm_file(path: str) -> list[str]:
             gsm_ids.append(stripped)
 
     return gsm_ids
+
+
+def _read_gse_file(path: str) -> list[str]:
+    gse_path = Path(path)
+    if not gse_path.is_file():
+        raise ValueError(f"GSE file not found: {path}")
+
+    gse_ids: list[str] = []
+    seen: set[str] = set()
+    with gse_path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            if stripped in seen:
+                continue
+            seen.add(stripped)
+            gse_ids.append(stripped)
+
+    if not gse_ids:
+        raise ValueError(f"No GSE accessions found in file: {path}")
+
+    return gse_ids
+
+
+def _sanitize_batch_label(label: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", label).strip("_")
+    return cleaned or "gse_batch"
+
+
+def _default_gse_batch_output_dir(gse_file: str, gse_ids: list[str]) -> str:
+    stem = Path(gse_file).stem
+    label = _sanitize_batch_label(stem)
+    digest = hashlib.sha1("\n".join(gse_ids).encode("utf-8")).hexdigest()[:8]
+    return str(Path("outputs") / f"{label}_{len(gse_ids)}_{digest}")
 
 
 def _print_summary(
@@ -99,10 +139,18 @@ def _build_parser() -> argparse.ArgumentParser:
     group.add_argument("--jsonl", help="Path to JSONL context records.")
     group.add_argument("--gse", help="GSE accession to process.")
     group.add_argument(
+        "--gse-file",
+        help="Path to a file containing GSE accessions (one per line).",
+    )
+    group.add_argument(
         "--gse-soft",
         help="Path to a local GSE SOFT file (.soft or .soft.gz).",
     )
-    parser.add_argument("--output-dir", default="outputs", help="Directory for outputs.")
+    parser.add_argument(
+        "--output-dir",
+        default=_OUTPUT_DIR_SENTINEL,
+        help="Directory for outputs.",
+    )
     parser.add_argument("--config", required=True, help="Path to YAML config file.")
     parser.add_argument(
         "--overrides",
@@ -140,6 +188,22 @@ def main(argv: list[str] | None = None) -> None:
 
         gse_report = None
         gse_values = None
+        output_dir_arg = args.output_dir
+        output_base_dir = None
+        if args.gse_file:
+            gse_ids = _read_gse_file(args.gse_file)
+            output_base_dir = (
+                _default_gse_batch_output_dir(args.gse_file, gse_ids)
+                if output_dir_arg is _OUTPUT_DIR_SENTINEL
+                else output_dir_arg
+            )
+        else:
+            output_base_dir = (
+                "outputs"
+                if output_dir_arg is _OUTPUT_DIR_SENTINEL
+                else output_dir_arg
+            )
+
         if args.gsm:
             annotation, audit, is_flagged = run_single_gsm(args.gsm, config)
             annotations = [annotation]
@@ -170,7 +234,50 @@ def main(argv: list[str] | None = None) -> None:
                 summary,
                 gse_report,
                 gse_values,
-            ) = run_gse_from_accession(args.gse, config, args.output_dir)
+            ) = run_gse_from_accession(args.gse, config, output_base_dir)
+        elif args.gse_file:
+            for gse_accession in gse_ids:
+                (
+                    annotations,
+                    audits,
+                    flagged,
+                    summary,
+                    gse_report,
+                    gse_values,
+                ) = run_gse_from_accession(gse_accession, config, output_base_dir)
+
+                output_dir = _resolve_output_dir(
+                    output_base_dir,
+                    annotations,
+                    True,
+                )
+                output_paths = None
+                if not args.dry_run:
+                    suggestions = None
+                    if args.emit_suggestions:
+                        suggestions = build_gse_suggestions(
+                            annotations, audits, config, emit_suggestions=True
+                        )
+                    if overrides:
+                        apply_overrides_to_outputs(overrides, annotations, audits, flagged)
+                    extra_json = (
+                        {"gse_consistency.json": gse_report} if gse_report else None
+                    )
+                    extra_jsonl = (
+                        {"gse_field_values.jsonl": [gse_values]} if gse_values else None
+                    )
+                    output_paths = write_run_outputs(
+                        output_dir,
+                        annotations,
+                        audits,
+                        flagged,
+                        suggestions=suggestions,
+                        extra_json=extra_json,
+                        extra_jsonl=extra_jsonl,
+                    )
+
+                _print_summary(summary, output_paths, args.dry_run)
+            return
         elif args.gse_soft:
             (
                 annotations,
@@ -179,12 +286,12 @@ def main(argv: list[str] | None = None) -> None:
                 summary,
                 gse_report,
                 gse_values,
-            ) = run_gse_from_soft_file(args.gse_soft, config, args.output_dir)
+            ) = run_gse_from_soft_file(args.gse_soft, config, output_base_dir)
         else:
             raise ValueError("No input mode selected.")
 
         output_dir = _resolve_output_dir(
-            args.output_dir,
+            output_base_dir,
             annotations,
             bool(args.jsonl or args.gse or args.gse_soft),
         )

@@ -121,3 +121,84 @@ def test_cli_no_suggestions_file(tmp_path: Path) -> None:
     )
 
     assert not (tmp_path / "suggestions.jsonl").exists()
+
+
+def test_read_gse_file_dedupes_and_ignores_comments(tmp_path: Path) -> None:
+    from agent import cli
+
+    gse_file = tmp_path / "gse_list.txt"
+    gse_file.write_text(
+        "\n".join(
+            [
+                "# comment",
+                " GSE001 ",
+                "",
+                "GSE002",
+                "GSE001",
+                "   # another comment",
+                "GSE003",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    assert cli._read_gse_file(str(gse_file)) == ["GSE001", "GSE002", "GSE003"]
+
+
+def test_cli_gse_file_outputs_per_gse(tmp_path: Path, monkeypatch) -> None:
+    from agent import cli
+
+    config_path = str(ROOT / "config" / "example_config.yaml")
+    gse_file = tmp_path / "gse_list.txt"
+    gse_file.write_text("GSE111\nGSE222\n", encoding="utf-8")
+
+    calls: list[str] = []
+
+    def _fake_run_gse_from_accession(gse_accession: str, cfg: dict, work_dir: str):
+        calls.append(gse_accession)
+        annotation = {
+            "gse_accession": gse_accession,
+            "gsm_accession": f"{gse_accession}_GSM1",
+            "data_type": "Unknown",
+            "organism": "Unknown",
+            "tissue_type": "Unknown",
+            "cell_line": "No",
+            "disease": "Healthy",
+            "treatment": "None",
+        }
+        audit = {
+            "gse_accession": gse_accession,
+            "gsm_accession": f"{gse_accession}_GSM1",
+            "final_decision": "ACCEPTED",
+            "final_output": dict(annotation),
+            "rationale": {
+                "final_decision": "ACCEPTED",
+                "primary_failure": None,
+                "terminal_fallback_fields": [],
+                "n_llm_calls": 0,
+                "attempts_by_field": {},
+                "ontology_status_by_field": {},
+                "flags": [],
+            },
+        }
+        summary = {"n_total": 1, "n_accepted": 1, "n_flagged": 0}
+        return [annotation], [audit], [], summary, None, None
+
+    monkeypatch.setattr(cli, "run_gse_from_accession", _fake_run_gse_from_accession)
+
+    cli.main(
+        [
+            "--gse-file",
+            str(gse_file),
+            "--config",
+            config_path,
+            "--output-dir",
+            str(tmp_path / "out"),
+        ]
+    )
+
+    assert calls == ["GSE111", "GSE222"]
+    for gse in calls:
+        output_dir = tmp_path / "out" / gse
+        assert (output_dir / "annotations.jsonl").exists()
+        assert (output_dir / "audit.jsonl").exists()
