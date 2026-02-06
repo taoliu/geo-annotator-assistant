@@ -2421,13 +2421,11 @@ def _ensure_saved_overrides(
     return overrides_by_gse, saved_by_gse, saved_present
 
 
-def _render_overrides_persistence(
-    active_paths: InputPaths,
-    gse_accession: str,
+def _render_overrides_persistence_status(
     overrides: dict,
     saved_overrides: dict,
     saved_present: bool,
-) -> dict:
+) -> None:
     st.subheader("Overrides (persistent)")
     edited_gsms = {(gse, gsm) for gse, gsm, _ in overrides}
     st.write(f"Edited GSMs: {len(edited_gsms)}")
@@ -2443,8 +2441,19 @@ def _render_overrides_persistence(
     else:
         st.caption("Session matches saved overrides.")
 
-    cols = st.columns(3)
-    if cols[0].button("Save overrides"):
+
+def _apply_overrides_persistence_actions(
+    active_paths: InputPaths,
+    gse_accession: str,
+    overrides: dict,
+    saved_overrides: dict,
+    saved_present: bool,
+    save_clicked: bool,
+    revert_clicked: bool,
+    discard_clicked: bool,
+    discard_confirm: bool,
+) -> tuple[dict, dict, bool]:
+    if save_clicked:
         lines: list[str] = []
         try:
             lines = overrides_to_jsonl(overrides)
@@ -2460,15 +2469,11 @@ def _render_overrides_persistence(
         else:
             st.info("No overrides to save.")
 
-    if cols[1].button("Revert to saved"):
+    if revert_clicked:
         overrides = dict(saved_overrides)
         st.info("Reverted to saved overrides.")
 
-    discard_confirm = st.checkbox(
-        "Confirm discard saved overrides",
-        key=f"confirm_discard_overrides_{gse_accession}",
-    )
-    if cols[2].button("Discard saved overrides"):
+    if discard_clicked:
         if not discard_confirm:
             st.warning("Please confirm discard before deleting saved overrides.")
         else:
@@ -2492,7 +2497,7 @@ def _render_overrides_persistence(
         saved_by_gse = {}
     saved_by_gse[gse_accession] = saved_overrides
     st.session_state["saved_overrides_by_gse"] = saved_by_gse
-    return overrides
+    return overrides, saved_overrides, saved_present
 
 
 def _render_export_final_annotations(
@@ -2753,16 +2758,28 @@ def run_app() -> None:
     active_selection = None
     if isinstance(active_row_idx, int):
         active_selection = resolve_selected_key(filtered_rows, [active_row_idx])
-    if action_cols[0].button(
+    revert_row_clicked = action_cols[0].button(
         "Revert selected row",
         disabled=active_selection is None,
-    ):
+    )
+    clear_all_clicked = action_cols[1].button("Clear all edits")
+
+    persist_cols = st.columns(3)
+    save_overrides_clicked = persist_cols[0].button("Save overrides")
+    revert_saved_clicked = persist_cols[1].button("Revert to saved")
+    discard_saved_clicked = persist_cols[2].button("Discard saved overrides")
+    discard_confirm = persist_cols[2].checkbox(
+        "Confirm discard saved overrides",
+        key=f"confirm_discard_overrides_{gse_id}",
+    )
+
+    if revert_row_clicked:
         overrides = clear_overrides_for_gsm(
             overrides, active_selection[0], active_selection[1]
         )
         overrides_by_gse[gse_id] = overrides
         st.session_state["overrides_by_gse"] = overrides_by_gse
-    if action_cols[1].button("Clear all edits"):
+    if clear_all_clicked:
         overrides = clear_all_overrides(overrides)
         overrides_by_gse[gse_id] = overrides
         st.session_state["overrides_by_gse"] = overrides_by_gse
@@ -2822,9 +2839,18 @@ def run_app() -> None:
         st.session_state["active_row_idx"] = row_idx
         active_row_idx = row_idx
 
-    overrides = _render_overrides_persistence(
+    overrides, saved_overrides, saved_present = _apply_overrides_persistence_actions(
         active_paths,
         gse_id,
+        overrides,
+        saved_overrides,
+        saved_present,
+        save_overrides_clicked,
+        revert_saved_clicked,
+        discard_saved_clicked,
+        discard_confirm,
+    )
+    _render_overrides_persistence_status(
         overrides,
         saved_overrides,
         saved_present,
