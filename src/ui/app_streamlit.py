@@ -100,6 +100,7 @@ st.set_page_config(layout="wide")
 STATUS_COLUMN = "Status"
 CHECKED_COLUMN = "checked"
 EDITED_COLUMN = "Edited"
+EDITED_BOOL_COLUMN = "is_edited"
 EDITED_ICON = "✏️"
 GEO_ACCESSION_URL = "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc="
 RAW_ACCESSION_COLUMNS = (GSE_ACCESSION_RAW_COLUMN, GSM_ACCESSION_RAW_COLUMN)
@@ -795,6 +796,26 @@ def _render_triage_controls(
     )
     sort_desc = st.sidebar.checkbox("Sort descending", value=True)
     return decision_filter, primary_filter, flag_filter, sort_by, sort_desc
+
+
+def _render_table_debug_toggle() -> bool:
+    return st.sidebar.checkbox("Debug table wiring", value=False)
+
+
+def _render_table_debug(
+    enabled: bool,
+    grid_version: int,
+    table_df: pd.DataFrame,
+) -> None:
+    if not enabled:
+        return
+    edited_count = 0
+    if EDITED_BOOL_COLUMN in table_df.columns:
+        edited_count = int(table_df[EDITED_BOOL_COLUMN].sum())
+    st.sidebar.markdown("**Table debug**")
+    st.sidebar.caption(f"grid_version: {grid_version}")
+    st.sidebar.caption(f"table_df id: {id(table_df)}")
+    st.sidebar.caption(f"is_edited true: {edited_count}")
 
 
 def _filter_rows_by_decision(
@@ -1899,6 +1920,7 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
         AGGRID_ROW_HAS_FLAGS_COLUMN,
         AGGRID_PRIMARY_FAILURE_COLOR_COLUMN,
         AGGRID_FLAG_SUMMARY_COLOR_COLUMN,
+        EDITED_BOOL_COLUMN,
     ]
     hidden_columns.extend([f"evidence_flags_{field}" for field in AGGRID_FLAG_FIELDS])
     hidden_columns.extend(
@@ -2009,6 +2031,37 @@ def _request_rerun() -> None:
     experimental_rerun = getattr(st, "experimental_rerun", None)
     if callable(experimental_rerun):
         experimental_rerun()
+
+
+def _get_grid_version() -> int:
+    version = st.session_state.get("grid_version", 0)
+    if not isinstance(version, int):
+        version = 0
+    st.session_state["grid_version"] = version
+    return version
+
+
+def _bump_grid_version() -> int:
+    version = _get_grid_version() + 1
+    st.session_state["grid_version"] = version
+    return version
+
+
+def _table_df_equals(left: object, right: pd.DataFrame) -> bool:
+    if not isinstance(left, pd.DataFrame):
+        return False
+    try:
+        return left.equals(right)
+    except Exception:
+        return False
+
+
+def _set_table_df(table_df: pd.DataFrame) -> bool:
+    current = st.session_state.get("table_df")
+    if _table_df_equals(current, table_df):
+        return False
+    st.session_state["table_df"] = table_df.copy()
+    return True
 
 
 def _render_gse_metrics(
@@ -2208,12 +2261,11 @@ def _build_editable_df(
     } | {
         (gse, gsm) for gse, gsm, _ in saved_overrides
     }
-    edited_values = [
-        EDITED_ICON
-        if (row["gse_accession"], row["gsm_accession"]) in edited_keys
-        else ""
+    is_edited_values = [
+        (row["gse_accession"], row["gsm_accession"]) in edited_keys
         for row in df_base.to_dict("records")
     ]
+    edited_values = [EDITED_ICON if value else "" for value in is_edited_values]
     status_values = [
         _decision_icon(
             final_decisions.get((row["gse_accession"], row["gsm_accession"]), "")
@@ -2221,6 +2273,7 @@ def _build_editable_df(
         for row in df_base.to_dict("records")
     ]
     df_editable[STATUS_COLUMN] = status_values
+    df_editable[EDITED_BOOL_COLUMN] = is_edited_values
     df_editable[EDITED_COLUMN] = edited_values
 
     review_values = []
@@ -2689,6 +2742,8 @@ def run_app() -> None:
     if not isinstance(active_row_idx, int):
         active_row_idx = None
     indicator = st.empty()
+    grid_version = _get_grid_version()
+    grid_version_bumped = False
 
     triage_flags = build_triage_flags(base_rows, evidence_lookup, overrides)
     saved_override_keys = {(gse, gsm) for gse, gsm, _ in saved_overrides}
@@ -2739,6 +2794,7 @@ def run_app() -> None:
         sort_by,
         sort_desc,
     ) = _render_triage_controls(primary_failure_options, flag_options)
+    debug_table = _render_table_debug_toggle()
     filtered_rows = apply_triage_filter(base_rows, triage_flags, triage_filter)
     filtered_rows = _filter_rows_by_decision(
         filtered_rows, decision_filter, final_decisions
@@ -2802,11 +2858,14 @@ def run_app() -> None:
         overrides = clear_all_overrides(overrides)
         overrides_by_gse[gse_id] = overrides
         st.session_state["overrides_by_gse"] = overrides_by_gse
+    if revert_row_clicked or clear_all_clicked:
+        grid_version = _bump_grid_version()
+        grid_version_bumped = True
 
     overrides_snapshot = dict(overrides)
 
     df_base = pd.DataFrame(filtered_rows)
-    df_editable = _build_editable_df(
+    table_df = _build_editable_df(
         df_base,
         overrides,
         saved_overrides,
@@ -2820,21 +2879,29 @@ def run_app() -> None:
         outlier_categories_by_gsm,
         checked_state,
     )
-    df_editable = _append_aggrid_meta_columns(
-        df_editable,
+    table_df = _append_aggrid_meta_columns(
+        table_df,
         curation_lookup,
         evidence_lookup,
         audit_lookup,
         flag_summaries,
         primary_failures,
     )
+    table_df_changed = _set_table_df(table_df)
+    if table_df_changed and not grid_version_bumped:
+        grid_version = _bump_grid_version()
+        grid_version_bumped = True
+    table_df_state = st.session_state.get("table_df")
+    if isinstance(table_df_state, pd.DataFrame):
+        table_df = table_df_state
+    _render_table_debug(debug_table, grid_version, table_df)
     grid_response = _render_aggrid_table(
-        df_editable,
+        table_df,
         edit_mode=True,
-        key="curation_table_edit",
+        key=f"curation_grid_{grid_version}",
     )
     selected_rows = _extract_aggrid_selected_rows(grid_response)
-    df_edited = _extract_aggrid_data(grid_response, df_editable)
+    df_edited = _extract_aggrid_data(grid_response, table_df)
     overrides_visible = compute_overrides(df_base, df_edited)
     visible_keys = {
         (row["gse_accession"], row["gsm_accession"]) for row in filtered_rows
@@ -2891,6 +2958,30 @@ def run_app() -> None:
         persistence_changed and (revert_saved_clicked or discard_saved_clicked)
     )
     if rerun_needed:
+        refreshed_table_df = _build_editable_df(
+            df_base,
+            overrides,
+            saved_overrides,
+            evidence_lookup,
+            flags_by_gsm,
+            flag_summaries,
+            primary_failures,
+            final_decisions,
+            review_counts,
+            terminal_fallback_counts,
+            outlier_categories_by_gsm,
+            checked_state,
+        )
+        refreshed_table_df = _append_aggrid_meta_columns(
+            refreshed_table_df,
+            curation_lookup,
+            evidence_lookup,
+            audit_lookup,
+            flag_summaries,
+            primary_failures,
+        )
+        _set_table_df(refreshed_table_df)
+        _bump_grid_version()
         _request_rerun()
 
 
