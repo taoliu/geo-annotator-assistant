@@ -44,6 +44,14 @@ from ui.help_text import (
 )
 from ui.dashboard import BADGE_TOOLTIPS, build_dashboard_items
 from ui.evidence import EVIDENCE_FIELDS, extract_field_evidence
+from ui.bulk_edit import (
+    apply_bulk_edit,
+    build_bulk_edit_preview,
+    is_empty_bulk_value,
+    normalize_selected_rows,
+    resolve_selected_keys,
+    validate_bulk_edit,
+)
 from ui.loaders import (
     load_audit_jsonl_optional,
     load_curation_jsonl,
@@ -1771,7 +1779,8 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
     )
     gb.configure_grid_options(
         suppressRowClickSelection=False,
-        rowSelection="single",
+        rowSelection="multiple",
+        rowMultiSelectWithClick=True,
         enableBrowserTooltips=True,
         tooltipShowDelay=0,
         getRowId=JsCode(
@@ -2359,6 +2368,146 @@ def _merge_overrides(
     return merged
 
 
+def _bulk_selection_state_key(gse_id: str) -> str:
+    return f"bulk_selected_rows_{gse_id}"
+
+
+def _bulk_selection_signature_key(gse_id: str) -> str:
+    return f"bulk_selection_signature_{gse_id}"
+
+
+def _bulk_field_state_key(gse_id: str) -> str:
+    return f"bulk_edit_field_{gse_id}"
+
+
+def _bulk_value_state_key(gse_id: str) -> str:
+    return f"bulk_edit_value_{gse_id}"
+
+
+def _bulk_target_column_label(value: str) -> str:
+    if not value:
+        return "Select column"
+    return value
+
+
+def _render_bulk_edit_panel(
+    gse_id: str,
+    filtered_rows: list[dict[str, object]],
+    selected_rows: list[int],
+    overrides: dict,
+    evidence_lookup: dict[tuple[str, str], dict],
+    edit_mode: bool,
+) -> tuple[dict, bool]:
+    st.markdown("#### Bulk edit")
+    st.caption(
+        "Apply one value to one column across selected rows. "
+        "This operation is explicit, reversible, and UI-only."
+    )
+
+    field_key = _bulk_field_state_key(gse_id)
+    value_key = _bulk_value_state_key(gse_id)
+    field_options = ["", *CANONICAL_FIELDS]
+    current_field = st.session_state.get(field_key, "")
+    if current_field not in field_options:
+        st.session_state[field_key] = ""
+
+    panel_cols = st.columns([2, 3, 2])
+    target_field = panel_cols[0].selectbox(
+        "Target column",
+        field_options,
+        key=field_key,
+        format_func=_bulk_target_column_label,
+    )
+    panel_cols[1].text_input(
+        "New value",
+        key=value_key,
+        placeholder="Enter a value to apply",
+    )
+    new_value = parse_override_input(st.session_state.get(value_key, ""))
+    selected_keys = resolve_selected_keys(filtered_rows, selected_rows)
+
+    use_selected_value_clicked = panel_cols[2].button(
+        "Use value from first selected row",
+        key=f"bulk_fill_value_{gse_id}",
+        disabled=(not target_field or not selected_keys),
+    )
+    if use_selected_value_clicked and target_field and selected_keys:
+        first_key = selected_keys[0]
+        row_lookup = {
+            (row["gse_accession"], row["gsm_accession"]): row for row in filtered_rows
+        }
+        row = row_lookup.get(first_key, {})
+        current_value = overrides.get(
+            (first_key[0], first_key[1], target_field),
+            row.get(target_field, ""),
+        )
+        st.session_state[value_key] = _format_override_input(current_value)
+        _request_rerun()
+        return overrides, False
+
+    preview = build_bulk_edit_preview(
+        filtered_rows,
+        selected_rows,
+        target_field,
+        new_value,
+        overrides,
+    )
+    preview_value = _format_override_display(new_value)
+    st.caption(
+        "Preview: "
+        f"selected={preview['selected_count']}, "
+        f"column={target_field or '(not selected)'}, "
+        f"value={preview_value}, "
+        f"no-op={preview['no_op_count']}, "
+        f"changes={preview['changed_count']}"
+    )
+
+    apply_clicked = st.button(
+        f"Apply to selected ({preview['selected_count']})",
+        key=f"bulk_apply_{gse_id}",
+        disabled=(
+            not edit_mode
+            or not target_field
+            or preview["selected_count"] == 0
+            or is_empty_bulk_value(new_value)
+        ),
+    )
+
+    if not apply_clicked:
+        return overrides, False
+
+    failures = validate_bulk_edit(
+        filtered_rows,
+        selected_rows,
+        target_field,
+        evidence_lookup,
+        edit_mode=edit_mode,
+    )
+    if failures:
+        st.error(
+            "Bulk edit blocked: some selected rows failed override safety checks. "
+            "No changes were applied."
+        )
+        st.dataframe(pd.DataFrame(failures), hide_index=True, use_container_width=True)
+        return overrides, False
+
+    updated_overrides, changed_count, no_op_count = apply_bulk_edit(
+        filtered_rows,
+        selected_rows,
+        target_field,
+        new_value,
+        overrides,
+    )
+    if changed_count:
+        st.success(
+            f"Bulk edit applied to {changed_count} row(s). "
+            f"No-op rows: {no_op_count}."
+        )
+    else:
+        st.info("Bulk edit produced no changes for selected rows.")
+    return updated_overrides, updated_overrides != overrides
+
+
 def _overrides_path(active_paths: InputPaths) -> Path:
     return active_paths.input_dir / "overrides.jsonl"
 
@@ -2939,10 +3088,39 @@ def run_app() -> None:
         st.stop()
     st.caption(table_guidance_text())
 
-    selected_rows: list[int] = []
+    selected_rows_key = _bulk_selection_state_key(gse_id)
+    selected_signature_key = _bulk_selection_signature_key(gse_id)
+    current_selection_signature = tuple(
+        (row["gse_accession"], row["gsm_accession"]) for row in filtered_rows
+    )
+    previous_selection_signature = st.session_state.get(selected_signature_key)
+    if previous_selection_signature == current_selection_signature:
+        selected_rows = normalize_selected_rows(
+            st.session_state.get(selected_rows_key, []),
+            len(filtered_rows),
+        )
+    else:
+        selected_rows = []
+    st.session_state[selected_signature_key] = current_selection_signature
+    st.session_state[selected_rows_key] = selected_rows
+    overrides, bulk_edit_changed = _render_bulk_edit_panel(
+        gse_id,
+        filtered_rows,
+        selected_rows,
+        overrides,
+        evidence_lookup,
+        edit_mode=True,
+    )
+    if bulk_edit_changed:
+        overrides_by_gse[gse_id] = overrides
+        st.session_state["overrides_by_gse"] = overrides_by_gse
+        if not grid_version_bumped:
+            grid_version = _bump_grid_version()
+            grid_version_bumped = True
+
     action_cols = st.columns(2)
-    active_selection = None
-    if isinstance(active_row_idx, int):
+    active_selection = resolve_selected_key(filtered_rows, selected_rows[:1])
+    if active_selection is None and isinstance(active_row_idx, int):
         active_selection = resolve_selected_key(filtered_rows, [active_row_idx])
     revert_row_clicked = action_cols[0].button(
         "Revert selected row",
@@ -3015,7 +3193,12 @@ def run_app() -> None:
         edit_mode=True,
         key=f"curation_grid_{grid_version}",
     )
-    selected_rows = _extract_aggrid_selected_rows(grid_response)
+    selected_rows = normalize_selected_rows(
+        _extract_aggrid_selected_rows(grid_response),
+        len(filtered_rows),
+    )
+    st.session_state[selected_signature_key] = current_selection_signature
+    st.session_state[selected_rows_key] = selected_rows
     df_edited = _extract_aggrid_data(grid_response, table_df)
     overrides_visible = compute_overrides(df_base, df_edited)
     visible_keys = {
