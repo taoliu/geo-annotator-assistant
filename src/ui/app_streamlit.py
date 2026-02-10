@@ -2913,20 +2913,21 @@ def _render_overrides_persistence_status(
     saved_overrides: dict,
     saved_present: bool,
 ) -> None:
-    st.subheader("Overrides (persistent)")
     edited_gsms = {(gse, gsm) for gse, gsm, _ in overrides}
-    st.write(f"Edited GSMs: {len(edited_gsms)}")
-    st.write(f"Edited fields: {len(overrides)}")
-    if saved_present:
-        st.success("Saved overrides detected (loaded from disk).")
-    else:
-        st.info("No saved overrides found for this GSE.")
+    st.caption(f"Edited GSMs: {len(edited_gsms)} | Edited fields: {len(overrides)}")
+    with st.expander("Overrides (persistent)", expanded=False):
+        st.write(f"Edited GSMs: {len(edited_gsms)}")
+        st.write(f"Edited fields: {len(overrides)}")
+        if saved_present:
+            st.success("Saved overrides detected (loaded from disk).")
+        else:
+            st.info("No saved overrides found for this GSE.")
 
-    has_unsaved = overrides != saved_overrides
-    if has_unsaved:
-        st.warning("Unsaved edits (session differs from disk).")
-    else:
-        st.caption("Session matches saved overrides.")
+        has_unsaved = overrides != saved_overrides
+        if has_unsaved:
+            st.warning("Unsaved edits (session differs from disk).")
+        else:
+            st.caption("Session matches saved overrides.")
 
 
 def _apply_overrides_persistence_actions(
@@ -2991,12 +2992,6 @@ def _render_export_final_annotations(
     curation_records: list[dict],
     overrides: dict,
 ) -> None:
-    st.subheader("Exports")
-    st.caption(
-        "Exports apply curator overrides but do not rerun validation, repair, "
-        "or ontology grounding."
-    )
-
     rows = _final_annotation_rows(curation_records, overrides)
     lines = [json.dumps(row) for row in rows]
     preview = "\n".join(lines)
@@ -3006,27 +3001,33 @@ def _render_export_final_annotations(
         if isinstance(candidate, str) and candidate:
             gse_accession = candidate
     csv_content = _build_final_annotations_csv(rows)
-    st.text_area(
-        "Preview (annotations.final.jsonl)",
-        value=preview,
-        height=200,
-        disabled=True,
-    )
-    export_cols = st.columns(2)
-    export_cols[0].download_button(
-        "Export final annotations",
-        data=preview,
-        file_name="annotations.final.jsonl",
-        mime="application/jsonl",
-        disabled=not rows,
-    )
-    export_cols[1].download_button(
-        "Export final annotations as CSV",
-        data=csv_content,
-        file_name=f"{gse_accession}_final_annotations.csv",
-        mime="text/csv",
-        disabled=not rows,
-    )
+    st.caption("Apply overrides, no revalidation.")
+    with st.expander("Exports", expanded=False):
+        st.caption(
+            "Exports apply curator overrides but do not rerun validation, repair, "
+            "or ontology grounding."
+        )
+        st.text_area(
+            "Preview (annotations.final.jsonl)",
+            value=preview,
+            height=200,
+            disabled=True,
+        )
+        export_cols = st.columns(2)
+        export_cols[0].download_button(
+            "Export final annotations",
+            data=preview,
+            file_name="annotations.final.jsonl",
+            mime="application/jsonl",
+            disabled=not rows,
+        )
+        export_cols[1].download_button(
+            "Export final annotations as CSV",
+            data=csv_content,
+            file_name=f"{gse_accession}_final_annotations.csv",
+            mime="text/csv",
+            disabled=not rows,
+        )
 
 
 def _iter_all_export_paths(
