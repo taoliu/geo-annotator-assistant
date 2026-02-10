@@ -11,6 +11,7 @@ if str(SRC) not in sys.path:
 from ui.bulk_edit import (
     apply_bulk_edit,
     build_bulk_edit_preview,
+    build_bulk_edit_samples,
     is_empty_bulk_value,
     normalize_selected_rows,
     resolve_selected_keys,
@@ -112,3 +113,39 @@ def test_is_empty_bulk_value_handles_strings_and_lists() -> None:
     assert is_empty_bulk_value([]) is True
     assert is_empty_bulk_value("Healthy") is False
     assert is_empty_bulk_value(["Drug A"]) is False
+
+
+def test_build_bulk_edit_samples_marks_noops_and_changes() -> None:
+    rows = _rows()
+    overrides = {("GSE1", "GSM1", "disease"): "Flu"}
+
+    samples = build_bulk_edit_samples(
+        rows,
+        [0, 1],
+        "disease",
+        "Flu",
+        overrides,
+        limit=10,
+    )
+
+    assert len(samples) == 2
+    assert samples[0]["gsm_accession"] == "GSM1"
+    assert samples[0]["is_no_op"] is True
+    assert samples[1]["gsm_accession"] == "GSM2"
+    assert samples[1]["is_no_op"] is False
+
+
+def test_build_bulk_edit_samples_respects_limit() -> None:
+    rows = _rows()
+
+    samples = build_bulk_edit_samples(
+        rows,
+        [0, 1],
+        "disease",
+        "Healthy",
+        {},
+        limit=1,
+    )
+
+    assert len(samples) == 1
+    assert samples[0]["gsm_accession"] == "GSM1"

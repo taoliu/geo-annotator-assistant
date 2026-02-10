@@ -47,6 +47,7 @@ from ui.evidence import EVIDENCE_FIELDS, extract_field_evidence
 from ui.bulk_edit import (
     apply_bulk_edit,
     build_bulk_edit_preview,
+    build_bulk_edit_samples,
     is_empty_bulk_value,
     normalize_selected_rows,
     resolve_selected_keys,
@@ -118,6 +119,7 @@ AGGRID_PRIMARY_FAILURE_COLOR_COLUMN = "__primary_failure_color"
 AGGRID_FLAG_SUMMARY_COLOR_COLUMN = "__flag_summary_color"
 AGGRID_TOOLTIP_FIELDS = ("gse_accession", "gsm_accession", *CANONICAL_FIELDS)
 AGGRID_FLAG_FIELDS = ("data_type", "organism", "tissue_type", "cell_line", "disease")
+BULK_EDIT_SAMPLE_LIMIT = 8
 
 
 def _inject_layout_styles() -> None:
@@ -315,6 +317,38 @@ def _inject_layout_styles() -> None:
           color: #1a73e8;
           text-decoration: underline;
           cursor: pointer;
+        }
+        .bulk-preview-card {
+          background: linear-gradient(130deg, #f9f3e8 0%, #ffffff 70%);
+          border: 1px solid #e7d8c1;
+          border-radius: 12px;
+          padding: 10px 12px;
+          margin: 6px 0 8px 0;
+        }
+        .bulk-preview-title {
+          font-size: 0.8rem;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          color: #6b5f4b;
+          margin: 0 0 6px 0;
+          font-weight: 600;
+        }
+        .bulk-preview-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(160px, 1fr));
+          gap: 6px 16px;
+        }
+        .bulk-preview-item .label {
+          font-size: 0.72rem;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          color: #7b6e5b;
+        }
+        .bulk-preview-item .value {
+          font-size: 0.92rem;
+          font-weight: 600;
+          color: #2b2b2b;
+          word-break: break-word;
         }
         div[data-testid="stDataFrame"] thead tr th:first-child:has(input),
         div[data-testid="stDataFrame"] tbody tr td:first-child:has(input),
@@ -2402,6 +2436,67 @@ def _bulk_target_column_label(value: str) -> str:
     return value
 
 
+def _bulk_preview_value(value: object) -> str:
+    if isinstance(value, str) and not value.strip():
+        return "(empty)"
+    if isinstance(value, list) and not value:
+        return "(empty)"
+    displayed = _format_override_display(value)
+    if not displayed:
+        return "(empty)"
+    return displayed
+
+
+def _bulk_missing_requirements(
+    edit_mode: bool,
+    target_field: str,
+    selected_count: int,
+    new_value: object,
+) -> list[str]:
+    missing: list[str] = []
+    if not target_field:
+        missing.append("target column")
+    if selected_count <= 0:
+        missing.append("row selection")
+    if is_empty_bulk_value(new_value):
+        missing.append("new value")
+    if not edit_mode:
+        missing.append("edit mode")
+    return missing
+
+
+def _render_bulk_preview_card(
+    target_field: str,
+    selected_count: int,
+    changed_count: int,
+    no_op_count: int,
+    new_value: object,
+) -> None:
+    preview_items = [
+        ("Selected rows", str(selected_count)),
+        ("Target column", target_field),
+        ("New value", _bulk_preview_value(new_value)),
+        ("Will change", str(changed_count)),
+        ("No-op rows", str(no_op_count)),
+    ]
+    blocks = []
+    for label, value in preview_items:
+        blocks.append(
+            "<div class=\"bulk-preview-item\">"
+            f"<div class=\"label\">{html.escape(label)}</div>"
+            f"<div class=\"value\">{html.escape(value)}</div>"
+            "</div>"
+        )
+    html_block = (
+        "<div class=\"bulk-preview-card\">"
+        "<div class=\"bulk-preview-title\">Bulk edit preview</div>"
+        "<div class=\"bulk-preview-grid\">"
+        + "".join(blocks)
+        + "</div></div>"
+    )
+    st.markdown(html_block, unsafe_allow_html=True)
+
+
 def _render_bulk_edit_panel(
     gse_id: str,
     filtered_rows: list[dict[str, object]],
@@ -2464,25 +2559,63 @@ def _render_bulk_edit_panel(
         new_value,
         overrides,
     )
-    preview_value = _format_override_display(new_value)
-    st.caption(
-        "Preview: "
-        f"selected={preview['selected_count']}, "
-        f"column={target_field or '(not selected)'}, "
-        f"value={preview_value}, "
-        f"no-op={preview['no_op_count']}, "
-        f"changes={preview['changed_count']}"
+    if target_field:
+        _render_bulk_preview_card(
+            target_field=target_field,
+            selected_count=preview["selected_count"],
+            changed_count=preview["changed_count"],
+            no_op_count=preview["no_op_count"],
+            new_value=new_value,
+        )
+        sample_rows = build_bulk_edit_samples(
+            filtered_rows,
+            selected_rows,
+            target_field,
+            new_value,
+            overrides,
+            limit=BULK_EDIT_SAMPLE_LIMIT,
+        )
+        if sample_rows:
+            sample_records = []
+            for sample in sample_rows:
+                sample_records.append(
+                    {
+                        "gsm_accession": sample["gsm_accession"],
+                        "old value": _bulk_preview_value(sample["current_value"]),
+                        "new value": _bulk_preview_value(sample["new_value"]),
+                        "result": (
+                            "No-op (already matches)"
+                            if sample["is_no_op"]
+                            else "Will change"
+                        ),
+                    }
+                )
+            st.caption(
+                "Sample selection preview "
+                f"({len(sample_records)} of {preview['selected_count']} selected)"
+            )
+            st.dataframe(
+                pd.DataFrame(sample_records),
+                hide_index=True,
+                use_container_width=True,
+            )
+
+    missing_requirements = _bulk_missing_requirements(
+        edit_mode=edit_mode,
+        target_field=target_field,
+        selected_count=preview["selected_count"],
+        new_value=new_value,
     )
+    ready_to_apply = len(missing_requirements) == 0
+    if ready_to_apply:
+        st.success("Ready to apply bulk edit.")
+    else:
+        st.warning("Missing: " + ", ".join(missing_requirements))
 
     apply_clicked = st.button(
         f"Apply to selected ({preview['selected_count']})",
         key=f"bulk_apply_{gse_id}",
-        disabled=(
-            not edit_mode
-            or not target_field
-            or preview["selected_count"] == 0
-            or is_empty_bulk_value(new_value)
-        ),
+        disabled=not ready_to_apply,
     )
 
     if not apply_clicked:

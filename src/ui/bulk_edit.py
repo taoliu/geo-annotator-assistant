@@ -28,6 +28,14 @@ class BulkEditValidationFailure(TypedDict):
     reason: str
 
 
+class BulkEditSampleRow(TypedDict):
+    gse_accession: str
+    gsm_accession: str
+    current_value: OverrideValue
+    new_value: OverrideValue
+    is_no_op: bool
+
+
 def normalize_selected_rows(
     selected_rows: object,
     row_count: int,
@@ -144,6 +152,40 @@ def validate_bulk_edit(
     return failures
 
 
+def build_bulk_edit_samples(
+    rows: list[dict[str, object]],
+    selected_rows: list[int],
+    field: str,
+    new_value: OverrideValue,
+    overrides: Mapping[tuple[str, str, str], OverrideValue],
+    limit: int = 8,
+) -> list[BulkEditSampleRow]:
+    if field not in CANONICAL_FIELDS_SET or limit <= 0:
+        return []
+
+    samples: list[BulkEditSampleRow] = []
+    for row_idx in normalize_selected_rows(selected_rows, len(rows)):
+        row = rows[row_idx]
+        gse = row.get("gse_accession")
+        gsm = row.get("gsm_accession")
+        if not isinstance(gse, str) or not isinstance(gsm, str):
+            continue
+        backend_value = _normalize_value(row.get(field))
+        current_value = overrides.get((gse, gsm, field), backend_value)
+        samples.append(
+            {
+                "gse_accession": gse,
+                "gsm_accession": gsm,
+                "current_value": current_value,
+                "new_value": new_value,
+                "is_no_op": _values_match(current_value, new_value),
+            }
+        )
+        if len(samples) >= limit:
+            break
+    return samples
+
+
 def apply_bulk_edit(
     rows: list[dict[str, object]],
     selected_rows: list[int],
@@ -203,9 +245,11 @@ def _values_match(left: object, right: object) -> bool:
 
 __all__ = [
     "BulkEditPreview",
+    "BulkEditSampleRow",
     "BulkEditValidationFailure",
     "apply_bulk_edit",
     "build_bulk_edit_preview",
+    "build_bulk_edit_samples",
     "is_empty_bulk_value",
     "normalize_selected_rows",
     "resolve_selected_keys",
