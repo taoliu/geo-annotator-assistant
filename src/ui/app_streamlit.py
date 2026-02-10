@@ -2519,6 +2519,10 @@ def _bulk_value_state_key(gse_id: str) -> str:
     return f"bulk_edit_value_{gse_id}"
 
 
+def _bulk_expand_state_key(gse_id: str) -> str:
+    return f"bulk_edit_expanded_{gse_id}"
+
+
 def _bulk_target_column_label(value: str) -> str:
     if not value:
         return "Select column"
@@ -2594,10 +2598,17 @@ def _render_bulk_edit_panel(
     evidence_lookup: dict[tuple[str, str], dict],
     edit_mode: bool,
 ) -> tuple[dict, bool]:
-    st.markdown(
-        f"#### Bulk edit {_help_icon_html(bulk_edit_tooltip())}",
-        unsafe_allow_html=True,
+    expand_key = _bulk_expand_state_key(gse_id)
+    if expand_key not in st.session_state:
+        st.session_state[expand_key] = False
+
+    expanded = st.toggle(
+        "Bulk edit - Apply one value to one column across selected rows",
+        key=expand_key,
+        help=bulk_edit_tooltip(),
     )
+    if not expanded:
+        return overrides, False
 
     field_key = _bulk_field_state_key(gse_id)
     value_key = _bulk_value_state_key(gse_id)
