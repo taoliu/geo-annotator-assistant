@@ -508,10 +508,13 @@ def _render_gse_switcher(
 ) -> str:
     st.sidebar.header("GSE Selection")
     previous = st.session_state.get("active_gse")
+    if not isinstance(previous, str) or previous not in gse_options:
+        previous = gse_options[0]
+    active_index = gse_options.index(previous)
     active = st.sidebar.selectbox(
         "Active GSE",
         gse_options,
-        index=0,
+        index=active_index,
         key="active_gse",
     )
     if previous and previous != active:
