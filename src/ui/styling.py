@@ -8,13 +8,16 @@ import pandas as pd
 
 from ui.flags import FLAG_CATEGORY_COLORS, categorize_flag
 from ui.schema import (
+    CANONICAL_FIELDS,
     GSE_ACCESSION_RAW_COLUMN,
     GSM_ACCESSION_RAW_COLUMN,
 )
 
-_HIGHLIGHT_CELL = "background-color: #ffeaea"
+_FLAGGED_CELL = "background-color: #ffe7cc"
+_OVERRIDDEN_CELL = "background-color: #dff4df"
+_OVERRIDDEN_FLAGGED_BORDER = "box-shadow: inset 0 0 0 2px #e47b00"
 _HIGHLIGHT_ROW = "background-color: #f7f7f7"
-_ACTIVE_ROW = "background-color: #e8f4ff"
+_ACTIVE_ROW = "outline: 1px solid #4f6f90; outline-offset: -1px"
 _GSM_ACCESSION_STYLE = (
     "color: #1a73e8; text-decoration: underline; cursor: pointer"
 )
@@ -51,11 +54,14 @@ def _normalize_accession(value: object) -> str | None:
 def style_curation_table(
     df: pd.DataFrame,
     flags_by_gsm: dict[tuple[str, str], dict[str, list[str]]],
+    overridden_cells: set[tuple[str, str, str]] | None = None,
     active_row_idx: int | None = None,
     flag_summaries: dict[tuple[str, str], dict[str, object]] | None = None,
     primary_failures: dict[tuple[str, str], str] | None = None,
     enable_tooltips: bool = True,
 ) -> pd.io.formats.style.Styler:
+    overridden_cells = overridden_cells or set()
+
     def _row_accessions(row: pd.Series) -> tuple[str | None, str | None]:
         gse = row.get(GSE_ACCESSION_RAW_COLUMN) or row.get("gse_accession")
         gsm = row.get(GSM_ACCESSION_RAW_COLUMN) or row.get("gsm_accession")
@@ -86,12 +92,27 @@ def style_curation_table(
         styles: list[str] = []
         for column in row.index:
             cell_styles: list[str] = []
-            if column in _CORE_FLAG_FIELDS and column in flagged_fields:
-                cell_styles.append(_HIGHLIGHT_CELL)
-            elif active_style:
-                cell_styles.append(active_style)
+            has_flags = column in _CORE_FLAG_FIELDS and column in flagged_fields
+            has_override = (
+                isinstance(gse, str)
+                and isinstance(gsm, str)
+                and column in CANONICAL_FIELDS
+                and (gse, gsm, column) in overridden_cells
+            )
+
+            if has_override and has_flags:
+                cell_styles.append(_OVERRIDDEN_CELL)
+                cell_styles.append(_OVERRIDDEN_FLAGGED_BORDER)
+            elif has_override:
+                cell_styles.append(_OVERRIDDEN_CELL)
+            elif has_flags:
+                cell_styles.append(_FLAGGED_CELL)
             elif row_has_flags:
                 cell_styles.append(_HIGHLIGHT_ROW)
+
+            if active_style:
+                cell_styles.append(active_style)
+
             if column == _PRIMARY_FAILURE_COLUMN and primary_failure:
                 category = categorize_flag(primary_failure)
                 color = FLAG_CATEGORY_COLORS.get(category)

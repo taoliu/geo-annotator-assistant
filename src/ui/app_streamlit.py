@@ -279,10 +279,21 @@ def _inject_layout_styles() -> None:
           background-color: #f7f7f7;
         }
         .ag-theme-streamlit .ag-row.ag-row-selected .ag-cell {
-          background-color: #e8f4ff !important;
+          outline: 1px solid #4f6f90 !important;
+          outline-offset: -1px;
+        }
+        .ag-theme-streamlit .ag-row.ag-row-selected .ag-cell:first-child {
+          border-left: 3px solid #355a7d !important;
         }
         .ag-theme-streamlit .ag-cell.ag-cell-flagged {
-          background-color: #ffeaea !important;
+          background-color: #ffe7cc !important;
+        }
+        .ag-theme-streamlit .ag-cell.ag-cell-overridden {
+          background-color: #dff4df !important;
+        }
+        .ag-theme-streamlit .ag-cell.ag-cell-overridden-flagged {
+          background-color: #dff4df !important;
+          box-shadow: inset 0 0 0 2px #e47b00 !important;
         }
         .ag-theme-streamlit .ag-cell.ag-status-flagged {
           background-color: #fde2e2 !important;
@@ -1859,27 +1870,24 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
     )
 
     for field in CANONICAL_FIELDS:
-        cell_rules = {}
-        column_props: dict[str, object] = {}
+        override_rule = (
+            f"data.__override_cell_{field} === true || "
+            f"data.__override_cell_{field} === 'true' || "
+            f"data.__override_cell_{field} === 'True' || "
+            f"data.__override_cell_{field} === 1"
+        )
+        cell_rules = {"ag-cell-overridden": override_rule}
         if field in AGGRID_FLAG_FIELDS:
-            flag_style = JsCode(
-                f"""
-                function(params) {{
-                  const flagged = params.data.__evidence_flagged_{field};
-                  if (flagged === true || flagged === 1 || flagged === "true" || flagged === "True") {{
-                    return {{ backgroundColor: "#ffeaea" }};
-                  }}
-                  return {{}};
-                }}
-                """
-            )
-            cell_rules["ag-cell-flagged"] = (
+            flagged_rule = (
                 f"data.__evidence_flagged_{field} === true || "
                 f"data.__evidence_flagged_{field} === 'true' || "
                 f"data.__evidence_flagged_{field} === 'True' || "
                 f"data.__evidence_flagged_{field} === 1"
             )
-            column_props["cellStyle"] = flag_style
+            cell_rules["ag-cell-flagged"] = flagged_rule
+            cell_rules["ag-cell-overridden-flagged"] = (
+                f"({override_rule}) && ({flagged_rule})"
+            )
         gb.configure_column(
             field,
             editable=edit_mode,
@@ -1887,7 +1895,6 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
                 field, include_evidence=field in AGGRID_FLAG_FIELDS
             ),
             cellClassRules=cell_rules,
-            **column_props,
         )
 
     gb.configure_column(
@@ -1981,6 +1988,7 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
     hidden_columns.extend(
         [f"__evidence_flagged_{field}" for field in AGGRID_FLAG_FIELDS]
     )
+    hidden_columns.extend([f"__override_cell_{field}" for field in CANONICAL_FIELDS])
     hidden_columns.extend(
         [f"evidence_attempts_{field}" for field in AGGRID_FLAG_FIELDS]
     )
@@ -2328,6 +2336,9 @@ def _build_editable_df(
     checked_state: dict[tuple[str, str], bool],
 ) -> pd.DataFrame:
     df_editable = df_base.copy()
+    override_cell_columns: dict[str, list[bool]] = {
+        field: [] for field in CANONICAL_FIELDS
+    }
     for (gse, gsm, field), value in overrides.items():
         if field not in CANONICAL_FIELDS:
             continue
@@ -2336,6 +2347,16 @@ def _build_editable_df(
         )
         if mask.any():
             df_editable.loc[mask, field] = format_override_value(value)
+
+    for row in df_base.to_dict("records"):
+        gse = row.get("gse_accession")
+        gsm = row.get("gsm_accession")
+        if not isinstance(gse, str) or not isinstance(gsm, str):
+            for field in CANONICAL_FIELDS:
+                override_cell_columns[field].append(False)
+            continue
+        for field in CANONICAL_FIELDS:
+            override_cell_columns[field].append((gse, gsm, field) in overrides)
 
     edited_keys = {
         (gse, gsm) for gse, gsm, _ in overrides
@@ -2393,6 +2414,8 @@ def _build_editable_df(
         flagged = _evidence_flagged_fields(evidence_lookup, key)
         flagged_values.append(",".join(sorted(flagged)))
     df_editable["flagged_fields"] = flagged_values
+    for field, values in override_cell_columns.items():
+        df_editable[f"__override_cell_{field}"] = values
     return _reorder_table_columns(df_editable)
 
 

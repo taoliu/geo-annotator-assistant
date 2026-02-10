@@ -105,11 +105,63 @@ def test_style_curation_table_highlights_flagged_cell() -> None:
     styler = style_curation_table(df, flags_by_gsm)
     html = styler.to_html()
 
-    assert "#ffeaea" in html
+    assert "#ffe7cc" in html
+
+
+def test_style_curation_table_highlights_overridden_cell() -> None:
+    rows = [
+        {
+            "gse_accession": "GSE1",
+            "gsm_accession": "GSM1",
+            "data_type": "RNA-seq",
+            "organism": "Homo sapiens",
+            "tissue_type": "Blood",
+            "cell_line": "No",
+            "disease": "Healthy",
+            "treatment": "No",
+        }
+    ]
+    df = pd.DataFrame(rows)
+
+    styler = style_curation_table(
+        df,
+        {},
+        overridden_cells={("GSE1", "GSM1", "disease")},
+    )
+    html = styler.to_html()
+
+    assert "#dff4df" in html
+
+
+def test_style_curation_table_combines_override_and_flag() -> None:
+    rows = [
+        {
+            "gse_accession": "GSE1",
+            "gsm_accession": "GSM1",
+            "data_type": "RNA-seq",
+            "organism": "Homo sapiens",
+            "tissue_type": "Blood",
+            "cell_line": "No",
+            "disease": "Healthy",
+            "treatment": "No",
+        }
+    ]
+    df = pd.DataFrame(rows)
+    flags_by_gsm = {("GSE1", "GSM1"): {"disease": ["flag"]}}
+
+    styler = style_curation_table(
+        df,
+        flags_by_gsm,
+        overridden_cells={("GSE1", "GSM1", "disease")},
+    )
+    html = styler.to_html()
+
+    assert "#dff4df" in html
+    assert "#e47b00" in html
 
 
 def test_active_row_style_marks_selected_row() -> None:
-    assert active_row_style(1, 1)
+    assert "outline" in active_row_style(1, 1)
     assert active_row_style(0, 1) == ""
 
 
@@ -131,7 +183,7 @@ def test_style_curation_table_highlights_active_row() -> None:
     styler = style_curation_table(df, {}, active_row_idx=0)
     html = styler.to_html()
 
-    assert "#e8f4ff" in html
+    assert "#4f6f90" in html
 
 
 def test_categorize_flag_known_patterns() -> None:

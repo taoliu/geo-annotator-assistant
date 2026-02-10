@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 TABLE_GUIDANCE_TEXT = (
-    "Hover cells for diagnostics. GSE/GSM accessions open GEO."
+    "Hover cells for diagnostics. GSE/GSM accessions open GEO. "
+    "Cell states: green=override, orange=backend flag, green+orange border=both."
 )
 GSM_ACCESSION_TOOLTIP = "Open GEO page"
 STATUS_ICON_TOOLTIP = "Decision status (✅ = ACCEPT, 🚩 = FLAGGED)"
 TABLE_HELP_LINES = (
     "Hover cells for diagnostics and backend context.",
     "GSE/GSM accessions link out to GEO.",
+    "Cell colors: orange = backend evidence flag, green = curator override.",
+    "If both apply, green fill is kept and an orange border is added.",
     "Edits are session-only until you export overrides.",
 )
 
