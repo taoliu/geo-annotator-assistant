@@ -118,7 +118,7 @@ AGGRID_ROW_HAS_FLAGS_COLUMN = "__row_has_flags"
 AGGRID_PRIMARY_FAILURE_COLOR_COLUMN = "__primary_failure_color"
 AGGRID_FLAG_SUMMARY_COLOR_COLUMN = "__flag_summary_color"
 AGGRID_TOOLTIP_FIELDS = ("gse_accession", "gsm_accession", *CANONICAL_FIELDS)
-AGGRID_FLAG_FIELDS = ("data_type", "organism", "tissue_type", "cell_line", "disease")
+AGGRID_FLAG_FIELDS = CANONICAL_FIELDS
 BULK_EDIT_SAMPLE_LIMIT = 8
 
 
@@ -1877,6 +1877,7 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
             f"data.__override_cell_{field} === 1"
         )
         cell_rules = {"ag-cell-overridden": override_rule}
+        flagged_rule = "false"
         if field in AGGRID_FLAG_FIELDS:
             flagged_rule = (
                 f"data.__evidence_flagged_{field} === true || "
@@ -1888,6 +1889,36 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
             cell_rules["ag-cell-overridden-flagged"] = (
                 f"({override_rule}) && ({flagged_rule})"
             )
+        cell_style = JsCode(
+            f"""
+            function(params) {{
+              const row = (params && params.data) ? params.data : {{}};
+              const isOverridden =
+                row.__override_cell_{field} === true ||
+                row.__override_cell_{field} === 1 ||
+                row.__override_cell_{field} === "true" ||
+                row.__override_cell_{field} === "True";
+              const isFlagged =
+                row.__evidence_flagged_{field} === true ||
+                row.__evidence_flagged_{field} === 1 ||
+                row.__evidence_flagged_{field} === "true" ||
+                row.__evidence_flagged_{field} === "True";
+              if (isOverridden && isFlagged) {{
+                return {{
+                  backgroundColor: "#dff4df",
+                  boxShadow: "inset 0 0 0 2px #e47b00"
+                }};
+              }}
+              if (isOverridden) {{
+                return {{ backgroundColor: "#dff4df" }};
+              }}
+              if (isFlagged) {{
+                return {{ backgroundColor: "#ffe7cc" }};
+              }}
+              return {{}};
+            }}
+            """
+        )
         gb.configure_column(
             field,
             editable=edit_mode,
@@ -1895,6 +1926,7 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
                 field, include_evidence=field in AGGRID_FLAG_FIELDS
             ),
             cellClassRules=cell_rules,
+            cellStyle=cell_style,
         )
 
     gb.configure_column(

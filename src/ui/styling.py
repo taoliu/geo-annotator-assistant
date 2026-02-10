@@ -28,7 +28,7 @@ _STATUS_COLUMN = "Status"
 _REVIEW_FLAGS_COLUMN = "Review flags"
 _TERMINAL_FALLBACK_COLUMN = "Terminal fallbacks"
 _OUTLIER_COLUMN = "Outliers"
-_CORE_FLAG_FIELDS = ("data_type", "organism", "tissue_type", "cell_line", "disease")
+_CORE_FLAG_FIELDS = CANONICAL_FIELDS
 
 _DECISION_FLAGGED = "background-color: #fde2e2"
 _DECISION_ACCEPT = "background-color: #e9f7ef"

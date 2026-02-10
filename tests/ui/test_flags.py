@@ -108,6 +108,28 @@ def test_style_curation_table_highlights_flagged_cell() -> None:
     assert "#ffe7cc" in html
 
 
+def test_style_curation_table_highlights_treatment_flagged_cell() -> None:
+    rows = [
+        {
+            "gse_accession": "GSE1",
+            "gsm_accession": "GSM1",
+            "data_type": "RNA-seq",
+            "organism": "Homo sapiens",
+            "tissue_type": "Blood",
+            "cell_line": "No",
+            "disease": "Healthy",
+            "treatment": "No",
+        }
+    ]
+    df = pd.DataFrame(rows)
+    flags_by_gsm = {("GSE1", "GSM1"): {"treatment": ["flag"]}}
+
+    styler = style_curation_table(df, flags_by_gsm)
+    html = styler.to_html()
+
+    assert "#ffe7cc" in html
+
+
 def test_style_curation_table_highlights_overridden_cell() -> None:
     rows = [
         {
