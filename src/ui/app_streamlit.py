@@ -2194,7 +2194,8 @@ def _render_gse_metrics(
         + "".join(blocks)
         + "</div></div>"
     )
-    st.markdown(html_block, unsafe_allow_html=True)
+    with st.expander("GSE-wide counts (not affected by filters)", expanded=False):
+        st.markdown(html_block, unsafe_allow_html=True)
 
 _GSE_BIOLOGY_FIELDS = ("data_type", "organism", "tissue_type", "cell_line", "disease")
 
@@ -2338,7 +2339,8 @@ def _render_gse_field_values_summary(
         + "".join(blocks)
         + "</div></div>"
     )
-    st.markdown(html_block, unsafe_allow_html=True)
+    with st.expander("GSE-wide biology (not affected by filters)", expanded=False):
+        st.markdown(html_block, unsafe_allow_html=True)
 
 
 def _render_triage_filters_inline(container: st.delta_generator.DeltaGenerator) -> str:
