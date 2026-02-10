@@ -8,7 +8,13 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from ui.help_text import gsm_accession_tooltip, table_guidance_text, table_help_lines
+from ui.help_text import (
+    bulk_edit_tooltip,
+    gsm_accession_tooltip,
+    table_guidance_text,
+    table_help_lines,
+    table_legend_tooltip,
+)
 
 
 def test_table_guidance_text_mentions_accession() -> None:
@@ -34,3 +40,19 @@ def test_table_help_lines_include_session_only() -> None:
         for line in lines
     )
     assert gsm_accession_tooltip() == "Open GEO page"
+
+
+def test_table_legend_tooltip_text() -> None:
+    tooltip = table_legend_tooltip()
+
+    assert "Status: row state (flagged/clean)." in tooltip
+    assert "Checked: curator review marker saved to disk." in tooltip
+    assert "Edited: pencil indicates curator overrides." in tooltip
+    assert "Details via hover tooltips." in tooltip
+
+
+def test_bulk_edit_tooltip_text() -> None:
+    tooltip = bulk_edit_tooltip()
+
+    assert "Apply one value to one column across selected rows." in tooltip
+    assert "This operation is explicit, reversible, and UI-only." in tooltip

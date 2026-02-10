@@ -38,9 +38,11 @@ from ui.flags import (
     primary_failure_tooltip,
 )
 from ui.help_text import (
+    bulk_edit_tooltip,
     gsm_accession_tooltip,
     status_icon_tooltip,
     table_guidance_text,
+    table_legend_tooltip,
 )
 from ui.dashboard import BADGE_TOOLTIPS, build_dashboard_items
 from ui.evidence import EVIDENCE_FIELDS, extract_field_evidence
@@ -328,6 +330,22 @@ def _inject_layout_styles() -> None:
           color: #1a73e8;
           text-decoration: underline;
           cursor: pointer;
+        }
+        .inline-help-icon {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 1.1rem;
+          height: 1.1rem;
+          border-radius: 999px;
+          border: 1px solid #d9cbb6;
+          background: #fffaf2;
+          color: #665743;
+          font-size: 0.75rem;
+          line-height: 1;
+          cursor: help;
+          margin-left: 0.25rem;
+          user-select: none;
         }
         .bulk-preview-card {
           background: linear-gradient(130deg, #f9f3e8 0%, #ffffff 70%);
@@ -1438,6 +1456,20 @@ def _format_override_display(value: object) -> str:
     if isinstance(value, list):
         return format_override_value(value)
     return str(value)
+
+
+def _help_icon_html(tooltip: str) -> str:
+    safe = html.escape(tooltip, quote=True).replace("\n", " ")
+    return (
+        "<span "
+        "class=\"inline-help-icon\" "
+        "tabindex=\"0\" "
+        "role=\"img\" "
+        f"aria-label=\"{safe}\" "
+        f"title=\"{safe}\">"
+        "ⓘ"
+        "</span>"
+    )
 
 
 def _tooltip_safe_value(value: object) -> str:
@@ -2562,10 +2594,9 @@ def _render_bulk_edit_panel(
     evidence_lookup: dict[tuple[str, str], dict],
     edit_mode: bool,
 ) -> tuple[dict, bool]:
-    st.markdown("#### Bulk edit")
-    st.caption(
-        "Apply one value to one column across selected rows. "
-        "This operation is explicit, reversible, and UI-only."
+    st.markdown(
+        f"#### Bulk edit {_help_icon_html(bulk_edit_tooltip())}",
+        unsafe_allow_html=True,
     )
 
     field_key = _bulk_field_state_key(gse_id)
@@ -3231,12 +3262,11 @@ def run_app() -> None:
     )
     _section_divider()
     header_cols = st.columns([3, 5])
-    header_cols[0].markdown("### Curation table")
-    header_cols[0].caption(
-        "Status: row state (flagged/clean). "
-        "Checked: curator review marker saved to disk. "
-        "Edited: pencil indicates curator overrides. "
-        "Details via hover tooltips."
+    header_cols[0].markdown(
+        "### Curation table "
+        f"{_help_icon_html(table_legend_tooltip())} "
+        f"{_help_icon_html(table_guidance_text())}",
+        unsafe_allow_html=True,
     )
     triage_filter = _render_triage_filters_inline(header_cols[1])
     primary_failure_options = sorted(
@@ -3288,7 +3318,6 @@ def run_app() -> None:
         _render_unsaved_indicator(indicator, overrides)
         st.info("No records match the current filters.")
         st.stop()
-    st.caption(table_guidance_text())
 
     selected_rows_key = _bulk_selection_state_key(gse_id)
     selected_signature_key = _bulk_selection_signature_key(gse_id)
