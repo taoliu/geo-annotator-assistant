@@ -48,6 +48,8 @@ def _download_soft(
     gse_accession: str,
     cache_dir: Path,
     remote_transport: str,
+    *,
+    overwrite_existing: bool = False,
 ) -> Path:
     cache_dir.mkdir(parents=True, exist_ok=True)
     remote_path = get_remote_path(gse_accession)
@@ -55,9 +57,17 @@ def _download_soft(
         raise ValueError(f"Invalid GSE accession: {gse_accession}")
     local_path = cache_dir / f"{gse_accession}_family.soft.gz"
     if remote_transport == "https":
-        download_file_via_https(remote_path, str(local_path), skip_existing_files=True)
+        download_file_via_https(
+            remote_path,
+            str(local_path),
+            skip_existing_files=not overwrite_existing,
+        )
     elif remote_transport == "ftp":
-        download_file_via_ftp(remote_path, str(local_path), skip_existing_files=True)
+        download_file_via_ftp(
+            remote_path,
+            str(local_path),
+            skip_existing_files=not overwrite_existing,
+        )
     else:
         raise ValueError(
             "Invalid geo_soft_remote_transport. "
@@ -84,6 +94,13 @@ class LocalSoftMissingError(FileNotFoundError):
         super().__init__(f"GEO SOFT file not found for {gse_accession} at {path}")
         self.gse_accession = gse_accession
         self.path = path
+
+
+def _error_reason(exc: Exception) -> str:
+    text = str(exc).strip()
+    if text:
+        return text
+    return exc.__class__.__name__
 
 
 def _write_context_jsonl(soft_path: Path, output_path: Path) -> str:
@@ -149,29 +166,30 @@ def soft_to_context_jsonl(
         if not local_path:
             raise ValueError(f"Invalid GSE accession: {gse_accession}")
         soft_file = Path(local_path)
+        downloaded_fresh_copy = False
         if soft_file.is_file():
             print(
                 f"INFO: {gse_accession}: using local SOFT at {soft_file}",
                 file=sys.stderr,
             )
             log_gse_using_local_soft(gse_accession)
-        elif geo_soft_on_missing == "skip":
-            print(
-                f"WARNING: {gse_accession}: local SOFT missing at {soft_file}; skipping (geo_soft_on_missing=skip)",
-                file=sys.stderr,
-            )
-            raise LocalSoftMissingError(gse_accession, str(soft_file))
-        elif geo_soft_on_missing == "error":
-            print(
-                f"ERROR: {gse_accession}: local SOFT missing at {soft_file}; aborting (geo_soft_on_missing=error)",
-                file=sys.stderr,
-            )
-            raise FileNotFoundError(
-                f"Local SOFT file not found for {gse_accession} at {soft_file}"
-            )
         else:
+            if geo_soft_on_missing == "skip":
+                print(
+                    f"WARNING: {gse_accession}: local SOFT missing at {soft_file}; skipping (geo_soft_on_missing=skip)",
+                    file=sys.stderr,
+                )
+                raise LocalSoftMissingError(gse_accession, str(soft_file))
+            if geo_soft_on_missing == "error":
+                print(
+                    f"ERROR: {gse_accession}: local SOFT missing at {soft_file}; aborting (geo_soft_on_missing=error)",
+                    file=sys.stderr,
+                )
+                raise FileNotFoundError(
+                    f"Local SOFT file not found for {gse_accession} at {soft_file}"
+                )
             print(
-                f"WARNING: {gse_accession}: local SOFT missing at {soft_file}; downloading via {geo_soft_remote_transport}",
+                f"WARNING: {gse_accession}: local SOFT missing at {soft_file}; downloading fresh copy via {geo_soft_remote_transport}",
                 file=sys.stderr,
             )
             log_gse_soft_download_start(gse_accession, geo_soft_remote_transport)
@@ -180,6 +198,7 @@ def soft_to_context_jsonl(
                 soft_file.parent,
                 geo_soft_remote_transport,
             )
+            downloaded_fresh_copy = True
             print(
                 f"INFO: {gse_accession}: downloaded SOFT to {soft_file}",
                 file=sys.stderr,
@@ -188,7 +207,54 @@ def soft_to_context_jsonl(
         jsonl_path = context_dir / f"{gse_accession}_contexts.jsonl"
         if jsonl_path.is_file():
             return str(jsonl_path)
-        result = _write_context_jsonl(soft_file, jsonl_path)
+        try:
+            result = _write_context_jsonl(soft_file, jsonl_path)
+        except Exception as exc:
+            reason = _error_reason(exc)
+            if geo_soft_on_missing != "remote":
+                level = "WARNING" if geo_soft_on_missing == "skip" else "ERROR"
+                action = "skipping" if geo_soft_on_missing == "skip" else "aborting"
+                print(
+                    f"{level}: {gse_accession}: local SOFT parse failed ({reason}); {action} (geo_soft_on_missing={geo_soft_on_missing})",
+                    file=sys.stderr,
+                )
+                if geo_soft_on_missing == "skip":
+                    raise LocalSoftMissingError(gse_accession, str(soft_file)) from exc
+                raise
+
+            if downloaded_fresh_copy:
+                print(
+                    f"ERROR: {gse_accession}: parse failed after re-download ({reason}); aborting",
+                    file=sys.stderr,
+                )
+                raise
+
+            print(
+                f"WARNING: {gse_accession}: local SOFT parse failed ({reason}); re-downloading fresh copy",
+                file=sys.stderr,
+            )
+            log_gse_soft_download_start(gse_accession, geo_soft_remote_transport)
+            soft_file = _download_soft(
+                gse_accession,
+                soft_file.parent,
+                geo_soft_remote_transport,
+                overwrite_existing=True,
+            )
+            downloaded_fresh_copy = True
+            log_gse_soft_download_completed(gse_accession)
+            print(
+                f"INFO: {gse_accession}: re-download complete; retrying parse",
+                file=sys.stderr,
+            )
+            try:
+                result = _write_context_jsonl(soft_file, jsonl_path)
+            except Exception as retry_exc:
+                retry_reason = _error_reason(retry_exc)
+                print(
+                    f"ERROR: {gse_accession}: parse failed after re-download ({retry_reason}); aborting",
+                    file=sys.stderr,
+                )
+                raise
         log_gse_soft_parsed(gse_accession)
         return result
 
