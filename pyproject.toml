@@ -33,6 +33,7 @@ dependencies = [
 
 [project.scripts]
 geo-gsm-annotate = "agent.cli:main"
+geo-gsm-summarize = "agent.summarize_cli:main"
 geo-gsm-ui = "ui.cli:main"
 
 [tool.setuptools.packages.find]
