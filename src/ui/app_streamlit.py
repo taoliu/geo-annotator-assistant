@@ -1805,11 +1805,23 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
         "gse_accession",
         cellClass="ag-geo-link",
         tooltipValueGetter=_aggrid_tooltip_getter("gse_accession"),
+        pinned="left",
+        lockPosition=True,
+        lockPinned=True,
+        suppressMovable=True,
+        minWidth=130,
+        width=140,
     )
     gb.configure_column(
         "gsm_accession",
         cellClass="ag-geo-link",
         tooltipValueGetter=_aggrid_tooltip_getter("gsm_accession"),
+        pinned="left",
+        lockPosition=True,
+        lockPinned=True,
+        suppressMovable=True,
+        minWidth=130,
+        width=140,
     )
 
     for field in CANONICAL_FIELDS:
