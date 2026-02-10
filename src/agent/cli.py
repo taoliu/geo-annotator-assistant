@@ -9,7 +9,6 @@ import sys
 from pathlib import Path
 
 from agent.config import load_config
-from agent.overrides import apply_overrides_to_outputs, load_overrides
 from agent.runtime_trace import (
     log_gse_outputs_written,
     log_gse_start_processing,
@@ -169,10 +168,6 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--config", required=True, help="Path to YAML config file.")
     parser.add_argument(
-        "--overrides",
-        help="Path to overrides.jsonl to apply to final outputs.",
-    )
-    parser.add_argument(
         "--emit-suggestions",
         action="store_true",
         help="Emit suggestions.jsonl for cross-GSM advisory hints.",
@@ -202,13 +197,6 @@ def main(argv: list[str] | None = None) -> None:
     try:
         with tracing_scope(args.verbose):
             config = load_config(args.config)
-            overrides_path = args.overrides
-            if not overrides_path:
-                paths_cfg = (
-                    config.get("paths") if isinstance(config.get("paths"), dict) else {}
-                )
-                overrides_path = paths_cfg.get("overrides_path") if paths_cfg else None
-            overrides = load_overrides(overrides_path) if overrides_path else {}
 
             gse_report = None
             gse_values = None
@@ -317,10 +305,6 @@ def main(argv: list[str] | None = None) -> None:
                             suggestions = build_gse_suggestions(
                                 annotations, audits, config, emit_suggestions=True
                             )
-                        if overrides:
-                            apply_overrides_to_outputs(
-                                overrides, annotations, audits, flagged
-                            )
                         extra_json = (
                             {"gse_consistency.json": gse_report} if gse_report else None
                         )
@@ -371,8 +355,6 @@ def main(argv: list[str] | None = None) -> None:
                     suggestions = build_gse_suggestions(
                         annotations, audits, config, emit_suggestions=True
                     )
-                if overrides:
-                    apply_overrides_to_outputs(overrides, annotations, audits, flagged)
                 extra_json = {"gse_consistency.json": gse_report} if gse_report else None
                 extra_jsonl = (
                     {"gse_field_values.jsonl": [gse_values]} if gse_values else None

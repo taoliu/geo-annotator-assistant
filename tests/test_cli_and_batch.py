@@ -116,6 +116,27 @@ def test_cli_help_includes_verbose(capsys) -> None:
     assert excinfo.value.code == 0
     help_text = capsys.readouterr().out
     assert "--verbose" in help_text
+    assert "--overrides" not in help_text
+
+
+def test_cli_rejects_overrides_option(capsys) -> None:
+    from agent import cli
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(
+            [
+                "--gsm",
+                "GSM000001",
+                "--config",
+                str(ROOT / "config" / "example_config.yaml"),
+                "--overrides",
+                "overrides.jsonl",
+            ]
+        )
+
+    assert excinfo.value.code == 1
+    err = capsys.readouterr().err
+    assert "unrecognized arguments: --overrides overrides.jsonl" in err
 
 
 def test_cli_verbose_disabled_emits_no_runtime_trace(capsys) -> None:
