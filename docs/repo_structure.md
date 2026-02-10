@@ -19,7 +19,8 @@
 │   │   ├── 2026-01-26_checkpoint.md
 │   │   ├── 2026-01-29_checkpoint.md
 │   │   ├── 2026-02-03_checkpoint.md
-│   │   └── 2026-02-05_checkpoint.md
+│   │   ├── 2026-02-05_checkpoint.md
+│   │   └── 2026-02-10_checkpoint.md
 │   ├── milestones
 │   │   ├── v0.1-llm.md
 │   │   ├── v0.2-ontology-grounding.md
@@ -31,7 +32,8 @@
 │   │   ├── v0.8-backend-robustness.md
 │   │   ├── v0.9-validation-repair-reporting.md
 │   │   ├── v1.0-curator-UI.md
-│   │   └── v1.1-curator-ui-ux.md
+│   │   ├── v1.1-curator-ui-ux.md
+│   │   └── v1.2-cli-ergonomics.md
 │   ├── policies
 │   │   └── policy-spec.md
 │   ├── repo_structure.md
@@ -76,7 +78,18 @@
 │   │   ├── ticket-130.md
 │   │   ├── ticket-131.md
 │   │   ├── ticket-132.md
+│   │   ├── ticket-133.md
+│   │   ├── ticket-134.md
+│   │   ├── ticket-135.md
+│   │   ├── ticket-136.md
+│   │   ├── ticket-137.md
+│   │   ├── ticket-138.md
+│   │   ├── ticket-139.md
 │   │   ├── ticket-14.md
+│   │   ├── ticket-140.md
+│   │   ├── ticket-141.md
+│   │   ├── ticket-142.md
+│   │   ├── ticket-143.md
 │   │   ├── ticket-15.md
 │   │   ├── ticket-16.md
 │   │   ├── ticket-16b.md
@@ -209,10 +222,12 @@
 │   │   ├── run_batch.py
 │   │   ├── run_gse.py
 │   │   ├── run_single.py
+│   │   ├── runtime_trace.py
 │   │   ├── standardize_cli.py
 │   │   ├── standardize_terms.py
 │   │   ├── state.py
 │   │   ├── suggestions.py
+│   │   ├── summarize_cli.py
 │   │   └── writer.py
 │   ├── ingest
 │   │   ├── construct_prompt.py
@@ -240,6 +255,7 @@
 │   ├── ui
 │   │   ├── __init__.py
 │   │   ├── app_streamlit.py
+│   │   ├── bulk_edit.py
 │   │   ├── cli.py
 │   │   ├── dashboard.py
 │   │   ├── evidence.py
@@ -277,8 +293,10 @@
 │   ├── README.md
 │   ├── test_cell_line_tie_breaker.py
 │   ├── test_cell_line_type_guard.py
+│   ├── test_chroma_client_cache.py
 │   ├── test_chroma_embedding_device_config.py
 │   ├── test_cli_and_batch.py
+│   ├── test_config_ingest_schema.py
 │   ├── test_config_llm_schema.py
 │   ├── test_config_postpass_schema.py
 │   ├── test_config_rag_schema.py
@@ -333,6 +351,7 @@
 │   ├── test_standardize_terms.py
 │   ├── test_state_and_audit.py
 │   ├── test_suggestions.py
+│   ├── test_summarize_cli.py
 │   ├── test_terminal_exact_short_circuit.py
 │   ├── test_thresholds_and_ontology_validator.py
 │   ├── test_tissue_type_disease_label_fallback.py
@@ -340,6 +359,7 @@
 │   ├── test_treatment_identity_fallback.py
 │   ├── test_writer.py
 │   └── ui
+│       ├── test_bulk_edit.py
 │       ├── test_cli.py
 │       ├── test_dashboard.py
 │       ├── test_evidence.py
@@ -353,4 +373,4 @@
 │       └── test_triage.py
 └── uv.lock
 
-19 directories, 335 files
+19 directories, 355 files
