@@ -213,8 +213,9 @@ Agents must respect the following order of authority:
 2. `docs/policies/policy-spec.md` — validation / repair / reporting semantics
 3. `docs/milestones/v*.md` — completed milestone scope
 4. `docs/checkpoints/yyyy-mm-dd_checkpoint.md` — system handoff anchors
-5. `docs/tickets/ticket-xx.md` — permitted work
-6. code — implementation
+5. `docs/RESUME.md` — concise one-page project snapshot (non-authoritative)
+6. `docs/tickets/ticket-xx.md` — permitted work
+7. code — implementation
 
 Conflicts must be resolved by updating the **higher-level document**,
 not by local code changes.
