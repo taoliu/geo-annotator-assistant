@@ -133,6 +133,18 @@ def _inject_layout_styles() -> None:
         .stApp {
           background: radial-gradient(circle at 15% 10%, #f6f1e8 0%, #f8f7f3 45%, #ffffff 100%);
         }
+        div[data-testid="stAppViewContainer"] > .main .block-container {
+          padding-top: 1rem;
+        }
+        section[data-testid="stSidebar"] div[data-testid="stSidebarContent"] {
+          padding-top: 0.75rem;
+        }
+        section[data-testid="stSidebar"] .block-container {
+          padding-top: 0.25rem;
+        }
+        div[data-testid="stAppViewContainer"] h1 {
+          margin-top: 0.2rem;
+        }
         h1, h2, h3, h4 {
           font-family: 'Fraunces', serif;
           letter-spacing: -0.01em;
