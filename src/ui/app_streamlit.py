@@ -145,6 +145,16 @@ def _inject_layout_styles() -> None:
         div[data-testid="stAppViewContainer"] h1 {
           margin-top: 0.2rem;
         }
+        .stExpander,
+        div[data-testid="stExpander"] {
+          margin-top: -0.5rem;
+          margin-bottom: -0.25rem;
+        }
+        .stExpander details:not([open]) > summary,
+        div[data-testid="stExpander"] details:not([open]) > summary {
+          padding-top: -0.5rem;
+          padding-bottom: -0.25rem;
+        }
         h1, h2, h3, h4 {
           font-family: 'Fraunces', serif;
           letter-spacing: -0.01em;
@@ -2242,6 +2252,16 @@ def _aggrid_tooltip_getter(field: str, include_evidence: bool = False) -> JsCode
     )
 
 
+def _aggrid_accession_tooltip_getter() -> JsCode:
+    return JsCode(
+        """
+        function() {
+          return { plain_message: "Click this accession number to go to GEO website" };
+        }
+        """
+    )
+
+
 def _aggrid_diagnostics_tooltip_component() -> JsCode:
     return JsCode(
         """
@@ -2310,7 +2330,18 @@ def _aggrid_diagnostics_tooltip_component() -> JsCode:
             root.style.fontSize = "0.76rem";
             root.style.lineHeight = "1.35";
             root.style.color = darkMode ? "#e5e7eb" : "#1f2937";
-            var entries = normalizeEntries(params ? params.value : null);
+            var tooltipValue = params ? params.value : null;
+            if (
+              tooltipValue &&
+              typeof tooltipValue === "object" &&
+              typeof tooltipValue.plain_message === "string" &&
+              tooltipValue.plain_message
+            ) {
+              root.textContent = tooltipValue.plain_message;
+              this.eGui = root;
+              return;
+            }
+            var entries = normalizeEntries(tooltipValue);
             if (!entries.length) {
               root.textContent = "(not available)";
               this.eGui = root;
@@ -2442,7 +2473,7 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
     gb.configure_column(
         "gse_accession",
         cellClass="ag-geo-link",
-        tooltipValueGetter=_aggrid_tooltip_getter("gse_accession"),
+        tooltipValueGetter=_aggrid_accession_tooltip_getter(),
         tooltipComponent="diagnosticsTooltip",
         pinned="left",
         lockPosition=True,
@@ -2454,7 +2485,7 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
     gb.configure_column(
         "gsm_accession",
         cellClass="ag-geo-link",
-        tooltipValueGetter=_aggrid_tooltip_getter("gsm_accession"),
+        tooltipValueGetter=_aggrid_accession_tooltip_getter(),
         tooltipComponent="diagnosticsTooltip",
         pinned="left",
         lockPosition=True,
