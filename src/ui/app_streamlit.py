@@ -611,12 +611,12 @@ def _render_gse_switcher(
         next_active = gse_options[resolved_index - 1]
         st.session_state["active_gse_nav_target"] = next_active
         st.session_state["active_row_idx"] = None
-        _request_rerun()
+        active = next_active
     if next_clicked:
         next_active = gse_options[resolved_index + 1]
         st.session_state["active_gse_nav_target"] = next_active
         st.session_state["active_row_idx"] = None
-        _request_rerun()
+        active = next_active
     if previous and previous != active:
         st.session_state["active_row_idx"] = None
     st.session_state[state_key] = active
@@ -845,6 +845,12 @@ SORT_OPTIONS: tuple[str, ...] = (
     "Outliers",
 )
 
+TRIAGE_DECISION_KEY = "triage_decision_filter"
+TRIAGE_PRIMARY_KEY = "triage_primary_filter"
+TRIAGE_FLAG_KEY = "triage_flag_filter"
+TRIAGE_SORT_KEY = "triage_sort_by"
+TRIAGE_SORT_DESC_KEY = "triage_sort_desc"
+
 
 def _flag_callout(category: str):
     if category == "policy":
@@ -1031,26 +1037,95 @@ def _render_triage_controls(
     primary_failure_options: list[str],
     flag_options: list[str],
 ) -> tuple[str, list[str], list[str], str, bool]:
+    def _normalize_multiselect_state(state_key: str) -> list[str]:
+        existing = st.session_state.get(state_key, [])
+        if not isinstance(existing, list):
+            existing = []
+        normalized: list[str] = []
+        for value in existing:
+            if isinstance(value, str) and value and value not in normalized:
+                normalized.append(value)
+        if normalized != existing:
+            st.session_state[state_key] = normalized
+        return normalized
+
+    def _merge_options_with_selected(
+        options: list[str],
+        selected: list[str],
+    ) -> list[str]:
+        merged = list(options)
+        seen = set(merged)
+        for value in selected:
+            if value not in seen:
+                merged.append(value)
+                seen.add(value)
+        return merged
+
+    def _normalize_selectbox_state(
+        state_key: str,
+        options: tuple[str, ...],
+        fallback: str,
+    ) -> str:
+        existing = st.session_state.get(state_key)
+        if isinstance(existing, str) and existing in options:
+            return existing
+        st.session_state[state_key] = fallback
+        return fallback
+
     st.sidebar.header("Triage")
+    _normalize_selectbox_state(
+        TRIAGE_DECISION_KEY,
+        DECISION_FILTER_OPTIONS,
+        "All",
+    )
+    selected_primary = _normalize_multiselect_state(TRIAGE_PRIMARY_KEY)
+    selected_flags = _normalize_multiselect_state(TRIAGE_FLAG_KEY)
+    _normalize_selectbox_state(
+        TRIAGE_SORT_KEY,
+        SORT_OPTIONS,
+        SORT_OPTIONS[0],
+    )
+    if not isinstance(st.session_state.get(TRIAGE_SORT_DESC_KEY), bool):
+        st.session_state[TRIAGE_SORT_DESC_KEY] = True
+
     decision_filter = st.sidebar.selectbox(
         "Decision",
         DECISION_FILTER_OPTIONS,
-        index=0,
+        key=TRIAGE_DECISION_KEY,
     )
     primary_filter = st.sidebar.multiselect(
         "Primary failures",
-        primary_failure_options,
+        _merge_options_with_selected(primary_failure_options, selected_primary),
+        key=TRIAGE_PRIMARY_KEY,
     )
     flag_filter = st.sidebar.multiselect(
         "Flags",
-        flag_options,
+        _merge_options_with_selected(flag_options, selected_flags),
+        key=TRIAGE_FLAG_KEY,
     )
     sort_by = st.sidebar.selectbox(
         "Sort by",
         SORT_OPTIONS,
-        index=0,
+        key=TRIAGE_SORT_KEY,
     )
-    sort_desc = st.sidebar.checkbox("Sort descending", value=True)
+    sort_desc = st.sidebar.checkbox("Sort descending", key=TRIAGE_SORT_DESC_KEY)
+
+    decision_filter = _normalize_selectbox_state(
+        TRIAGE_DECISION_KEY,
+        DECISION_FILTER_OPTIONS,
+        "All",
+    )
+    primary_filter = _normalize_multiselect_state(
+        TRIAGE_PRIMARY_KEY
+    )
+    flag_filter = _normalize_multiselect_state(TRIAGE_FLAG_KEY)
+    sort_by = _normalize_selectbox_state(
+        TRIAGE_SORT_KEY,
+        SORT_OPTIONS,
+        SORT_OPTIONS[0],
+    )
+    sort_desc = bool(st.session_state.get(TRIAGE_SORT_DESC_KEY, True))
+
     return decision_filter, primary_filter, flag_filter, sort_by, sort_desc
 
 
