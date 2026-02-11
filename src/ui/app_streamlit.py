@@ -134,16 +134,16 @@ def _inject_layout_styles() -> None:
           background: radial-gradient(circle at 15% 10%, #f6f1e8 0%, #f8f7f3 45%, #ffffff 100%);
         }
         div[data-testid="stAppViewContainer"] > .main .block-container {
-          padding-top: 1rem;
+          padding-top: 0.5rem;
         }
         section[data-testid="stSidebar"] div[data-testid="stSidebarContent"] {
-          padding-top: 0.75rem;
+          padding-top: 0.3rem;
         }
         section[data-testid="stSidebar"] .block-container {
-          padding-top: 0.25rem;
+          padding-top: 0.1rem;
         }
         div[data-testid="stAppViewContainer"] h1 {
-          margin-top: 0.2rem;
+          margin-top: 0.1rem;
         }
         .stExpander,
         div[data-testid="stExpander"] {
@@ -170,7 +170,7 @@ def _inject_layout_styles() -> None:
           margin-bottom: 8px;
         }
         .summary-label {
-          font-size: 0.75rem;
+          font-size: 0.3rem;
           text-transform: uppercase;
           letter-spacing: 0.08em;
           color: #6b5f4b;
@@ -185,7 +185,7 @@ def _inject_layout_styles() -> None:
           display: inline-block;
           padding: 2px 10px;
           border-radius: 999px;
-          font-size: 0.78rem;
+          font-size: 0.4rem;
           font-weight: 600;
           letter-spacing: 0.02em;
           border: 1px solid rgba(0,0,0,0.08);
@@ -196,7 +196,7 @@ def _inject_layout_styles() -> None:
         .section-divider {
           border: none;
           border-top: 1px solid #e6e0d5;
-          margin: 0.4rem 0 0.5rem 0;
+          margin: 0.2rem 0 0.25rem 0;
         }
         .gse-biology-card {
           background: #fffdfa;
