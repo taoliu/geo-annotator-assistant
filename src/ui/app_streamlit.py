@@ -561,10 +561,14 @@ def _gse_options(rows: list[dict]) -> list[str]:
 
 
 def _render_filters(rows: list[dict]) -> tuple[str | None, str]:
-    st.sidebar.header("Filters")
+    st.sidebar.markdown("### Filters")
     options = _gse_options(rows)
     selected_gse = st.sidebar.selectbox("GSE", options)
-    search_text = st.sidebar.text_input("Search")
+    search_text = st.sidebar.text_input(
+        "Search",
+        help="Matches accession text and visible field text.",
+    )
+    st.sidebar.markdown("---")
     gse_filter = None if selected_gse == "All" else selected_gse
     return gse_filter, search_text
 
@@ -1072,7 +1076,7 @@ def _render_triage_controls(
         st.session_state[state_key] = fallback
         return fallback
 
-    st.sidebar.header("Triage")
+    st.sidebar.markdown("### Triage")
     _normalize_selectbox_state(
         TRIAGE_DECISION_KEY,
         DECISION_FILTER_OPTIONS,
@@ -1103,12 +1107,14 @@ def _render_triage_controls(
         _merge_options_with_selected(flag_options, selected_flags),
         key=TRIAGE_FLAG_KEY,
     )
+    st.sidebar.markdown("**Sort**")
     sort_by = st.sidebar.selectbox(
         "Sort by",
         SORT_OPTIONS,
         key=TRIAGE_SORT_KEY,
     )
     sort_desc = st.sidebar.checkbox("Sort descending", key=TRIAGE_SORT_DESC_KEY)
+    st.sidebar.markdown("---")
 
     decision_filter = _normalize_selectbox_state(
         TRIAGE_DECISION_KEY,
@@ -1130,7 +1136,12 @@ def _render_triage_controls(
 
 
 def _render_table_debug_toggle() -> bool:
-    return st.sidebar.checkbox("Debug table wiring", value=False)
+    with st.sidebar.expander("Advanced", expanded=False):
+        return st.checkbox(
+            "Debug table wiring",
+            value=False,
+            key="debug_table_wiring",
+        )
 
 
 def _render_table_debug(
@@ -3712,13 +3723,6 @@ def _render_summarize_export_buttons(
             disabled=gse_row_count == 0,
             help="Export GSE-level CSV (7 fields, summarize output)",
         )
-        st.sidebar.caption(
-            "GSMs: Export GSM-level CSV (8 canonical fields). "
-            "GSEs: Export GSE-level CSV (7 fields, summarize output)."
-        )
-        st.sidebar.caption(
-            "Exports are equivalent to geo-gsm-summarize and apply saved overrides only."
-        )
         return
 
     export_cols = st.columns(2)
@@ -3737,13 +3741,6 @@ def _render_summarize_export_buttons(
         mime="text/csv",
         disabled=gse_row_count == 0,
         help="Export GSE-level CSV (7 fields, summarize output)",
-    )
-    st.caption(
-        "GSMs: Export GSM-level CSV (8 canonical fields). "
-        "GSEs: Export GSE-level CSV (7 fields, summarize output)."
-    )
-    st.caption(
-        "Exports are equivalent to geo-gsm-summarize and apply saved overrides only."
     )
 
 
