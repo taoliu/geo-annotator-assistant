@@ -532,12 +532,12 @@ def _render_gse_switcher(
     resolved_index = gse_options.index(active)
     nav_cols = st.sidebar.columns(2)
     prev_clicked = nav_cols[0].button(
-        "◀ Prev GSE",
+        "◀ Prev",
         key="active_gse_prev",
         disabled=resolved_index <= 0,
     )
     next_clicked = nav_cols[1].button(
-        "Next GSE ▶",
+        "Next ▶",
         key="active_gse_next",
         disabled=resolved_index >= (len(gse_options) - 1),
     )
@@ -3254,18 +3254,24 @@ def _render_summarize_export_buttons(
     if sidebar:
         left, right = st.sidebar.columns(2)
         left.download_button(
-            "Export GSM CSV (8 fields)",
+            "GSMs",
             data=gsm_csv_content,
             file_name=f"{input_dir_name}_gsm_annotations.csv",
             mime="text/csv",
             disabled=gsm_row_count == 0,
+            help="Export GSM-level CSV (8 canonical fields)",
         )
         right.download_button(
-            "Export GSE CSV (7 fields)",
+            "GSEs",
             data=gse_csv_content,
             file_name=f"{input_dir_name}_gse_summary.csv",
             mime="text/csv",
             disabled=gse_row_count == 0,
+            help="Export GSE-level CSV (7 fields, summarize output)",
+        )
+        st.sidebar.caption(
+            "GSMs: Export GSM-level CSV (8 canonical fields). "
+            "GSEs: Export GSE-level CSV (7 fields, summarize output)."
         )
         st.sidebar.caption(
             "Exports are equivalent to geo-gsm-summarize and apply saved overrides only."
@@ -3274,18 +3280,24 @@ def _render_summarize_export_buttons(
 
     export_cols = st.columns(2)
     export_cols[0].download_button(
-        "Export GSM CSV (8 fields)",
+        "GSMs",
         data=gsm_csv_content,
         file_name=f"{input_dir_name}_gsm_annotations.csv",
         mime="text/csv",
         disabled=gsm_row_count == 0,
+        help="Export GSM-level CSV (8 canonical fields)",
     )
     export_cols[1].download_button(
-        "Export GSE CSV (7 fields)",
+        "GSEs",
         data=gse_csv_content,
         file_name=f"{input_dir_name}_gse_summary.csv",
         mime="text/csv",
         disabled=gse_row_count == 0,
+        help="Export GSE-level CSV (7 fields, summarize output)",
+    )
+    st.caption(
+        "GSMs: Export GSM-level CSV (8 canonical fields). "
+        "GSEs: Export GSE-level CSV (7 fields, summarize output)."
     )
     st.caption(
         "Exports are equivalent to geo-gsm-summarize and apply saved overrides only."
