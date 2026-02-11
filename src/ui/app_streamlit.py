@@ -2257,15 +2257,32 @@ def _render_details_modal(
         _body()
 
 
-def _render_unsaved_indicator(container: st.delta_generator.DeltaGenerator, overrides: dict) -> None:
-    if not overrides:
-        container.empty()
+def _unsaved_override_change_keys(overrides: dict, saved_overrides: dict) -> set[tuple[str, str, str]]:
+    keys: set[tuple[str, str, str]] = set()
+    keys.update(overrides.keys())
+    keys.update(saved_overrides.keys())
+    unsaved: set[tuple[str, str, str]] = set()
+    marker = object()
+    for key in keys:
+        if overrides.get(key, marker) != saved_overrides.get(key, marker):
+            unsaved.add(key)
+    return unsaved
+
+
+def _render_unsaved_status_line(
+    container: st.delta_generator.DeltaGenerator,
+    overrides: dict,
+    saved_overrides: dict,
+) -> None:
+    unsaved_changes = _unsaved_override_change_keys(overrides, saved_overrides)
+    if not unsaved_changes:
+        container.caption("No unsaved edits")
         return
-    edited_gsms = {(gse, gsm) for gse, gsm, _ in overrides}
-    container.info(
-        "Unsaved edits (session-only). "
-        f"Edited GSMs: {len(edited_gsms)}. "
-        f"Edited fields: {len(overrides)}."
+    edited_gsms = {(gse, gsm) for gse, gsm, _ in unsaved_changes}
+    container.caption(
+        "Unsaved edits: "
+        f"Edited GSMs: {len(edited_gsms)}; "
+        f"Edited fields: {len(unsaved_changes)}"
     )
 
 
@@ -3369,7 +3386,6 @@ def run_app() -> None:
     active_row_idx = st.session_state.get("active_row_idx")
     if not isinstance(active_row_idx, int):
         active_row_idx = None
-    indicator = st.empty()
     grid_version = _get_grid_version()
     grid_version_bumped = False
 
@@ -3446,7 +3462,6 @@ def run_app() -> None:
     st.caption(f"Rows: {len(filtered_rows)}")
 
     if not filtered_rows:
-        _render_unsaved_indicator(indicator, overrides)
         st.info("No records match the current filters.")
         st.stop()
 
@@ -3492,6 +3507,7 @@ def run_app() -> None:
 
     persist_cols = st.columns([1, 3])
     save_overrides_clicked = persist_cols[0].button("Save overrides")
+    unsaved_status_container = persist_cols[0].empty()
     revert_saved_clicked = False
     discard_saved_clicked = False
     discard_confirm = False
@@ -3582,7 +3598,6 @@ def run_app() -> None:
         checked_state = merged_checked
         checked_by_gse[gse_id] = checked_state
         st.session_state["checked_by_gse"] = checked_by_gse
-    _render_unsaved_indicator(indicator, overrides)
 
     if selected_rows:
         row_idx = selected_rows[0]
@@ -3603,6 +3618,7 @@ def run_app() -> None:
         discard_saved_clicked,
         discard_confirm,
     )
+    _render_unsaved_status_line(unsaved_status_container, overrides, saved_overrides)
     persistence_changed = (
         overrides != overrides_before_persistence
         or saved_overrides != saved_overrides_snapshot
