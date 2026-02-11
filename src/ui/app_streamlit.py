@@ -4206,12 +4206,6 @@ def run_app() -> None:
         or saved_overrides != saved_overrides_snapshot
         or saved_present != saved_present_snapshot
     )
-    _render_overrides_persistence_status(
-        overrides,
-        saved_overrides,
-        saved_present,
-    )
-    _render_export_final_annotations(inputs)
     rerun_needed = (
         overrides_changed
         or (persistence_changed and (revert_saved_clicked or discard_saved_clicked))
