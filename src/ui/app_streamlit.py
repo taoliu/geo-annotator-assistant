@@ -20,6 +20,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 from st_aggrid import AgGrid, DataReturnMode, GridOptionsBuilder, GridUpdateMode, JsCode
 
+from agent import summarize_cli
 from ui.flags import (
     FLAG_CATEGORY_BADGES,
     FLAG_CATEGORY_COLORS,
@@ -64,7 +65,6 @@ from ui.loaders import (
     load_suggestions_jsonl_optional,
 )
 from ui.overrides import (
-    apply_overrides_to_record,
     clear_all_overrides,
     clear_override,
     clear_overrides_for_gsm,
@@ -2406,40 +2406,16 @@ def _stringify_csv_value(value: object) -> str:
     return str(value)
 
 
-def _build_final_annotations_csv(rows: list[dict[str, object]]) -> str:
+def _build_csv_content(
+    header: tuple[str, ...],
+    rows: list[dict[str, object]] | list[dict[str, str]],
+) -> str:
     output = io.StringIO()
     writer = csv.writer(output, lineterminator="\n")
-    header = ["gse_accession", "gsm_accession", *CANONICAL_FIELDS]
-    writer.writerow(header)
+    writer.writerow(list(header))
     for row in rows:
         writer.writerow([_stringify_csv_value(row.get(col, "")) for col in header])
     return output.getvalue()
-
-
-def _final_annotation_rows(
-    curation_records: list[dict],
-    overrides: dict,
-) -> list[dict[str, object]]:
-    rows: list[dict[str, object]] = []
-    for record in curation_records:
-        gse = record["gse_accession"]
-        gsm = record["gsm_accession"]
-        selected = overrides_for_gsm(overrides, gse, gsm)
-        effective_fields = apply_overrides_to_record(record, selected)
-        if effective_fields is None:
-            continue
-        output = {
-            "gse_accession": gse,
-            "gsm_accession": gsm,
-            "data_type": effective_fields.get("data_type", ""),
-            "organism": effective_fields.get("organism", ""),
-            "tissue_type": effective_fields.get("tissue_type", ""),
-            "cell_line": effective_fields.get("cell_line", ""),
-            "disease": effective_fields.get("disease", ""),
-            "treatment": effective_fields.get("treatment", ""),
-        }
-        rows.append(output)
-    return rows
 
 
 def _render_gse_field_values_summary(
@@ -3090,6 +3066,7 @@ def _apply_overrides_persistence_actions(
             st.success(f"Saved overrides to {path}.")
             saved_overrides = dict(overrides)
             saved_present = True
+            st.session_state.pop("all_export_cache", None)
         else:
             st.info("No overrides to save.")
 
@@ -3108,6 +3085,7 @@ def _apply_overrides_persistence_actions(
                 saved_overrides = {}
                 saved_present = False
                 st.success("Saved overrides deleted.")
+                st.session_state.pop("all_export_cache", None)
             except OSError as exc:
                 st.error(f"Failed to delete overrides: {exc}")
 
@@ -3124,64 +3102,63 @@ def _apply_overrides_persistence_actions(
     return overrides, saved_overrides, saved_present
 
 
-def _render_export_final_annotations(
-    curation_records: list[dict],
-    overrides: dict,
-) -> None:
-    rows = _final_annotation_rows(curation_records, overrides)
-    lines = [json.dumps(row) for row in rows]
-    preview = "\n".join(lines)
-    gse_accession = "Unknown"
-    if curation_records:
-        candidate = curation_records[0].get("gse_accession")
-        if isinstance(candidate, str) and candidate:
-            gse_accession = candidate
-    csv_content = _build_final_annotations_csv(rows)
-    st.caption("Apply overrides, no revalidation.")
-    with st.expander("Exports", expanded=False):
-        st.caption(
-            "Exports apply curator overrides but do not rerun validation, repair, "
-            "or ontology grounding."
-        )
-        st.text_area(
-            "Preview (annotations.final.jsonl)",
-            value=preview,
-            height=200,
-            disabled=True,
-        )
-        export_cols = st.columns(2)
-        export_cols[0].download_button(
-            "Export final annotations",
-            data=preview,
-            file_name="annotations.final.jsonl",
-            mime="application/jsonl",
-            disabled=not rows,
-        )
-        export_cols[1].download_button(
-            "Export final annotations as CSV",
-            data=csv_content,
-            file_name=f"{gse_accession}_final_annotations.csv",
-            mime="text/csv",
-            disabled=not rows,
-        )
-
-
-def _iter_all_export_paths(
+def _collect_summarize_exports(
     inputs: InputScanResult,
-) -> list[tuple[str, InputPaths]]:
-    if inputs.mode == "multi":
-        return [
-            (gse, inputs.gse_paths[gse])
-            for gse in sorted(inputs.gse_paths.keys())
-        ]
-    if inputs.single_paths is None:
-        return []
-    return [(inputs.input_dir.name, inputs.single_paths)]
+) -> tuple[str, str, int, int, list[str], list[str], list[str]]:
+    skipped = [f"{name}: {reason}" for name, reason in sorted(inputs.skipped.items())]
+    override_errors: list[str] = []
+    summary_warnings: list[str] = []
+    gsm_rows: list[dict[str, object]] = []
+    ignore_values_by_gse: dict[str, list[str]] = {}
+
+    for gse_name, paths in summarize_cli._iter_scan_paths(inputs):
+        try:
+            curation_records = load_curation_jsonl(str(paths.curation_path))
+            gse_accession = summarize_cli._resolve_gse_accession(curation_records, gse_name)
+            try:
+                ignore_values_by_gse[gse_accession] = summarize_cli._load_ignore_values(paths)
+            except Exception as exc:
+                ignore_values_by_gse[gse_accession] = list(summarize_cli._DEFAULT_IGNORE_VALUES)
+                summary_warnings.append(
+                    f"{gse_accession}: invalid gse_field_values.jsonl; default ignore values used ({exc})"
+                )
+
+            overrides: dict = {}
+            auto_path = paths.input_dir / "overrides.jsonl"
+            if auto_path.is_file():
+                try:
+                    overrides = load_overrides_jsonl(str(auto_path), gse_accession)
+                except Exception as exc:
+                    override_errors.append(f"{gse_accession}: {exc}")
+                    overrides = {}
+
+            gsm_rows.extend(summarize_cli._build_gsm_rows(curation_records, overrides))
+        except Exception as exc:
+            skipped.append(f"{gse_name}: {exc}")
+
+    gsm_rows.sort(
+        key=lambda row: (
+            str(row.get("gse_accession", "")),
+            str(row.get("gsm_accession", "")),
+        )
+    )
+    gse_rows = summarize_cli._build_gse_rows(gsm_rows, ignore_values_by_gse)
+    gsm_csv_content = _build_csv_content(summarize_cli._GSM_CSV_COLUMNS, gsm_rows)
+    gse_csv_content = _build_csv_content(summarize_cli._GSE_CSV_COLUMNS, gse_rows)
+    return (
+        gsm_csv_content,
+        gse_csv_content,
+        len(gsm_rows),
+        len(gse_rows),
+        skipped,
+        override_errors,
+        summary_warnings,
+    )
 
 
 def _all_export_signature(inputs: InputScanResult) -> tuple[object, ...]:
     entries: list[object] = [str(inputs.input_dir)]
-    for gse_name, paths in _iter_all_export_paths(inputs):
+    for gse_name, paths in summarize_cli._iter_scan_paths(inputs):
         try:
             curation_mtime = paths.curation_path.stat().st_mtime_ns
         except OSError:
@@ -3195,83 +3172,175 @@ def _all_export_signature(inputs: InputScanResult) -> tuple[object, ...]:
             )
         except OSError:
             overrides_mtime = None
-        entries.append((gse_name, curation_mtime, overrides_mtime))
+        try:
+            gse_values_mtime = (
+                paths.gse_field_values_path.stat().st_mtime_ns
+                if paths.gse_field_values_path.exists()
+                else None
+            )
+        except OSError:
+            gse_values_mtime = None
+        entries.append((gse_name, curation_mtime, overrides_mtime, gse_values_mtime))
     return tuple(entries)
 
 
-def _collect_all_final_annotations(
-    inputs: InputScanResult,
-) -> tuple[list[dict[str, object]], list[str], list[str]]:
-    skipped = [f"{name}: {reason}" for name, reason in sorted(inputs.skipped.items())]
-    override_errors: list[str] = []
-    rows: list[dict[str, object]] = []
-    for gse_name, paths in _iter_all_export_paths(inputs):
-        try:
-            curation_records = load_curation_jsonl(str(paths.curation_path))
-        except Exception as exc:
-            skipped.append(f"{gse_name}: {exc}")
-            continue
-        gse_accession = gse_name
-        if curation_records:
-            candidate = curation_records[0].get("gse_accession")
-            if isinstance(candidate, str) and candidate:
-                gse_accession = candidate
-        overrides: dict = {}
-        overrides_path = _overrides_path(paths)
-        if overrides_path.is_file():
-            try:
-                overrides = load_overrides_jsonl(
-                    str(overrides_path), gse_accession
-                )
-            except Exception as exc:
-                override_errors.append(f"{gse_accession}: {exc}")
-                overrides = {}
-        rows.extend(_final_annotation_rows(curation_records, overrides))
-    rows.sort(
-        key=lambda row: (
-            str(row.get("gse_accession", "")),
-            str(row.get("gsm_accession", "")),
+def _load_summarize_export_cache(inputs: InputScanResult) -> dict[str, object]:
+    signature = _all_export_signature(inputs)
+    cache = st.session_state.get("all_export_cache")
+    if isinstance(cache, dict) and cache.get("signature") == signature:
+        return cache
+    try:
+        (
+            gsm_csv_content,
+            gse_csv_content,
+            gsm_row_count,
+            gse_row_count,
+            skipped,
+            override_errors,
+            summary_warnings,
+        ) = _collect_summarize_exports(inputs)
+        cache = {
+            "signature": signature,
+            "gsm_csv": gsm_csv_content,
+            "gse_csv": gse_csv_content,
+            "gsm_row_count": gsm_row_count,
+            "gse_row_count": gse_row_count,
+            "skipped": skipped,
+            "override_errors": override_errors,
+            "summary_warnings": summary_warnings,
+            "error": "",
+        }
+    except Exception as exc:
+        cache = {
+            "signature": signature,
+            "gsm_csv": "",
+            "gse_csv": "",
+            "gsm_row_count": 0,
+            "gse_row_count": 0,
+            "skipped": [],
+            "override_errors": [],
+            "summary_warnings": [],
+            "error": str(exc),
+        }
+    st.session_state["all_export_cache"] = cache
+    return cache
+
+
+def _render_summarize_export_notices(
+    skipped: list[str],
+    override_errors: list[str],
+    summary_warnings: list[str],
+    *,
+    sidebar: bool,
+) -> None:
+    target = st.sidebar if sidebar else st
+    if skipped:
+        target.warning("Skipped GSEs during summarize export: " + "; ".join(skipped))
+    if override_errors:
+        target.warning("Overrides not applied for: " + "; ".join(override_errors))
+    if summary_warnings:
+        target.warning("; ".join(summary_warnings))
+
+
+def _render_summarize_export_buttons(
+    *,
+    gsm_csv_content: str,
+    gse_csv_content: str,
+    gsm_row_count: int,
+    gse_row_count: int,
+    input_dir_name: str,
+    sidebar: bool,
+) -> None:
+    if sidebar:
+        left, right = st.sidebar.columns(2)
+        left.download_button(
+            "Export GSM CSV (8 fields)",
+            data=gsm_csv_content,
+            file_name=f"{input_dir_name}_gsm_annotations.csv",
+            mime="text/csv",
+            disabled=gsm_row_count == 0,
         )
+        right.download_button(
+            "Export GSE CSV (7 fields)",
+            data=gse_csv_content,
+            file_name=f"{input_dir_name}_gse_summary.csv",
+            mime="text/csv",
+            disabled=gse_row_count == 0,
+        )
+        st.sidebar.caption(
+            "Exports are equivalent to geo-gsm-summarize and apply saved overrides only."
+        )
+        return
+
+    export_cols = st.columns(2)
+    export_cols[0].download_button(
+        "Export GSM CSV (8 fields)",
+        data=gsm_csv_content,
+        file_name=f"{input_dir_name}_gsm_annotations.csv",
+        mime="text/csv",
+        disabled=gsm_row_count == 0,
     )
-    return rows, skipped, override_errors
+    export_cols[1].download_button(
+        "Export GSE CSV (7 fields)",
+        data=gse_csv_content,
+        file_name=f"{input_dir_name}_gse_summary.csv",
+        mime="text/csv",
+        disabled=gse_row_count == 0,
+    )
+    st.caption(
+        "Exports are equivalent to geo-gsm-summarize and apply saved overrides only."
+    )
+
+
+def _render_export_final_annotations(inputs: InputScanResult) -> None:
+    cache = _load_summarize_export_cache(inputs)
+    error = cache.get("error", "")
+    with st.expander("Exports", expanded=False):
+        if error:
+            st.error(
+                "Export generation failed for geo-gsm-summarize-equivalent outputs: "
+                f"{error}"
+            )
+            return
+        _render_summarize_export_notices(
+            cache.get("skipped", []),
+            cache.get("override_errors", []),
+            cache.get("summary_warnings", []),
+            sidebar=False,
+        )
+        _render_summarize_export_buttons(
+            gsm_csv_content=str(cache.get("gsm_csv", "")),
+            gse_csv_content=str(cache.get("gse_csv", "")),
+            gsm_row_count=int(cache.get("gsm_row_count", 0)),
+            gse_row_count=int(cache.get("gse_row_count", 0)),
+            input_dir_name=inputs.input_dir.name,
+            sidebar=False,
+        )
 
 
 def _render_export_all_sidebar(inputs: InputScanResult) -> None:
     st.sidebar.header("Exports")
-    signature = _all_export_signature(inputs)
-    cache = st.session_state.get("all_export_cache")
-    if isinstance(cache, dict) and cache.get("signature") == signature:
-        csv_content = cache.get("csv", "")
-        row_count = cache.get("row_count", 0)
-        skipped = cache.get("skipped", [])
-        override_errors = cache.get("override_errors", [])
-    else:
-        rows, skipped, override_errors = _collect_all_final_annotations(inputs)
-        csv_content = _build_final_annotations_csv(rows)
-        row_count = len(rows)
-        st.session_state["all_export_cache"] = {
-            "signature": signature,
-            "csv": csv_content,
-            "row_count": row_count,
-            "skipped": skipped,
-            "override_errors": override_errors,
-        }
-    if skipped:
-        st.sidebar.warning(
-            "Skipped GSEs for all-annotation export: "
-            + "; ".join(skipped)
+    cache = _load_summarize_export_cache(inputs)
+    error = cache.get("error", "")
+    if error:
+        st.sidebar.error(
+            "Export generation failed for geo-gsm-summarize-equivalent outputs: "
+            f"{error}"
         )
-    if override_errors:
-        st.sidebar.warning(
-            "Overrides not applied for: " + "; ".join(override_errors)
-        )
-    file_name = f"{inputs.input_dir.name}_final_annotations.csv"
-    st.sidebar.download_button(
-        "Export ALL final annotations as CSV",
-        data=csv_content,
-        file_name=file_name,
-        mime="text/csv",
-        disabled=row_count == 0,
+        return
+    _render_summarize_export_notices(
+        cache.get("skipped", []),
+        cache.get("override_errors", []),
+        cache.get("summary_warnings", []),
+        sidebar=True,
+    )
+    _render_summarize_export_buttons(
+        gsm_csv_content=str(cache.get("gsm_csv", "")),
+        gse_csv_content=str(cache.get("gse_csv", "")),
+        gsm_row_count=int(cache.get("gsm_row_count", 0)),
+        gse_row_count=int(cache.get("gse_row_count", 0)),
+        input_dir_name=inputs.input_dir.name,
+        sidebar=True,
     )
 
 
@@ -3629,7 +3698,7 @@ def run_app() -> None:
         saved_overrides,
         saved_present,
     )
-    _render_export_final_annotations(curation_records, overrides)
+    _render_export_final_annotations(inputs)
     rerun_needed = overrides_changed or (
         persistence_changed and (revert_saved_clicked or discard_saved_clicked)
     )
