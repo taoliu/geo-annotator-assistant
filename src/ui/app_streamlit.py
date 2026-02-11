@@ -1970,7 +1970,23 @@ def _evidence_flagged_fields(
     return flagged
 
 
-def _extract_aggrid_selected_rows(grid_response: dict | None) -> list[int]:
+def _row_selection_id_from_row(row: Mapping[str, object]) -> str | None:
+    gse = row.get("gse_accession")
+    gsm = row.get("gsm_accession")
+    if isinstance(gse, str) and isinstance(gsm, str) and (gse or gsm):
+        return f"{gse}::{gsm}"
+    raw_index = row.get(AGGRID_ROW_INDEX_COLUMN)
+    if isinstance(raw_index, int):
+        return str(raw_index)
+    if isinstance(raw_index, str) and raw_index:
+        return raw_index
+    return None
+
+
+def _extract_aggrid_selected_rows(
+    grid_response: dict | None,
+    table_df: pd.DataFrame | None = None,
+) -> list[int]:
     if grid_response is None:
         return []
 
@@ -2013,6 +2029,44 @@ def _extract_aggrid_selected_rows(grid_response: dict | None) -> list[int]:
                 node_index = node_info.get("nodeRowIndex")
                 if isinstance(node_index, int):
                     indices.append(node_index)
+    if indices:
+        return indices
+
+    grid_state = None
+    if hasattr(grid_response, "grid_state"):
+        grid_state = grid_response.grid_state
+    elif isinstance(grid_response, Mapping):
+        grid_state = (
+            grid_response.get("grid_state")
+            or grid_response.get("gridState")
+        )
+    if not isinstance(grid_state, Mapping):
+        return indices
+    selected_ids = grid_state.get("rowSelection")
+    if not isinstance(selected_ids, list) or not selected_ids:
+        return indices
+    if not isinstance(table_df, pd.DataFrame):
+        return indices
+
+    id_to_index: dict[str, int] = {}
+    for row in table_df.to_dict("records"):
+        if not isinstance(row, dict):
+            continue
+        row_id = _row_selection_id_from_row(row)
+        if not isinstance(row_id, str):
+            continue
+        row_index = row.get(AGGRID_ROW_INDEX_COLUMN)
+        if isinstance(row_index, int):
+            id_to_index[row_id] = row_index
+        elif isinstance(row_index, str) and row_index.isdigit():
+            id_to_index[row_id] = int(row_index)
+
+    for selected_id in selected_ids:
+        if not isinstance(selected_id, str):
+            continue
+        mapped = id_to_index.get(selected_id)
+        if isinstance(mapped, int):
+            indices.append(mapped)
     return indices
 
 
@@ -2259,7 +2313,18 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
         tooltipShowDelay=0,
         components={"diagnosticsTooltip": tooltip_component},
         getRowId=JsCode(
-            f"function(params) {{ return params.data.{AGGRID_ROW_INDEX_COLUMN}; }}"
+            f"""
+            function(params) {{
+              const row = (params && params.data) ? params.data : {{}};
+              const gse = row.gse_accession || "";
+              const gsm = row.gsm_accession || "";
+              if (gse || gsm) {{
+                return gse + "::" + gsm;
+              }}
+              const fallback = row.{AGGRID_ROW_INDEX_COLUMN};
+              return (fallback === undefined || fallback === null) ? "" : String(fallback);
+            }}
+            """
         ),
         rowClassRules={
             "ag-row-has-flags": f"data.{AGGRID_ROW_HAS_FLAGS_COLUMN} === true"
@@ -2381,6 +2446,7 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
         CHECKED_COLUMN,
         header_name="",
         editable=True,
+        singleClickEdit=True,
         cellRenderer="agCheckboxCellRenderer",
         cellEditor="agCheckboxCellEditor",
         pinned="left",
@@ -2607,6 +2673,21 @@ def _set_table_df(table_df: pd.DataFrame) -> bool:
         return False
     st.session_state["table_df"] = table_df.copy()
     return True
+
+
+def _table_df_changed_outside_columns(
+    left: object,
+    right: pd.DataFrame,
+    ignored_columns: tuple[str, ...],
+) -> bool:
+    """Return True when a DataFrame changed in any non-ignored column."""
+    if not isinstance(left, pd.DataFrame):
+        return True
+    if _table_df_equals(left, right):
+        return False
+    keep_left = left.drop(columns=list(ignored_columns), errors="ignore")
+    keep_right = right.drop(columns=list(ignored_columns), errors="ignore")
+    return not _table_df_equals(keep_left, keep_right)
 
 
 def _render_gse_metrics(
@@ -3199,6 +3280,11 @@ def _ensure_checked_state(
             )
         else:
             checked_by_gse[gse_accession] = {}
+    else:
+        existing = checked_by_gse.get(gse_accession, {})
+        checked_by_gse[gse_accession] = (
+            dict(existing) if isinstance(existing, dict) else {}
+        )
 
     st.session_state["checked_by_gse"] = checked_by_gse
     return checked_by_gse, checked_present
@@ -3745,7 +3831,8 @@ def run_app() -> None:
     checked_by_gse, checked_present = _ensure_checked_state(gse_id, active_paths)
     overrides = overrides_by_gse.get(gse_id, {})
     saved_overrides = saved_by_gse.get(gse_id, {})
-    checked_state = checked_by_gse.get(gse_id, {})
+    raw_checked_state = checked_by_gse.get(gse_id, {})
+    checked_state = dict(raw_checked_state) if isinstance(raw_checked_state, dict) else {}
     active_row_idx = st.session_state.get("active_row_idx")
     if not isinstance(active_row_idx, int):
         active_row_idx = None
@@ -3921,8 +4008,14 @@ def run_app() -> None:
         flag_summaries,
         primary_failures,
     )
+    previous_table_df = st.session_state.get("table_df")
     table_df_changed = _set_table_df(table_df)
-    if table_df_changed and not grid_version_bumped:
+    table_df_requires_remount = _table_df_changed_outside_columns(
+        previous_table_df,
+        table_df,
+        (CHECKED_COLUMN,),
+    )
+    if table_df_changed and table_df_requires_remount and not grid_version_bumped:
         grid_version = _bump_grid_version()
         grid_version_bumped = True
     table_df_state = st.session_state.get("table_df")
@@ -3935,7 +4028,7 @@ def run_app() -> None:
         key=f"curation_grid_{grid_version}",
     )
     selected_rows = normalize_selected_rows(
-        _extract_aggrid_selected_rows(grid_response),
+        _extract_aggrid_selected_rows(grid_response, table_df),
         len(filtered_rows),
     )
     st.session_state[selected_signature_key] = current_selection_signature
@@ -3958,7 +4051,8 @@ def run_app() -> None:
     }
     if checked_changes:
         _persist_checked_updates(active_paths, gse_id, checked_changes)
-        checked_state = merged_checked
+        checked_state = dict(merged_checked)
+        checked_by_gse = dict(checked_by_gse)
         checked_by_gse[gse_id] = checked_state
         st.session_state["checked_by_gse"] = checked_by_gse
 
@@ -3993,8 +4087,9 @@ def run_app() -> None:
         saved_present,
     )
     _render_export_final_annotations(inputs)
-    rerun_needed = overrides_changed or (
-        persistence_changed and (revert_saved_clicked or discard_saved_clicked)
+    rerun_needed = (
+        overrides_changed
+        or (persistence_changed and (revert_saved_clicked or discard_saved_clicked))
     )
     if rerun_needed:
         refreshed_table_df = _build_editable_df(
