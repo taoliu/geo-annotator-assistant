@@ -3943,12 +3943,7 @@ def run_app() -> None:
     )
     _section_divider()
     header_cols = st.columns([3, 5])
-    header_cols[0].markdown(
-        "### Curation table "
-        f"{_help_icon_html(table_legend_tooltip())} "
-        f"{_help_icon_html(table_guidance_text())}",
-        unsafe_allow_html=True,
-    )
+    table_header_placeholder = header_cols[0].empty()
     triage_filter = _render_triage_filters_inline(header_cols[1])
     primary_failure_options = sorted(
         {
@@ -3993,7 +3988,18 @@ def run_app() -> None:
         terminal_fallback_counts,
         outlier_categories_by_gsm,
     )
-    st.caption(f"Rows: {len(filtered_rows)}")
+    table_header_placeholder.markdown(
+        "### Curation table "
+        f"<span style=\"display:inline-block; margin-left:0.45rem; "
+        "padding:0.08rem 0.5rem; border-radius:999px; "
+        "background:#f2f4f7; border:1px solid #d7dde7; "
+        "font-size:0.72rem; font-weight:600; color:#4b5563; "
+        "vertical-align:middle;\">"
+        f"Rows: {len(filtered_rows)}</span> "
+        f"{_help_icon_html(table_legend_tooltip())} "
+        f"{_help_icon_html(table_guidance_text())}",
+        unsafe_allow_html=True,
+    )
 
     if not filtered_rows:
         st.info("No records match the current filters.")
