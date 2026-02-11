@@ -332,6 +332,72 @@ def _inject_layout_styles() -> None:
           text-decoration: underline;
           cursor: pointer;
         }
+        .diag-tooltip {
+          max-width: 430px;
+          background: #ffffff;
+          border: 1px solid #d9dee8;
+          border-radius: 10px;
+          box-shadow: 0 8px 20px rgba(15, 23, 42, 0.18);
+          padding: 8px 10px;
+          font-size: 0.76rem;
+          line-height: 1.35;
+          color: #1f2937;
+        }
+        .diag-tooltip-group + .diag-tooltip-group {
+          margin-top: 7px;
+          padding-top: 7px;
+          border-top: 1px solid #e7ebf3;
+        }
+        .diag-tooltip-group-title {
+          margin: 0 0 4px 0;
+          font-size: 0.63rem;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+          color: #6b7280;
+          font-weight: 600;
+        }
+        .diag-tooltip-row {
+          display: flex;
+          align-items: flex-start;
+          gap: 6px;
+          margin: 2px 0;
+        }
+        .diag-tooltip-key {
+          display: inline-block;
+          background: #e9f1ff;
+          border: 1px solid #d3def3;
+          color: #334155;
+          border-radius: 999px;
+          padding: 1px 7px;
+          font-size: 0.66rem;
+          font-weight: 600;
+          line-height: 1.3;
+          white-space: nowrap;
+        }
+        .diag-tooltip-value {
+          color: inherit;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+        }
+        @media (prefers-color-scheme: dark) {
+          .diag-tooltip {
+            background: #111827;
+            border-color: #3a455a;
+            color: #e5e7eb;
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+          }
+          .diag-tooltip-group + .diag-tooltip-group {
+            border-top-color: #374151;
+          }
+          .diag-tooltip-group-title {
+            color: #9ca3af;
+          }
+          .diag-tooltip-key {
+            background: #1f2937;
+            border-color: #475569;
+            color: #d1d5db;
+          }
+        }
         .inline-help-icon {
           display: inline-flex;
           align-items: center;
@@ -1647,26 +1713,82 @@ def _format_ontology_alternates(alternates: object, limit: int = 3) -> str | Non
     return "; ".join(formatted)
 
 
-def _extract_ontology_alternates_by_field(
-    audit_raw: Mapping[str, object] | None,
+def _extract_ontology_alternates_from_match(
+    match: Mapping[str, object] | None,
+) -> str | None:
+    if not isinstance(match, Mapping):
+        return None
+    for key in ("alternates", "ontology_alternates", "candidates", "match_candidates"):
+        formatted = _format_ontology_alternates(match.get(key))
+        if formatted:
+            return formatted
+    return None
+
+
+def _extract_ontology_alternates_from_matches_map(
+    matches: Mapping[str, object] | None,
 ) -> dict[str, str]:
-    if not isinstance(audit_raw, Mapping):
-        return {}
-    validation = audit_raw.get("validation")
-    if not isinstance(validation, Mapping):
-        return {}
-    matches = validation.get("ontology_matches")
     if not isinstance(matches, Mapping):
         return {}
     alternates_by_field: dict[str, str] = {}
     for field, match in matches.items():
         if not isinstance(field, str) or field not in CANONICAL_FIELDS:
             continue
-        if not isinstance(match, Mapping):
-            continue
-        formatted = _format_ontology_alternates(match.get("alternates"))
+        formatted = _extract_ontology_alternates_from_match(
+            match if isinstance(match, Mapping) else None
+        )
         if formatted:
             alternates_by_field[field] = formatted
+    return alternates_by_field
+
+
+def _extract_ontology_alternates_by_field(
+    audit_raw: Mapping[str, object] | None,
+    curation_raw: Mapping[str, object] | None = None,
+    evidence_raw: Mapping[str, object] | None = None,
+) -> dict[str, str]:
+    # Primary source: audit.validation.ontology_matches
+    audit_validation = audit_raw.get("validation") if isinstance(audit_raw, Mapping) else None
+    audit_matches = (
+        audit_validation.get("ontology_matches")
+        if isinstance(audit_validation, Mapping)
+        else None
+    )
+    alternates_by_field = _extract_ontology_alternates_from_matches_map(
+        audit_matches if isinstance(audit_matches, Mapping) else None
+    )
+
+    # Fallback source: curation.raw.validation.ontology_matches or curation.raw.ontology_matches
+    if isinstance(curation_raw, Mapping):
+        curation_validation = curation_raw.get("validation")
+        curation_matches = (
+            curation_validation.get("ontology_matches")
+            if isinstance(curation_validation, Mapping)
+            else curation_raw.get("ontology_matches")
+        )
+        curation_alternates = _extract_ontology_alternates_from_matches_map(
+            curation_matches if isinstance(curation_matches, Mapping) else None
+        )
+        for field, value in curation_alternates.items():
+            alternates_by_field.setdefault(field, value)
+
+    # Fallback source: evidence.raw.evidence_by_field[*].(ontology_alternates|alternates|candidates)
+    evidence_by_field = (
+        evidence_raw.get("evidence_by_field")
+        if isinstance(evidence_raw, Mapping)
+        else None
+    )
+    if isinstance(evidence_by_field, Mapping):
+        for field in CANONICAL_FIELDS:
+            if field in alternates_by_field:
+                continue
+            field_evidence = evidence_by_field.get(field)
+            if not isinstance(field_evidence, Mapping):
+                continue
+            formatted = _extract_ontology_alternates_from_match(field_evidence)
+            if formatted:
+                alternates_by_field[field] = formatted
+
     return alternates_by_field
 
 
@@ -1771,6 +1893,7 @@ def _append_aggrid_meta_columns(
 
         curation = curation_lookup.get(key) if key else None
         backend_fields = curation.get("fields", {}) if isinstance(curation, dict) else {}
+        curation_raw = curation.get("raw") if isinstance(curation, dict) else None
         backend_gse = None
         backend_gsm = None
         if isinstance(curation, dict):
@@ -1785,7 +1908,9 @@ def _append_aggrid_meta_columns(
         audit_raw = audit.get("raw") if isinstance(audit, dict) else None
         llm_originals = _extract_llm_originals(audit_raw if isinstance(audit_raw, dict) else None)
         alternates_by_field = _extract_ontology_alternates_by_field(
-            audit_raw if isinstance(audit_raw, dict) else None
+            audit_raw if isinstance(audit_raw, Mapping) else None,
+            curation_raw if isinstance(curation_raw, Mapping) else None,
+            evidence_raw if isinstance(evidence_raw, Mapping) else None,
         )
 
         for field in AGGRID_TOOLTIP_FIELDS:
@@ -1934,10 +2059,10 @@ def _aggrid_tooltip_getter(field: str, include_evidence: bool = False) -> JsCode
               flagsValue = trimmed;
             }}
           }}
-          lines.push("Attempts: " + attemptsValue);
-          lines.push("Ontology status: " + status);
-          lines.push("Terminal fallback: " + terminalValue);
-          lines.push("Evidence flags: " + flagsValue);
+          entries.push({{ key: "Attempts", value: attemptsValue }});
+          entries.push({{ key: "Ontology status", value: status }});
+          entries.push({{ key: "Terminal fallback", value: terminalValue }});
+          entries.push({{ key: "Evidence flags", value: flagsValue }});
         """
     return JsCode(
         f"""
@@ -1949,24 +2074,177 @@ def _aggrid_tooltip_getter(field: str, include_evidence: bool = False) -> JsCode
           const backend = params.data["__backend_{field}"] || "(not available)";
           const llm = params.data["__llm_{field}"];
           const ontology = params.data["__ontology_{field}"];
-          const lines = [];
-          lines.push("Displayed: " + displayedValue);
-          lines.push("Backend: " + backend);
+          const entries = [];
+          entries.push({{ key: "Displayed", value: displayedValue }});
+          entries.push({{ key: "Backend", value: backend }});
           if (llm) {{
-            lines.push("LLM original: " + llm);
+            entries.push({{ key: "LLM original", value: llm }});
           }}
           if (ontology) {{
-            lines.push("Ontology alternates: " + ontology);
+            entries.push({{ key: "Ontology alternates", value: ontology }});
           }}
           {evidence_block}
-          return lines.join("\\n");
+          return {{ entries: entries }};
         }}
+        """
+    )
+
+
+def _aggrid_diagnostics_tooltip_component() -> JsCode:
+    return JsCode(
+        """
+        (function() {
+          function normalizeEntries(value) {
+            if (value && Array.isArray(value.entries)) {
+              return value.entries
+                .filter(function(item) {
+                  return item && typeof item.key === "string";
+                })
+                .map(function(item) {
+                  return {
+                    key: item.key,
+                    value: item.value === null || item.value === undefined ? "" : String(item.value),
+                  };
+                });
+            }
+            if (typeof value === "string" && value) {
+              return value.split("\\n").map(function(line) {
+                var idx = line.indexOf(":");
+                if (idx < 0) {
+                  return { key: line, value: "" };
+                }
+                return {
+                  key: line.slice(0, idx).trim(),
+                  value: line.slice(idx + 1).trim(),
+                };
+              });
+            }
+            return [];
+          }
+
+          function groupName(key) {
+            if (key === "Displayed" || key === "Backend" || key === "LLM original") {
+              return "Values";
+            }
+            if (key === "Ontology alternates" || key === "Ontology status") {
+              return "Ontology";
+            }
+            if (key === "Attempts" || key === "Terminal fallback") {
+              return "Repair / fallback";
+            }
+            if (key === "Evidence flags") {
+              return "Evidence";
+            }
+            return "";
+          }
+
+          function Tooltip() {}
+
+          Tooltip.prototype.init = function(params) {
+            var root = document.createElement("div");
+            root.className = "diag-tooltip";
+            var darkMode = !!(
+              window.matchMedia &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches
+            );
+            root.style.maxWidth = "430px";
+            root.style.background = darkMode ? "#111827" : "#ffffff";
+            root.style.border = "1px solid " + (darkMode ? "#3a455a" : "#d9dee8");
+            root.style.borderRadius = "10px";
+            root.style.boxShadow = darkMode
+              ? "0 10px 24px rgba(0, 0, 0, 0.45)"
+              : "0 8px 20px rgba(15, 23, 42, 0.18)";
+            root.style.padding = "8px 10px";
+            root.style.fontSize = "0.76rem";
+            root.style.lineHeight = "1.35";
+            root.style.color = darkMode ? "#e5e7eb" : "#1f2937";
+            var entries = normalizeEntries(params ? params.value : null);
+            if (!entries.length) {
+              root.textContent = "(not available)";
+              this.eGui = root;
+              return;
+            }
+
+            var groups = {};
+            var order = [];
+            entries.forEach(function(entry) {
+              var key = groupName(entry.key);
+              if (!groups[key]) {
+                groups[key] = [];
+                order.push(key);
+              }
+              groups[key].push(entry);
+            });
+
+            order.forEach(function(groupKey, groupIndex) {
+              var section = document.createElement("div");
+              section.className = "diag-tooltip-group";
+              if (groupIndex > 0) {
+                section.style.marginTop = "7px";
+                section.style.paddingTop = "7px";
+                section.style.borderTop = "1px solid " + (darkMode ? "#374151" : "#e7ebf3");
+              }
+              if (groupKey) {
+                var title = document.createElement("div");
+                title.className = "diag-tooltip-group-title";
+                title.textContent = groupKey;
+                title.style.margin = "0 0 4px 0";
+                title.style.fontSize = "0.63rem";
+                title.style.textTransform = "uppercase";
+                title.style.letterSpacing = "0.06em";
+                title.style.fontWeight = "600";
+                title.style.color = darkMode ? "#9ca3af" : "#6b7280";
+                section.appendChild(title);
+              }
+              groups[groupKey].forEach(function(entry) {
+                var row = document.createElement("div");
+                row.className = "diag-tooltip-row";
+                row.style.display = "flex";
+                row.style.alignItems = "flex-start";
+                row.style.gap = "6px";
+                row.style.margin = "2px 0";
+                var keyEl = document.createElement("span");
+                keyEl.className = "diag-tooltip-key";
+                keyEl.textContent = entry.key + ":";
+                keyEl.style.display = "inline-block";
+                keyEl.style.background = darkMode ? "#1f2937" : "#e9f1ff";
+                keyEl.style.border = "1px solid " + (darkMode ? "#475569" : "#d3def3");
+                keyEl.style.color = darkMode ? "#d1d5db" : "#334155";
+                keyEl.style.borderRadius = "999px";
+                keyEl.style.padding = "1px 7px";
+                keyEl.style.fontSize = "0.66rem";
+                keyEl.style.fontWeight = "600";
+                keyEl.style.lineHeight = "1.3";
+                keyEl.style.whiteSpace = "nowrap";
+                var valueEl = document.createElement("span");
+                valueEl.className = "diag-tooltip-value";
+                valueEl.textContent = entry.value;
+                valueEl.style.color = "inherit";
+                valueEl.style.overflowWrap = "anywhere";
+                valueEl.style.wordBreak = "break-word";
+                row.appendChild(keyEl);
+                row.appendChild(valueEl);
+                section.appendChild(row);
+              });
+              root.appendChild(section);
+            });
+
+            this.eGui = root;
+          };
+
+          Tooltip.prototype.getGui = function() {
+            return this.eGui;
+          };
+
+          return Tooltip;
+        })()
         """
     )
 
 
 def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
     gb = GridOptionsBuilder.from_dataframe(df)
+    tooltip_component = _aggrid_diagnostics_tooltip_component()
     gb.configure_default_column(
         resizable=True,
         sortable=True,
@@ -1977,8 +2255,9 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
         suppressRowClickSelection=False,
         rowSelection="multiple",
         rowMultiSelectWithClick=True,
-        enableBrowserTooltips=True,
+        enableBrowserTooltips=False,
         tooltipShowDelay=0,
+        components={"diagnosticsTooltip": tooltip_component},
         getRowId=JsCode(
             f"function(params) {{ return params.data.{AGGRID_ROW_INDEX_COLUMN}; }}"
         ),
@@ -2001,6 +2280,7 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
         "gse_accession",
         cellClass="ag-geo-link",
         tooltipValueGetter=_aggrid_tooltip_getter("gse_accession"),
+        tooltipComponent="diagnosticsTooltip",
         pinned="left",
         lockPosition=True,
         lockPinned=True,
@@ -2012,6 +2292,7 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
         "gsm_accession",
         cellClass="ag-geo-link",
         tooltipValueGetter=_aggrid_tooltip_getter("gsm_accession"),
+        tooltipComponent="diagnosticsTooltip",
         pinned="left",
         lockPosition=True,
         lockPinned=True,
@@ -2076,6 +2357,7 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
             tooltipValueGetter=_aggrid_tooltip_getter(
                 field, include_evidence=field in AGGRID_FLAG_FIELDS
             ),
+            tooltipComponent="diagnosticsTooltip",
             cellClassRules=cell_rules,
             cellStyle=cell_style,
         )
