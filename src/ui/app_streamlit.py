@@ -17,6 +17,7 @@ from urllib.parse import quote
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 from st_aggrid import AgGrid, DataReturnMode, GridOptionsBuilder, GridUpdateMode, JsCode
 
 from ui.flags import (
@@ -507,23 +508,138 @@ def _render_gse_switcher(
     skipped: dict[str, str],
 ) -> str:
     st.sidebar.header("GSE Selection")
-    previous = st.session_state.get("active_gse")
+    state_key = "active_gse"
+    widget_key = "active_gse_widget"
+    pending_target = st.session_state.pop("active_gse_nav_target", None)
+    previous = st.session_state.get(state_key)
     if not isinstance(previous, str) or previous not in gse_options:
         previous = gse_options[0]
-    active_index = gse_options.index(previous)
+
+    widget_value = st.session_state.get(widget_key)
+    has_valid_widget_value = isinstance(widget_value, str) and widget_value in gse_options
+    has_pending_target = isinstance(pending_target, str) and pending_target in gse_options
+    if has_pending_target:
+        st.session_state[widget_key] = pending_target
+    elif not has_valid_widget_value:
+        st.session_state[widget_key] = previous
+
     active = st.sidebar.selectbox(
         "Active GSE",
         gse_options,
-        index=active_index,
-        key="active_gse",
+        key=widget_key,
+        help="Use ↑ / ↓ to navigate GSEs",
     )
+    resolved_index = gse_options.index(active)
+    nav_cols = st.sidebar.columns(2)
+    prev_clicked = nav_cols[0].button(
+        "◀ Prev GSE",
+        key="active_gse_prev",
+        disabled=resolved_index <= 0,
+    )
+    next_clicked = nav_cols[1].button(
+        "Next GSE ▶",
+        key="active_gse_next",
+        disabled=resolved_index >= (len(gse_options) - 1),
+    )
+    if prev_clicked:
+        next_active = gse_options[resolved_index - 1]
+        st.session_state["active_gse_nav_target"] = next_active
+        st.session_state["active_row_idx"] = None
+        _request_rerun()
+    if next_clicked:
+        next_active = gse_options[resolved_index + 1]
+        st.session_state["active_gse_nav_target"] = next_active
+        st.session_state["active_row_idx"] = None
+        _request_rerun()
     if previous and previous != active:
         st.session_state["active_row_idx"] = None
+    st.session_state[state_key] = active
     if skipped:
         with st.sidebar.expander("Skipped GSE directories", expanded=False):
             for name, reason in sorted(skipped.items()):
                 st.write(f"{name}: {reason}")
+    _inject_active_gse_scroll_script()
     return active
+
+
+def _inject_active_gse_scroll_script() -> None:
+    components.html(
+        """
+        <script>
+        (function() {
+          const doc = window.parent && window.parent.document ? window.parent.document : null;
+          if (!doc) return;
+          const sidebar = doc.querySelector('section[data-testid="stSidebar"]');
+          if (!sidebar) return;
+
+          const selectboxes = sidebar.querySelectorAll('div[data-testid="stSelectbox"]');
+          let activeBox = null;
+          for (const box of selectboxes) {
+            const label = box.querySelector('label');
+            const text = label ? (label.textContent || "") : "";
+            if (text.indexOf("Active GSE") >= 0) {
+              activeBox = box;
+              break;
+            }
+          }
+          if (!activeBox) return;
+
+          const combobox = activeBox.querySelector('[role="combobox"]');
+          if (!combobox) return;
+          if (combobox.dataset.gseScrollBound === "1") return;
+          combobox.dataset.gseScrollBound = "1";
+
+          const centerSelected = function() {
+            window.setTimeout(function() {
+              const options = doc.querySelectorAll('[role="option"]');
+              let selected = null;
+              for (const option of options) {
+                if (option.getAttribute('aria-selected') === 'true') {
+                  selected = option;
+                  break;
+                }
+              }
+              if (selected && typeof selected.scrollIntoView === "function") {
+                selected.scrollIntoView({ block: "center" });
+              }
+            }, 40);
+          };
+
+          combobox.addEventListener('mousedown', centerSelected);
+          combobox.addEventListener('keydown', function(evt) {
+            const isExpanded = combobox.getAttribute("aria-expanded") === "true";
+            if (!isExpanded && !evt.repeat && (evt.key === "ArrowDown" || evt.key === "ArrowUp")) {
+              const buttons = sidebar.querySelectorAll("button");
+              let prevButton = null;
+              let nextButton = null;
+              for (const button of buttons) {
+                const text = (button.textContent || "").trim();
+                if (text === "◀ Prev GSE") prevButton = button;
+                if (text === "Next GSE ▶") nextButton = button;
+              }
+              if (evt.key === "ArrowDown" && nextButton) {
+                evt.preventDefault();
+                evt.stopPropagation();
+                nextButton.click();
+                return;
+              }
+              if (evt.key === "ArrowUp" && prevButton) {
+                evt.preventDefault();
+                evt.stopPropagation();
+                prevButton.click();
+                return;
+              }
+            }
+            if (evt.key === 'Enter' || evt.key === ' ' || evt.key === 'ArrowDown') {
+              centerSelected();
+            }
+          });
+        })();
+        </script>
+        """,
+        height=0,
+        width=0,
+    )
 
 
 def _render_skipped_panel(skipped: dict[str, str]) -> None:
