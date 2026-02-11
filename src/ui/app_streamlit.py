@@ -4029,15 +4029,11 @@ def run_app() -> None:
             grid_version = _bump_grid_version()
             grid_version_bumped = True
 
-    action_cols = st.columns(2)
     active_selection = resolve_selected_key(filtered_rows, selected_rows[:1])
     if active_selection is None and isinstance(active_row_idx, int):
         active_selection = resolve_selected_key(filtered_rows, [active_row_idx])
-    revert_row_clicked = action_cols[0].button(
-        "Revert selected row",
-        disabled=active_selection is None,
-    )
-    clear_all_clicked = action_cols[1].button("Clear all edits")
+    revert_row_clicked = False
+    clear_all_clicked = False
 
     persist_cols = st.columns([1, 3])
     save_overrides_clicked = persist_cols[0].button("Save overrides")
@@ -4046,6 +4042,14 @@ def run_app() -> None:
     discard_saved_clicked = False
     discard_confirm = False
     with persist_cols[1].expander("More actions"):
+        st.caption("Session edit actions")
+        revert_row_clicked = st.button(
+            "Revert selected row",
+            disabled=active_selection is None,
+        )
+        clear_all_clicked = st.button("Clear all edits")
+        st.markdown("---")
+        st.caption("Saved override actions")
         revert_saved_clicked = st.button("Revert to saved")
         discard_confirm = st.checkbox(
             "Confirm discard saved overrides",
