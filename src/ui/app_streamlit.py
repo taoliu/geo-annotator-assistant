@@ -46,6 +46,7 @@ from ui.help_text import (
     table_guidance_text,
     table_legend_tooltip,
 )
+from ui.checked import merge_visible_checked_updates
 from ui.dashboard import BADGE_TOOLTIPS, build_dashboard_items
 from ui.evidence import EVIDENCE_FIELDS, extract_field_evidence
 from ui.bulk_edit import (
@@ -2991,6 +2992,28 @@ def _render_triage_filters_inline(container: st.delta_generator.DeltaGenerator) 
     )
 
 
+def _render_checked_bulk_controls(
+    container: st.delta_generator.DeltaGenerator,
+    gse_id: str,
+) -> bool | None:
+    controls = container.columns(2)
+    check_all_visible = controls[0].button(
+        "Check all visible",
+        key=f"checked_visible_all_{gse_id}",
+        use_container_width=True,
+    )
+    uncheck_all_visible = controls[1].button(
+        "Uncheck all visible",
+        key=f"checked_visible_none_{gse_id}",
+        use_container_width=True,
+    )
+    if check_all_visible:
+        return True
+    if uncheck_all_visible:
+        return False
+    return None
+
+
 def _build_editable_df(
     df_base: pd.DataFrame,
     overrides: dict,
@@ -4035,6 +4058,24 @@ def run_app() -> None:
     if not filtered_rows:
         st.info("No records match the current filters.")
         st.stop()
+
+    checked_bulk_action = _render_checked_bulk_controls(header_cols[0], gse_id)
+    header_cols[0].caption("Checked actions apply to visible rows only.")
+    if checked_bulk_action is not None:
+        merged_checked, checked_changes = merge_visible_checked_updates(
+            checked_state,
+            filtered_rows,
+            checked_bulk_action,
+        )
+        if checked_changes:
+            _persist_checked_updates(active_paths, gse_id, checked_changes)
+            checked_state = dict(merged_checked)
+            checked_by_gse = dict(checked_by_gse)
+            checked_by_gse[gse_id] = checked_state
+            st.session_state["checked_by_gse"] = checked_by_gse
+            if not grid_version_bumped:
+                grid_version = _bump_grid_version()
+                grid_version_bumped = True
 
     selected_rows_key = _bulk_selection_state_key(gse_id)
     selected_signature_key = _bulk_selection_signature_key(gse_id)
