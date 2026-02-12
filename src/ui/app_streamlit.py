@@ -537,31 +537,11 @@ def _resolve_inputs(input_dir: str) -> InputScanResult:
 
 
 def _render_header(
-    paths: InputPaths,
-    root_dir: Path | None = None,
     active_gse: str | None = None,
 ) -> None:
     active_title = active_gse or st.session_state.get("active_gse_label")
     if active_title:
         st.title(active_title)
-    with st.expander("Input details", expanded=False):
-        if root_dir and root_dir != paths.input_dir:
-            st.caption(f"Input root: {root_dir}")
-        st.caption(f"Input directory: {paths.input_dir}")
-        st.caption(f"Curation: {paths.curation_path}")
-        st.caption(f"Evidence: {paths.evidence_path}")
-        if paths.suggestions_present:
-            st.caption(f"Suggestions: {paths.suggestions_path}")
-        else:
-            st.caption("Suggestions: not loaded")
-        if paths.audit_present:
-            st.caption(f"Audit: {paths.audit_path}")
-        else:
-            st.caption("Audit: not loaded")
-        if paths.gse_field_values_present:
-            st.caption(f"GSE field values: {paths.gse_field_values_path}")
-        else:
-            st.caption("GSE field values: not loaded")
     if active_gse:
         st.session_state["active_gse_label"] = active_gse
 
@@ -3084,14 +3064,13 @@ def _render_gse_metrics(
     html_block = (
         "<div class=\"gse-counts-card\">"
         "<div class=\"gse-counts-title\">"
-        "GSE-wide counts (not affected by filters)"
+        "Counts"
         "</div>"
         "<div class=\"gse-counts-grid\">"
         + "".join(blocks)
         + "</div></div>"
     )
-    with st.expander("GSE-wide counts (not affected by filters)", expanded=False):
-        st.markdown(html_block, unsafe_allow_html=True)
+    st.markdown(html_block, unsafe_allow_html=True)
 
 _GSE_BIOLOGY_FIELDS = ("data_type", "organism", "tissue_type", "cell_line", "disease")
 
@@ -3195,7 +3174,7 @@ def _render_gse_field_values_summary(
         "<div class=\"gse-biology-header\">"
         "<div class=\"gse-biology-heading\">"
         "<div class=\"gse-biology-title\">"
-        "GSE-wide biology (not affected by filters)"
+        "Biology"
         "</div>"
         "<div class=\"gse-biology-meta\">"
         "Backend-derived summary (ignores session edits)"
@@ -3211,8 +3190,29 @@ def _render_gse_field_values_summary(
         + "".join(blocks)
         + "</div></div>"
     )
-    with st.expander("GSE-wide biology (not affected by filters)", expanded=False):
-        st.markdown(html_block, unsafe_allow_html=True)
+    st.markdown(html_block, unsafe_allow_html=True)
+
+
+def _render_gse_summary_section(
+    gse_field_values: dict | None,
+    has_session_edits: bool,
+    *,
+    total: int,
+    flagged: int,
+    overrides_saved: int,
+    overrides_session: int,
+    outliers: int,
+) -> None:
+    with st.expander("GSE-wide summary (not affected by filters)", expanded=False):
+        st.caption("Not affected by filters.")
+        _render_gse_field_values_summary(gse_field_values, has_session_edits)
+        _render_gse_metrics(
+            total=total,
+            flagged=flagged,
+            overrides_saved=overrides_saved,
+            overrides_session=overrides_session,
+            outliers=outliers,
+        )
 
 
 def _render_triage_filters_inline(container: st.delta_generator.DeltaGenerator) -> str:
@@ -4174,11 +4174,7 @@ def run_app() -> None:
             f"Details: {audit_error}"
         )
 
-    _render_header(
-        active_paths,
-        root_dir=inputs.input_dir,
-        active_gse=active_gse,
-    )
+    _render_header(active_gse=active_gse)
     if inputs.mode == "multi":
         _render_skipped_panel(inputs.skipped)
 
@@ -4253,8 +4249,9 @@ def run_app() -> None:
         1 for categories in outlier_categories_by_gsm.values() if categories
     )
     has_biology_edits = _has_biology_session_edits(overrides)
-    _render_gse_field_values_summary(gse_field_values, has_biology_edits)
-    _render_gse_metrics(
+    _render_gse_summary_section(
+        gse_field_values,
+        has_biology_edits,
         total=len(rows),
         flagged=flagged_count,
         overrides_saved=len(saved_override_keys),
