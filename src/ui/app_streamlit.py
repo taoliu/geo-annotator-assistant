@@ -49,6 +49,7 @@ from ui.help_text import (
 from ui.checked import merge_visible_checked_updates
 from ui.dashboard import BADGE_TOOLTIPS, build_dashboard_items
 from ui.evidence import EVIDENCE_FIELDS, extract_field_evidence
+from ui.gse_navigation import ensure_active_gse, step_active_gse
 from ui.bulk_edit import (
     apply_bulk_edit,
     build_bulk_edit_preview,
@@ -602,24 +603,16 @@ def _render_gse_switcher(
 ) -> str:
     st.sidebar.header("GSE Selection")
     state_key = "active_gse"
-    widget_key = "active_gse_widget"
     pending_target = st.session_state.pop("active_gse_nav_target", None)
-    previous = st.session_state.get(state_key)
-    if not isinstance(previous, str) or previous not in gse_options:
-        previous = gse_options[0]
-
-    widget_value = st.session_state.get(widget_key)
-    has_valid_widget_value = isinstance(widget_value, str) and widget_value in gse_options
-    has_pending_target = isinstance(pending_target, str) and pending_target in gse_options
-    if has_pending_target:
-        st.session_state[widget_key] = pending_target
-    elif not has_valid_widget_value:
-        st.session_state[widget_key] = previous
+    previous = ensure_active_gse(st.session_state.get(state_key), gse_options)
+    if isinstance(pending_target, str) and pending_target in gse_options:
+        previous = pending_target
+    st.session_state[state_key] = previous
 
     active = st.sidebar.selectbox(
         "Active GSE",
         gse_options,
-        key=widget_key,
+        key=state_key,
         help="Use ↑ / ↓ to navigate GSEs",
     )
     resolved_index = gse_options.index(active)
@@ -635,18 +628,21 @@ def _render_gse_switcher(
         disabled=resolved_index >= (len(gse_options) - 1),
     )
     if prev_clicked:
-        next_active = gse_options[resolved_index - 1]
-        st.session_state["active_gse_nav_target"] = next_active
-        st.session_state["active_row_idx"] = None
-        active = next_active
+        next_active = step_active_gse(active, gse_options, "prev")
+        if next_active != active:
+            st.session_state["active_gse_nav_target"] = next_active
+            st.session_state["active_row_idx"] = None
+            _request_rerun()
+            return next_active
     if next_clicked:
-        next_active = gse_options[resolved_index + 1]
-        st.session_state["active_gse_nav_target"] = next_active
-        st.session_state["active_row_idx"] = None
-        active = next_active
+        next_active = step_active_gse(active, gse_options, "next")
+        if next_active != active:
+            st.session_state["active_gse_nav_target"] = next_active
+            st.session_state["active_row_idx"] = None
+            _request_rerun()
+            return next_active
     if previous and previous != active:
         st.session_state["active_row_idx"] = None
-    st.session_state[state_key] = active
     if skipped:
         with st.sidebar.expander("Skipped GSE directories", expanded=False):
             for name, reason in sorted(skipped.items()):
