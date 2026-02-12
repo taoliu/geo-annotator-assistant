@@ -59,6 +59,11 @@ from ui.bulk_edit import (
     resolve_selected_keys,
     validate_bulk_edit,
 )
+from ui.bulk_mode import (
+    activate_bulk_mode,
+    is_bulk_mode_active,
+    reset_bulk_mode_state,
+)
 from ui.loaders import (
     load_audit_jsonl_optional,
     load_curation_jsonl,
@@ -2263,6 +2268,97 @@ def _aggrid_diagnostics_tooltip_component() -> JsCode:
     return JsCode(
         """
         (function() {
+          function clamp(value, minValue, maxValue) {
+            return Math.min(Math.max(value, minValue), maxValue);
+          }
+
+          function viewportSize() {
+            var doc = document.documentElement || {};
+            return {
+              width: Math.max(doc.clientWidth || 0, window.innerWidth || 0),
+              height: Math.max(doc.clientHeight || 0, window.innerHeight || 0),
+            };
+          }
+
+          function resolveCellRect(params) {
+            if (
+              params &&
+              params.eGridCell &&
+              typeof params.eGridCell.getBoundingClientRect === "function"
+            ) {
+              return params.eGridCell.getBoundingClientRect();
+            }
+            var eventObj = params ? params.event : null;
+            if (
+              eventObj &&
+              eventObj.target &&
+              typeof eventObj.target.getBoundingClientRect === "function"
+            ) {
+              return eventObj.target.getBoundingClientRect();
+            }
+            return null;
+          }
+
+          function placeTooltip(params, root) {
+            if (!root) {
+              return;
+            }
+            window.requestAnimationFrame(function() {
+              var cellRect = resolveCellRect(params);
+              if (!cellRect) {
+                return;
+              }
+              var gap = 10;
+              var margin = 8;
+              var topOffset = 2;
+              var viewport = viewportSize();
+              var maxWidth = Math.min(430, Math.max(220, viewport.width - (margin * 2)));
+
+              root.style.position = "fixed";
+              root.style.pointerEvents = "none";
+              root.style.zIndex = "10000";
+              root.style.maxWidth = String(maxWidth) + "px";
+
+              var width = Math.ceil(root.offsetWidth || 0);
+              var height = Math.ceil(root.offsetHeight || 0);
+              if (!width || !height) {
+                return;
+              }
+
+              var availableRight = viewport.width - cellRect.right - margin;
+              var availableLeft = cellRect.left - margin;
+              var preferredTop = cellRect.top + topOffset;
+              var left = 0;
+              var top = 0;
+
+              if (availableRight >= (width + gap)) {
+                left = cellRect.right + gap;
+                top = preferredTop;
+              } else if (availableLeft >= (width + gap)) {
+                left = cellRect.left - width - gap;
+                top = preferredTop;
+              } else {
+                left = cellRect.left;
+                var belowTop = cellRect.bottom + gap;
+                var aboveTop = cellRect.top - height - gap;
+                var hasBelowSpace = (viewport.height - cellRect.bottom - margin) >= (height + gap);
+                var hasAboveSpace = (cellRect.top - margin) >= (height + gap);
+                if (hasBelowSpace) {
+                  top = belowTop;
+                } else if (hasAboveSpace) {
+                  top = aboveTop;
+                } else {
+                  top = preferredTop;
+                }
+              }
+
+              var maxLeft = Math.max(margin, viewport.width - width - margin);
+              var maxTop = Math.max(margin, viewport.height - height - margin);
+              root.style.left = String(clamp(left, margin, maxLeft)) + "px";
+              root.style.top = String(clamp(top, margin, maxTop)) + "px";
+            });
+          }
+
           function normalizeEntries(value) {
             if (value && Array.isArray(value.entries)) {
               return value.entries
@@ -2335,12 +2431,14 @@ def _aggrid_diagnostics_tooltip_component() -> JsCode:
               tooltipValue.plain_message
             ) {
               root.textContent = tooltipValue.plain_message;
+              placeTooltip(params, root);
               this.eGui = root;
               return;
             }
             var entries = normalizeEntries(tooltipValue);
             if (!entries.length) {
               root.textContent = "(not available)";
+              placeTooltip(params, root);
               this.eGui = root;
               return;
             }
@@ -2409,6 +2507,7 @@ def _aggrid_diagnostics_tooltip_component() -> JsCode:
               root.appendChild(section);
             });
 
+            placeTooltip(params, root);
             this.eGui = root;
           };
 
@@ -3142,8 +3241,24 @@ def _bulk_value_state_key(gse_id: str) -> str:
     return f"bulk_edit_value_{gse_id}"
 
 
-def _bulk_expand_state_key(gse_id: str) -> str:
-    return f"bulk_edit_expanded_{gse_id}"
+def _bulk_mode_state_key(gse_id: str) -> str:
+    return f"bulk_edit_mode_{gse_id}"
+
+
+def _bulk_mode_reset_pending_key(gse_id: str) -> str:
+    return f"bulk_edit_mode_reset_pending_{gse_id}"
+
+
+def _reset_bulk_edit_mode_state(gse_id: str) -> None:
+    field_key = _bulk_field_state_key(gse_id)
+    value_key = _bulk_value_state_key(gse_id)
+    mode_key = _bulk_mode_state_key(gse_id)
+    reset_bulk_mode_state(
+        st.session_state,
+        mode_key=mode_key,
+        field_key=field_key,
+        value_key=value_key,
+    )
 
 
 def _bulk_target_column_label(value: str) -> str:
@@ -3220,18 +3335,22 @@ def _render_bulk_edit_panel(
     overrides: dict,
     evidence_lookup: dict[tuple[str, str], dict],
     edit_mode: bool,
-) -> tuple[dict, bool]:
-    expand_key = _bulk_expand_state_key(gse_id)
-    if expand_key not in st.session_state:
-        st.session_state[expand_key] = False
+) -> tuple[dict, bool, bool]:
+    pending_reset_key = _bulk_mode_reset_pending_key(gse_id)
+    if bool(st.session_state.pop(pending_reset_key, False)):
+        _reset_bulk_edit_mode_state(gse_id)
 
-    expanded = st.toggle(
-        "Bulk edit - Apply one value to one column across selected rows",
-        key=expand_key,
-        help=bulk_edit_tooltip(),
-    )
-    if not expanded:
-        return overrides, False
+    mode_key = _bulk_mode_state_key(gse_id)
+    mode_active = is_bulk_mode_active(st.session_state, mode_key)
+    if not mode_active:
+        open_mode_clicked = st.button(
+            "Bulk edit",
+            key=f"bulk_mode_open_{gse_id}",
+            help=bulk_edit_tooltip(),
+        )
+        if not open_mode_clicked:
+            return overrides, False, False
+        activate_bulk_mode(st.session_state, mode_key)
 
     field_key = _bulk_field_state_key(gse_id)
     value_key = _bulk_value_state_key(gse_id)
@@ -3239,6 +3358,17 @@ def _render_bulk_edit_panel(
     current_field = st.session_state.get(field_key, "")
     if current_field not in field_options:
         st.session_state[field_key] = ""
+
+    header_cols = st.columns([4, 1])
+    header_cols[0].caption("Bulk edit mode")
+    close_mode_clicked = header_cols[1].button(
+        "Close",
+        key=f"bulk_mode_close_{gse_id}",
+    )
+    if close_mode_clicked:
+        _reset_bulk_edit_mode_state(gse_id)
+        _request_rerun()
+        return overrides, False, False
 
     panel_cols = st.columns([2, 3, 2])
     target_field = panel_cols[0].selectbox(
@@ -3272,7 +3402,7 @@ def _render_bulk_edit_panel(
         )
         st.session_state[value_key] = _format_override_input(current_value)
         _request_rerun()
-        return overrides, False
+        return overrides, False, False
 
     preview = build_bulk_edit_preview(
         filtered_rows,
@@ -3341,7 +3471,7 @@ def _render_bulk_edit_panel(
     )
 
     if not apply_clicked:
-        return overrides, False
+        return overrides, False, False
 
     failures = validate_bulk_edit(
         filtered_rows,
@@ -3356,7 +3486,7 @@ def _render_bulk_edit_panel(
             "No changes were applied."
         )
         st.dataframe(pd.DataFrame(failures), hide_index=True, use_container_width=True)
-        return overrides, False
+        return overrides, False, False
 
     updated_overrides, changed_count, no_op_count = apply_bulk_edit(
         filtered_rows,
@@ -3372,7 +3502,7 @@ def _render_bulk_edit_panel(
         )
     else:
         st.info("Bulk edit produced no changes for selected rows.")
-    return updated_overrides, updated_overrides != overrides
+    return updated_overrides, updated_overrides != overrides, True
 
 
 def _overrides_path(active_paths: InputPaths) -> Path:
@@ -4088,7 +4218,7 @@ def run_app() -> None:
         selected_rows = []
     st.session_state[selected_signature_key] = current_selection_signature
     st.session_state[selected_rows_key] = selected_rows
-    overrides, bulk_edit_changed = _render_bulk_edit_panel(
+    overrides, bulk_edit_changed, bulk_edit_apply_succeeded = _render_bulk_edit_panel(
         gse_id,
         filtered_rows,
         selected_rows,
@@ -4102,6 +4232,9 @@ def run_app() -> None:
         if not grid_version_bumped:
             grid_version = _bump_grid_version()
             grid_version_bumped = True
+    if bulk_edit_apply_succeeded:
+        st.session_state[_bulk_mode_reset_pending_key(gse_id)] = True
+        _request_rerun()
 
     active_selection = resolve_selected_key(filtered_rows, selected_rows[:1])
     if active_selection is None and isinstance(active_row_idx, int):
