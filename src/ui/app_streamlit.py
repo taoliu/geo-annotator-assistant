@@ -2288,15 +2288,64 @@ def _aggrid_diagnostics_tooltip_component() -> JsCode:
             ) {
               return params.eGridCell.getBoundingClientRect();
             }
-            var eventObj = params ? params.event : null;
+            if (!params) {
+              return null;
+            }
+            var api = params.api;
+            var column = params.column;
+            var rowIndex = params.rowIndex;
+            var colId = (
+              column &&
+              typeof column.getColId === "function"
+            ) ? column.getColId() : null;
             if (
-              eventObj &&
-              eventObj.target &&
-              typeof eventObj.target.getBoundingClientRect === "function"
+              api &&
+              typeof api.getGui === "function" &&
+              typeof rowIndex === "number" &&
+              typeof colId === "string" &&
+              colId
             ) {
-              return eventObj.target.getBoundingClientRect();
+              var gridGui = api.getGui();
+              if (gridGui && typeof gridGui.querySelectorAll === "function") {
+                var rowSelector = '.ag-row[row-index="' + String(rowIndex) + '"]';
+                var rowElements = gridGui.querySelectorAll(rowSelector);
+                for (var i = 0; i < rowElements.length; i += 1) {
+                  var rowEl = rowElements[i];
+                  var cells = rowEl.querySelectorAll(".ag-cell[col-id]");
+                  for (var j = 0; j < cells.length; j += 1) {
+                    var cell = cells[j];
+                    if (cell.getAttribute("col-id") === colId) {
+                      return cell.getBoundingClientRect();
+                    }
+                  }
+                }
+              }
             }
             return null;
+          }
+
+          function resolvePopupElement(root) {
+            if (!root) {
+              return null;
+            }
+            if (typeof root.closest === "function") {
+              var popupWrapper = root.closest(".ag-popup");
+              if (popupWrapper) {
+                return popupWrapper;
+              }
+              var tooltipWrapper = root.closest(".ag-tooltip");
+              if (tooltipWrapper) {
+                return tooltipWrapper;
+              }
+            }
+            if (
+              root.parentElement &&
+              root.parentElement.classList &&
+              root.parentElement.classList.contains("ag-tooltip")
+            ) {
+              return root.parentElement;
+            }
+            return root;
           }
 
           function placeTooltip(params, root) {
@@ -2304,6 +2353,10 @@ def _aggrid_diagnostics_tooltip_component() -> JsCode:
               return;
             }
             window.requestAnimationFrame(function() {
+              var popupEl = resolvePopupElement(root);
+              if (!popupEl) {
+                return;
+              }
               var cellRect = resolveCellRect(params);
               if (!cellRect) {
                 return;
@@ -2312,50 +2365,130 @@ def _aggrid_diagnostics_tooltip_component() -> JsCode:
               var margin = 8;
               var topOffset = 2;
               var viewport = viewportSize();
-              var maxWidth = Math.min(430, Math.max(220, viewport.width - (margin * 2)));
+              var baseMaxWidth = Math.min(
+                430,
+                Math.max(180, viewport.width - (margin * 2))
+              );
+              var minFallbackWidth = 120;
 
-              root.style.position = "fixed";
-              root.style.pointerEvents = "none";
-              root.style.zIndex = "10000";
-              root.style.maxWidth = String(maxWidth) + "px";
-
-              var width = Math.ceil(root.offsetWidth || 0);
-              var height = Math.ceil(root.offsetHeight || 0);
-              if (!width || !height) {
-                return;
-              }
+              popupEl.style.position = "fixed";
+              popupEl.style.pointerEvents = "none";
+              popupEl.style.zIndex = "10000";
+              popupEl.style.transform = "none";
+              popupEl.style.margin = "0";
+              root.style.maxWidth = String(baseMaxWidth) + "px";
 
               var availableRight = viewport.width - cellRect.right - margin;
               var availableLeft = cellRect.left - margin;
               var preferredTop = cellRect.top + topOffset;
-              var left = 0;
-              var top = 0;
+              var columnLeft = cellRect.left;
+              var columnRight = cellRect.right;
 
-              if (availableRight >= (width + gap)) {
-                left = cellRect.right + gap;
-                top = preferredTop;
-              } else if (availableLeft >= (width + gap)) {
-                left = cellRect.left - width - gap;
-                top = preferredTop;
-              } else {
-                left = cellRect.left;
+              function measureForWidth(maxWidthValue) {
+                var safeWidth = Math.max(1, Math.floor(maxWidthValue));
+                root.style.maxWidth = String(safeWidth) + "px";
+                popupEl.style.left = "0px";
+                popupEl.style.top = "0px";
+                return {
+                  width: Math.ceil(popupEl.offsetWidth || root.offsetWidth || 0),
+                  height: Math.ceil(popupEl.offsetHeight || root.offsetHeight || 0),
+                };
+              }
+
+              function intersectsHoveredColumn(left, width) {
+                var tooltipRight = left + width;
+                var paddedColumnLeft = columnLeft - 1;
+                var paddedColumnRight = columnRight + 1;
+                return !(
+                  tooltipRight <= paddedColumnLeft || left >= paddedColumnRight
+                );
+              }
+
+              function trySide(side) {
+                var sideCap = side === "right"
+                  ? (availableRight - gap)
+                  : (availableLeft - gap);
+                if (sideCap <= 0) {
+                  return null;
+                }
+                var size = measureForWidth(Math.min(baseMaxWidth, sideCap));
+                if (!size.width || !size.height) {
+                  return null;
+                }
+                if (size.width > sideCap) {
+                  return null;
+                }
+                var proposedLeft = side === "right"
+                  ? (columnRight + gap)
+                  : (columnLeft - size.width - gap);
+                if (intersectsHoveredColumn(proposedLeft, size.width)) {
+                  return null;
+                }
+                return {
+                  left: proposedLeft,
+                  top: preferredTop,
+                  width: size.width,
+                  height: size.height,
+                  side: side,
+                };
+              }
+
+              var placement = trySide("right") || trySide("left");
+
+              if (!placement) {
+                var fallbackSide = availableLeft >= availableRight ? "left" : "right";
+                var fallbackCap = fallbackSide === "right"
+                  ? (availableRight - gap)
+                  : (availableLeft - gap);
+                var fallbackWidth = Math.min(
+                  baseMaxWidth,
+                  Math.max(minFallbackWidth, fallbackCap)
+                );
+                var fallbackSize = measureForWidth(fallbackWidth);
+                if (!fallbackSize.width || !fallbackSize.height) {
+                  return;
+                }
+                var verticalTop = preferredTop;
                 var belowTop = cellRect.bottom + gap;
-                var aboveTop = cellRect.top - height - gap;
-                var hasBelowSpace = (viewport.height - cellRect.bottom - margin) >= (height + gap);
-                var hasAboveSpace = (cellRect.top - margin) >= (height + gap);
+                var aboveTop = cellRect.top - fallbackSize.height - gap;
+                var hasBelowSpace = (viewport.height - cellRect.bottom - margin) >= (fallbackSize.height + gap);
+                var hasAboveSpace = (cellRect.top - margin) >= (fallbackSize.height + gap);
                 if (hasBelowSpace) {
-                  top = belowTop;
+                  verticalTop = belowTop;
                 } else if (hasAboveSpace) {
-                  top = aboveTop;
-                } else {
-                  top = preferredTop;
+                  verticalTop = aboveTop;
+                }
+                placement = {
+                  left: fallbackSide === "right"
+                    ? (columnRight + gap)
+                    : (columnLeft - fallbackSize.width - gap),
+                  top: verticalTop,
+                  width: fallbackSize.width,
+                  height: fallbackSize.height,
+                  side: fallbackSide,
+                };
+              }
+
+              var maxLeft = Math.max(margin, viewport.width - placement.width - margin);
+              var maxTop = Math.max(margin, viewport.height - placement.height - margin);
+              var finalLeft = clamp(placement.left, margin, maxLeft);
+              var finalTop = clamp(placement.top, margin, maxTop);
+
+              if (intersectsHoveredColumn(finalLeft, placement.width)) {
+                var rightCandidate = columnRight + gap;
+                var leftCandidate = columnLeft - placement.width - gap;
+                var rightFits = (rightCandidate + placement.width) <= (viewport.width - margin);
+                var leftFits = leftCandidate >= margin;
+                if (rightFits && !intersectsHoveredColumn(rightCandidate, placement.width)) {
+                  finalLeft = rightCandidate;
+                } else if (leftFits && !intersectsHoveredColumn(leftCandidate, placement.width)) {
+                  finalLeft = leftCandidate;
                 }
               }
 
-              var maxLeft = Math.max(margin, viewport.width - width - margin);
-              var maxTop = Math.max(margin, viewport.height - height - margin);
-              root.style.left = String(clamp(left, margin, maxLeft)) + "px";
-              root.style.top = String(clamp(top, margin, maxTop)) + "px";
+              popupEl.style.left = String(clamp(finalLeft, margin, maxLeft)) + "px";
+              popupEl.style.top = String(finalTop) + "px";
+              popupEl.style.visibility = "visible";
             });
           }
 
@@ -2406,6 +2539,7 @@ def _aggrid_diagnostics_tooltip_component() -> JsCode:
           function Tooltip() {}
 
           Tooltip.prototype.init = function(params) {
+            this.params = params || null;
             var root = document.createElement("div");
             root.className = "diag-tooltip";
             var darkMode = !!(
@@ -2431,14 +2565,12 @@ def _aggrid_diagnostics_tooltip_component() -> JsCode:
               tooltipValue.plain_message
             ) {
               root.textContent = tooltipValue.plain_message;
-              placeTooltip(params, root);
               this.eGui = root;
               return;
             }
             var entries = normalizeEntries(tooltipValue);
             if (!entries.length) {
               root.textContent = "(not available)";
-              placeTooltip(params, root);
               this.eGui = root;
               return;
             }
@@ -2507,8 +2639,15 @@ def _aggrid_diagnostics_tooltip_component() -> JsCode:
               root.appendChild(section);
             });
 
-            placeTooltip(params, root);
             this.eGui = root;
+          };
+
+          Tooltip.prototype.afterGuiAttached = function() {
+            placeTooltip(this.params, this.eGui);
+            var self = this;
+            window.setTimeout(function() {
+              placeTooltip(self.params, self.eGui);
+            }, 20);
           };
 
           Tooltip.prototype.getGui = function() {
@@ -2535,6 +2674,7 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
         rowSelection="multiple",
         rowMultiSelectWithClick=True,
         enableBrowserTooltips=False,
+        tooltipMouseTrack=False,
         tooltipShowDelay=0,
         components={"diagnosticsTooltip": tooltip_component},
         getRowId=JsCode(
