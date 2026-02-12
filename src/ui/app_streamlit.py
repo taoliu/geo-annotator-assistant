@@ -3233,12 +3233,12 @@ def _render_checked_bulk_controls(
 ) -> bool | None:
     controls = container.columns(2)
     check_all_visible = controls[0].button(
-        "Check all visible",
+        "Mark all as checked",
         key=f"checked_visible_all_{gse_id}",
         use_container_width=True,
     )
     uncheck_all_visible = controls[1].button(
-        "Uncheck all visible",
+        "Mark all as unchecked",
         key=f"checked_visible_none_{gse_id}",
         use_container_width=True,
     )
