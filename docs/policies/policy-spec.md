@@ -67,6 +67,7 @@ All fields are strings. The output schema always includes exactly 8 fields:
 ### treatment
 - **No ontology grounding**.
 - **Identity leakage**: `treatment_identity_leakage` triggers deterministic fallback to `None` and flag `treatment_not_an_intervention` (Ticket #91).
+  The failure must **not** fire when treatment contains intervention indicators for genetic/construct perturbations (`ko`, `knockout`, `kd`, `knockdown`, `crispr`, `sgRNA`, `shRNA`, `siRNA`, `overexpress`, `oe`, `expressing`, `transduced`, `transfected`, `clone`, `stable`, `lentivirus`, `plasmid`, `vector`, `gfp`, `egfp`) (Ticket #175).
 - **Non-answer placeholders**: `None` with lock.
 
 ## 4. Disease-Specific Policies
@@ -108,7 +109,7 @@ Sources: `src/validator/failure_codes.py`, `spec/decision_table.yaml`, `src/agen
 | ontology_ambiguous_* | Ambiguous match | grounders | `src/validator/ontology_match.py` |
 | ontology_low_confidence_* | Low-confidence match | grounders | `src/validator/ontology_match.py` |
 | tissue_type_is_cell_type | Tissue looks like cell type | semantic validator | `src/validator/semantic_validator.py` |
-| treatment_identity_leakage | Treatment looks like identity label | semantic validator | `src/validator/semantic_validator.py` |
+| treatment_identity_leakage | Treatment looks like identity label without intervention indicators | semantic validator | `src/validator/semantic_validator.py` |
 | cell_line_yes_invalid | `cell_line = yes` | semantic validator | `src/validator/semantic_validator.py` |
 | cell_line_is_cell_type | Cell line looks like cell type | semantic validator | `src/validator/semantic_validator.py` |
 | disease_inferred_without_evidence | Disease not supported by context | semantic validator | `src/validator/semantic_validator.py` |
@@ -159,7 +160,7 @@ Repair routing is defined by `spec/decision_table.yaml` and executed in `src/age
 | cell_line_inferred_without_evidence | repair_cell_line_evidence_v1 | Yes | 1 | none | evidence-based cell line repair |
 | cell_line_is_cell_type | none | No | 0 | No | deterministic fallback |
 | disease_unsupported | none | No | 0 | Healthy | deterministic fallback |
-| treatment_identity_leakage | none | No | 0 | none | deterministic fallback to None via policy |
+| treatment_identity_leakage | none | No | 0 | none | deterministic fallback to None via policy; suppressed when intervention indicators are present |
 | organism_context_conflict | none | No | 0 | none | escalated |
 | repeated_failure | none | No | 0 | none | escalated |
 

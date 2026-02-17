@@ -29,6 +29,28 @@ DEFAULT_HEURISTICS: Dict[str, Dict[str, Any]] = {
             "neuron",
         ],
         "treatment_identity_keywords": ["cell", "cells"],
+        "treatment_intervention_indicators": [
+            "ko",
+            "knockout",
+            "kd",
+            "knockdown",
+            "crispr",
+            "sgrna",
+            "shrna",
+            "sirna",
+            "overexpress",
+            "oe",
+            "expressing",
+            "transduced",
+            "transfected",
+            "clone",
+            "stable",
+            "lentivirus",
+            "plasmid",
+            "vector",
+            "gfp",
+            "egfp",
+        ],
         "treatment_genotype_keywords": [
             "ko",
             "knockout",
@@ -124,6 +146,11 @@ def _validate_heuristics(data: Any, path: str) -> Dict[str, Dict[str, Any]]:
     _ensure_list_of_strings(semantic.get("tissue_cell_suffixes"), "tissue_cell_suffixes", path)
     _ensure_list_of_strings(
         semantic.get("treatment_identity_keywords"), "treatment_identity_keywords", path
+    )
+    _ensure_list_of_strings(
+        semantic.get("treatment_intervention_indicators"),
+        "treatment_intervention_indicators",
+        path,
     )
     _ensure_list_of_strings(
         semantic.get("treatment_genotype_keywords"), "treatment_genotype_keywords", path

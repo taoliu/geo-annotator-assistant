@@ -21,6 +21,7 @@ def test_heuristics_loads_required_sections() -> None:
         "tissue_cell_keywords",
         "tissue_cell_suffixes",
         "treatment_identity_keywords",
+        "treatment_intervention_indicators",
         "treatment_genotype_keywords",
         "treatment_tissue_keywords",
         "disease_cues",

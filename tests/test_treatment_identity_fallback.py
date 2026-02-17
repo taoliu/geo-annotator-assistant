@@ -102,3 +102,25 @@ def test_treatment_real_intervention_unchanged(monkeypatch) -> None:
 
     assert output["treatment"] == "PD-1 blockade"
     assert "treatment_not_an_intervention" not in audit_record["flags"]
+
+
+def test_treatment_genetic_perturbation_descriptor_unchanged(monkeypatch) -> None:
+    cfg = _load_stub_config()
+    record = {
+        "gsm_accession": "GSM5047039",
+        "gse_accession": "GSE165621",
+        "context_text": "ALDH1B1 KO clone expressing EGFP",
+    }
+
+    outputs = [_make_output(treatment="ALDH1B1 KO clone expressing EGFP")]
+    fake_client = FakeLLMClient(outputs)
+    monkeypatch.setattr(
+        run_single_module,
+        "create_llm_client",
+        lambda _cfg: fake_client,
+    )
+
+    output, audit_record, _ = run_single_from_context_record(record, cfg)
+
+    assert output["treatment"] == "ALDH1B1 KO clone expressing EGFP"
+    assert "treatment_not_an_intervention" not in audit_record["flags"]

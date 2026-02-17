@@ -2,6 +2,7 @@ semantic:
   tissue_cell_keywords: ["cell", "cells", "fibroblast", "fibroblasts", "macrophage", "epithelial", "lymphocyte", "t cell", "b cell"]
   tissue_cell_suffixes: ["cells", "cell", "fibroblast", "fibroblasts", "macrophage", "epithelial", "lymphocyte", "neuron"]
   treatment_identity_keywords: ["cell", "cells"]
+  treatment_intervention_indicators: ["ko", "knockout", "kd", "knockdown", "crispr", "sgrna", "shrna", "sirna", "overexpress", "oe", "expressing", "transduced", "transfected", "clone", "stable", "lentivirus", "plasmid", "vector", "gfp", "egfp"]
   treatment_genotype_keywords: ["ko", "knockout", "transgenic", "+/+", "+/-", "-/-", "cre"]
   treatment_tissue_keywords: ["liver", "brain", "blood", "intestine"]
 

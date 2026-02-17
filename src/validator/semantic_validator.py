@@ -32,6 +32,9 @@ _TISSUE_CELL_WORD_RE = _compile_word_regex(_SEMANTIC["tissue_cell_keywords"])
 _TREATMENT_IDENTITY_WORD_RE = _compile_word_regex(
     _SEMANTIC["treatment_identity_keywords"]
 )
+_TREATMENT_INTERVENTION_INDICATOR_RE = _compile_word_regex(
+    _SEMANTIC["treatment_intervention_indicators"]
+)
 _TISSUE_CELL_SUFFIXES = tuple(_SEMANTIC["tissue_cell_suffixes"])
 
 _GENOTYPE_KEYWORDS = _SEMANTIC["treatment_genotype_keywords"]
@@ -84,13 +87,14 @@ def semantic_validate(parsed_output: Dict[str, str], context_text: str) -> Dict[
     if is_llm_non_answer_placeholder(treatment):
         treatment = ""
     if treatment and treatment != "None":
-        if (
-            _TREATMENT_IDENTITY_WORD_RE.search(treatment)
-            or _GENOTYPE_RE.search(treatment)
-            or _GENOTYPE_SYMBOL_RE.search(treatment)
-            or _TREATMENT_TISSUE_WORDS_RE.search(treatment)
-        ):
-            errs.setdefault("treatment", []).append(TREATMENT_IDENTITY_LEAKAGE)
+        if not _TREATMENT_INTERVENTION_INDICATOR_RE.search(treatment):
+            if (
+                _TREATMENT_IDENTITY_WORD_RE.search(treatment)
+                or _GENOTYPE_RE.search(treatment)
+                or _GENOTYPE_SYMBOL_RE.search(treatment)
+                or _TREATMENT_TISSUE_WORDS_RE.search(treatment)
+            ):
+                errs.setdefault("treatment", []).append(TREATMENT_IDENTITY_LEAKAGE)
 
     cell_line = parsed_output.get("cell_line", "")
     if is_llm_non_answer_placeholder(cell_line):

@@ -30,8 +30,13 @@ def test_tissue_type_tissue_ok() -> None:
 
 
 def test_treatment_identity_leakage() -> None:
-    errors = semantic_validate({"treatment": "Lgr5-GFP cells, no treatment"}, "")
+    errors = semantic_validate({"treatment": "T and NK cell subset"}, "")
     assert errors == {"treatment": [TREATMENT_IDENTITY_LEAKAGE]}
+
+
+def test_treatment_intervention_indicators_bypass_identity_leakage() -> None:
+    errors = semantic_validate({"treatment": "ALDH1B1 KO clone expressing EGFP"}, "")
+    assert errors == {}
 
 
 def test_treatment_none_ok() -> None:
