@@ -18,6 +18,26 @@ BULK_EDIT_TOOLTIP = (
     "Apply one value to one column across selected rows. "
     "This operation is explicit, reversible, and UI-only."
 )
+CHECK_ALL_VISIBLE_TOOLTIP = "Mark all visible rows as checked (reviewed)."
+UNCHECK_ALL_VISIBLE_TOOLTIP = "Clear the checked marker for all visible rows."
+SAVE_OVERRIDES_TOOLTIP = "Persist current edits as curator overrides for this GSE."
+REVERT_SELECTED_ROW_TOOLTIP = (
+    "Undo session edits for the currently selected row "
+    "(does not change saved overrides)."
+)
+CLEAR_ALL_EDITS_TOOLTIP = (
+    "Undo all session edits for this GSE "
+    "(does not change saved overrides)."
+)
+REVERT_TO_SAVED_TOOLTIP = (
+    "Reload the last saved overrides (discard current session edits)."
+)
+CONFIRM_DISCARD_SAVED_OVERRIDES_TOOLTIP = (
+    "Required confirmation before deleting saved overrides."
+)
+DISCARD_SAVED_OVERRIDES_TOOLTIP = (
+    "Delete saved overrides for this GSE (irreversible)."
+)
 TABLE_HELP_LINES = (
     "Hover cells for diagnostics and backend context.",
     "GSE/GSM accessions link out to GEO.",
@@ -51,17 +71,65 @@ def bulk_edit_tooltip() -> str:
     return BULK_EDIT_TOOLTIP
 
 
+def check_all_visible_tooltip() -> str:
+    return CHECK_ALL_VISIBLE_TOOLTIP
+
+
+def uncheck_all_visible_tooltip() -> str:
+    return UNCHECK_ALL_VISIBLE_TOOLTIP
+
+
+def save_overrides_tooltip() -> str:
+    return SAVE_OVERRIDES_TOOLTIP
+
+
+def revert_selected_row_tooltip() -> str:
+    return REVERT_SELECTED_ROW_TOOLTIP
+
+
+def clear_all_edits_tooltip() -> str:
+    return CLEAR_ALL_EDITS_TOOLTIP
+
+
+def revert_to_saved_tooltip() -> str:
+    return REVERT_TO_SAVED_TOOLTIP
+
+
+def confirm_discard_saved_overrides_tooltip() -> str:
+    return CONFIRM_DISCARD_SAVED_OVERRIDES_TOOLTIP
+
+
+def discard_saved_overrides_tooltip() -> str:
+    return DISCARD_SAVED_OVERRIDES_TOOLTIP
+
+
 __all__ = [
     "BULK_EDIT_TOOLTIP",
+    "CHECK_ALL_VISIBLE_TOOLTIP",
+    "CLEAR_ALL_EDITS_TOOLTIP",
+    "CONFIRM_DISCARD_SAVED_OVERRIDES_TOOLTIP",
+    "DISCARD_SAVED_OVERRIDES_TOOLTIP",
     "GSM_ACCESSION_TOOLTIP",
+    "REVERT_SELECTED_ROW_TOOLTIP",
+    "REVERT_TO_SAVED_TOOLTIP",
+    "SAVE_OVERRIDES_TOOLTIP",
     "STATUS_ICON_TOOLTIP",
     "TABLE_LEGEND_TOOLTIP",
     "TABLE_GUIDANCE_TEXT",
     "TABLE_HELP_LINES",
+    "UNCHECK_ALL_VISIBLE_TOOLTIP",
     "bulk_edit_tooltip",
+    "check_all_visible_tooltip",
+    "clear_all_edits_tooltip",
+    "confirm_discard_saved_overrides_tooltip",
+    "discard_saved_overrides_tooltip",
     "gsm_accession_tooltip",
+    "revert_selected_row_tooltip",
+    "revert_to_saved_tooltip",
+    "save_overrides_tooltip",
     "status_icon_tooltip",
     "table_guidance_text",
     "table_help_lines",
     "table_legend_tooltip",
+    "uncheck_all_visible_tooltip",
 ]

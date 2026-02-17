@@ -41,10 +41,18 @@ from ui.flags import (
 )
 from ui.help_text import (
     bulk_edit_tooltip,
+    check_all_visible_tooltip,
+    clear_all_edits_tooltip,
+    confirm_discard_saved_overrides_tooltip,
+    discard_saved_overrides_tooltip,
     gsm_accession_tooltip,
+    revert_selected_row_tooltip,
+    revert_to_saved_tooltip,
+    save_overrides_tooltip,
     status_icon_tooltip,
     table_guidance_text,
     table_legend_tooltip,
+    uncheck_all_visible_tooltip,
 )
 from ui.checked import merge_visible_checked_updates
 from ui.dashboard import BADGE_TOOLTIPS, build_dashboard_items
@@ -3231,11 +3239,13 @@ def _render_checked_bulk_controls(
         "Check all",
         key=f"checked_visible_all_{gse_id}",
         use_container_width=True,
+        help=check_all_visible_tooltip(),
     )
     uncheck_all_visible = controls[1].button(
         "Uncheck all",
         key=f"checked_visible_none_{gse_id}",
         use_container_width=True,
+        help=uncheck_all_visible_tooltip(),
     )
     if check_all_visible:
         return True
@@ -4375,7 +4385,10 @@ def run_app() -> None:
     clear_all_clicked = False
 
     persist_cols = st.columns([1, 3])
-    save_overrides_clicked = persist_cols[0].button("Save overrides")
+    save_overrides_clicked = persist_cols[0].button(
+        "Save overrides",
+        help=save_overrides_tooltip(),
+    )
     unsaved_status_container = persist_cols[0].empty()
     revert_saved_clicked = False
     discard_saved_clicked = False
@@ -4385,16 +4398,27 @@ def run_app() -> None:
         revert_row_clicked = st.button(
             "Revert selected row",
             disabled=active_selection is None,
+            help=revert_selected_row_tooltip(),
         )
-        clear_all_clicked = st.button("Clear all edits")
+        clear_all_clicked = st.button(
+            "Clear all edits",
+            help=clear_all_edits_tooltip(),
+        )
         st.markdown("---")
         st.caption("Saved override actions")
-        revert_saved_clicked = st.button("Revert to saved")
+        revert_saved_clicked = st.button(
+            "Revert to saved",
+            help=revert_to_saved_tooltip(),
+        )
         discard_confirm = st.checkbox(
             "Confirm discard saved overrides",
             key=f"confirm_discard_overrides_{gse_id}",
+            help=confirm_discard_saved_overrides_tooltip(),
         )
-        discard_saved_clicked = st.button("Discard saved overrides")
+        discard_saved_clicked = st.button(
+            "Discard saved overrides",
+            help=discard_saved_overrides_tooltip(),
+        )
 
     if revert_row_clicked:
         overrides = clear_overrides_for_gsm(
