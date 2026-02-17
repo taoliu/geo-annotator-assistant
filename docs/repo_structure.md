@@ -1,6 +1,5 @@
 .
 ├── AGENTS.md
-├── audit.jsonl
 ├── config
 │   ├── example_config.yaml
 │   ├── gat-llama3-3b-it_config.yaml
@@ -20,7 +19,8 @@
 │   │   ├── 2026-01-29_checkpoint.md
 │   │   ├── 2026-02-03_checkpoint.md
 │   │   ├── 2026-02-05_checkpoint.md
-│   │   └── 2026-02-10_checkpoint.md
+│   │   ├── 2026-02-10_checkpoint.md
+│   │   └── 2026-02-17_checkpoint.md
 │   ├── milestones
 │   │   ├── v0.1-llm.md
 │   │   ├── v0.2-ontology-grounding.md
@@ -33,7 +33,8 @@
 │   │   ├── v0.9-validation-repair-reporting.md
 │   │   ├── v1.0-curator-UI.md
 │   │   ├── v1.1-curator-ui-ux.md
-│   │   └── v1.2-cli-ergonomics.md
+│   │   ├── v1.2-cli-ergonomics.md
+│   │   └── v1.3-web-ui-refinement.md
 │   ├── policies
 │   │   └── policy-spec.md
 │   ├── repo_structure.md
@@ -90,10 +91,41 @@
 │   │   ├── ticket-141.md
 │   │   ├── ticket-142.md
 │   │   ├── ticket-143.md
+│   │   ├── ticket-144.md
+│   │   ├── ticket-145.md
+│   │   ├── ticket-146.md
+│   │   ├── ticket-147.md
+│   │   ├── ticket-148.md
+│   │   ├── ticket-149.md
 │   │   ├── ticket-15.md
+│   │   ├── ticket-150.md
+│   │   ├── ticket-151.md
+│   │   ├── ticket-152.md
+│   │   ├── ticket-153.md
+│   │   ├── ticket-154.md
+│   │   ├── ticket-155.md
+│   │   ├── ticket-156.md
+│   │   ├── ticket-157.md
+│   │   ├── ticket-158.md
+│   │   ├── ticket-159.md
 │   │   ├── ticket-16.md
+│   │   ├── ticket-160.md
+│   │   ├── ticket-161.md
+│   │   ├── ticket-162.md
+│   │   ├── ticket-163.md
+│   │   ├── ticket-164.md
+│   │   ├── ticket-165.md
+│   │   ├── ticket-166.md
+│   │   ├── ticket-167.md
+│   │   ├── ticket-168.md
+│   │   ├── ticket-169.md
 │   │   ├── ticket-16b.md
 │   │   ├── ticket-17.md
+│   │   ├── ticket-170.md
+│   │   ├── ticket-171.md
+│   │   ├── ticket-172.md
+│   │   ├── ticket-173.md
+│   │   ├── ticket-174.md
 │   │   ├── ticket-17b.md
 │   │   ├── ticket-17c.md
 │   │   ├── ticket-17d.md
@@ -256,10 +288,13 @@
 │   │   ├── __init__.py
 │   │   ├── app_streamlit.py
 │   │   ├── bulk_edit.py
+│   │   ├── bulk_mode.py
+│   │   ├── checked.py
 │   │   ├── cli.py
 │   │   ├── dashboard.py
 │   │   ├── evidence.py
 │   │   ├── flags.py
+│   │   ├── gse_navigation.py
 │   │   ├── help_text.py
 │   │   ├── loaders.py
 │   │   ├── override_safety.py
@@ -268,6 +303,7 @@
 │   │   ├── schema.py
 │   │   ├── state.py
 │   │   ├── styling.py
+│   │   ├── triage_state.py
 │   │   └── triage.py
 │   └── validator
 │       ├── __init__.py
@@ -360,17 +396,21 @@
 │   ├── test_writer.py
 │   └── ui
 │       ├── test_bulk_edit.py
+│       ├── test_bulk_mode.py
+│       ├── test_checked.py
 │       ├── test_cli.py
 │       ├── test_dashboard.py
 │       ├── test_evidence.py
 │       ├── test_flags.py
+│       ├── test_gse_navigation.py
 │       ├── test_guidance.py
 │       ├── test_loaders.py
 │       ├── test_modal.py
 │       ├── test_override_safety.py
 │       ├── test_overrides.py
 │       ├── test_state.py
+│       ├── test_triage_state.py
 │       └── test_triage.py
 └── uv.lock
 
-19 directories, 355 files
+19 directories, 395 files
