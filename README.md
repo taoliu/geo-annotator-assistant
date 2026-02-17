@@ -7,7 +7,7 @@ Deterministic, audit-first annotation pipeline for GEO GSM metadata, with human 
 1. Prepare a YAML configuration.
 2. Run `geo-gsm-annotate` on GSE(s).
 3. Curate results in the web UI.
-4. Export reporting CSVs with `geo-gsm-summarize`.
+4. Export reporting CSVs with `geo-gsm-summarize` or similar functions on web UI.
 
 Curator overrides are post-processing inputs. They are not accepted by `geo-gsm-annotate`.
 
@@ -126,6 +126,8 @@ Outputs:
 - `cell_line`
 - `disease`
 - `treatment`
+
+Please note that the similar functions can be found on the web UI interface.
 
 ## Main Output Files from Annotation Runs
 

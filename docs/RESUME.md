@@ -14,6 +14,7 @@ The system prioritizes correctness, transparency, and reproducibility over autom
 - Backend semantics **frozen and authoritative as of v0.9**
 - Curator web UI **production-ready as of v1.1**
 - CLI ergonomics, batch safety, and ingest robustness **completed in v1.2**
+- Web UI refinement: layout tightening, bulk edit redesign, navigation fixes, tooltip system, export integration with geo-gsm-summarize **completed in v1.3**
 - Validation, repair, ontology grounding, and reporting behavior consolidated
 - Real-world GEO edge cases handled deterministically
 
@@ -36,7 +37,7 @@ The system prioritizes correctness, transparency, and reproducibility over autom
 1. Prepare a YAML configuration
 2. Run `geo-gsm-annotate` on GSE(s)
 3. Review and curate results via the web UI
-4. Export final CSVs using `geo-gsm-summarize`
+4. Export final CSVs using `geo-gsm-summarize` or use the export functions through web UI
 
 ---
 
