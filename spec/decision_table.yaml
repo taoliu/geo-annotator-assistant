@@ -65,6 +65,14 @@ ontology_low_confidence_tissue_type:
   fallback_value: null
   severity: medium
 
+ontology_partial_composite_tissue_type:
+  action: ESCALATE
+  field: tissue_type
+  repair_template: null
+  max_attempts: 0
+  fallback_value: null
+  severity: high
+
 ontology_no_match_disease:
   action: REPAIR
   field: disease

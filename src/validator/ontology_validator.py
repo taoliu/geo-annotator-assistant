@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, Optional
+from typing import Any, Dict, List, Optional
 import re
 
 from validator.failure_codes import (
@@ -13,6 +13,7 @@ from validator.failure_codes import (
     ONTOLOGY_LOW_CONFIDENCE_DATA_TYPE,
     ONTOLOGY_LOW_CONFIDENCE_DISEASE,
     ONTOLOGY_LOW_CONFIDENCE_TISSUE_TYPE,
+    ONTOLOGY_PARTIAL_COMPOSITE_TISSUE_TYPE,
     ONTOLOGY_NO_MATCH_CELL_LINE,
     ONTOLOGY_NO_MATCH_DATA_TYPE,
     ONTOLOGY_NO_MATCH_DISEASE,
@@ -142,6 +143,10 @@ _DISEASE_EXPLICIT_TERMS = {
     "myeloma",
     "blastoma",
 }
+_TISSUE_COMPOSITE_SPLIT_RE = re.compile(r"\s*(?:&|/|,|;|\band\b)\s*", re.IGNORECASE)
+_TISSUE_COMPOSITE_MATCHED_VIA = "composite_all_components_required"
+_TISSUE_COMPOSITE_PARTIAL_MATCHED_VIA = "composite_partial_components"
+_TISSUE_COMPOSITE_SELECTION_RULE = "all_components_required_v1"
 
 _FIELD_FAILURE_CODES = {
     "tissue_type": {
@@ -519,9 +524,134 @@ def _call_grounder(
     except NotImplementedError:
         return None
 
+
+def _split_tissue_fragments(raw_value: str) -> List[str]:
+    if not raw_value:
+        return []
+    fragments = [part.strip() for part in _TISSUE_COMPOSITE_SPLIT_RE.split(raw_value)]
+    return [fragment for fragment in fragments if fragment]
+
+
+def _match_score(match: OntologyMatch) -> float:
+    try:
+        return float(match.score) if match.score is not None else 0.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _is_terminal_exact_match(match: OntologyMatch) -> bool:
+    return is_terminal_exact(
+        str(match.status or ""),
+        _match_score(match),
+        str(match.match_type or ""),
+    )
+
+
+def _fragment_match_summary(match: OntologyMatch) -> Dict[str, Any]:
+    return {
+        "raw_fragment": match.raw_value,
+        "status": match.status,
+        "match_type": match.match_type,
+        "score": match.score,
+        "term_id": match.matched_term_id,
+        "label": match.matched_label,
+        "source": match.matched_source,
+        "matched_via": match.matched_via,
+    }
+
+
+def _build_composite_tissue_match(
+    raw_value: str,
+    context_text: str,
+    ontology: str,
+    ontology_config: Dict,
+    base_match: OntologyMatch,
+    grounder_fn,
+) -> Optional[OntologyMatch]:
+    fragments = _split_tissue_fragments(raw_value)
+    if len(fragments) <= 1:
+        return None
+
+    fragment_matches: List[OntologyMatch] = []
+    for fragment in fragments:
+        fragment_result = _call_grounder(
+            grounder_fn,
+            fragment,
+            context_text,
+            ontology_config,
+        )
+        if isinstance(fragment_result, OntologyMatch):
+            fragment_matches.append(fragment_result)
+        else:
+            fragment_matches.append(_make_none_match("tissue_type", fragment, ontology))
+
+    exact_matches = [match for match in fragment_matches if _is_terminal_exact_match(match)]
+    match_count = len(exact_matches)
+    fragment_count = len(fragment_matches)
+    fragment_summaries = [_fragment_match_summary(match) for match in fragment_matches]
+    composite_resolution = {
+        "raw_value": raw_value,
+        "fragments": fragments,
+        "fragment_matches": fragment_summaries,
+        "selection_rule": _TISSUE_COMPOSITE_SELECTION_RULE,
+        "matched_components": match_count,
+        "total_components": fragment_count,
+    }
+
+    if match_count == fragment_count:
+        joined_label = " & ".join(
+            str(match.matched_label).strip()
+            for match in exact_matches
+            if isinstance(match.matched_label, str) and match.matched_label.strip()
+        )
+        if not joined_label:
+            return None
+        composite_resolution["final_joined_label"] = joined_label
+        return OntologyMatch(
+            field="tissue_type",
+            raw_value=raw_value,
+            ontology=ontology,
+            status="MATCHED",
+            matched_term_id=None,
+            matched_label=joined_label,
+            matched_source=ontology,
+            match_type="label_norm_exact",
+            score=1.0,
+            alternates=[],
+            matched_via=_TISSUE_COMPOSITE_MATCHED_VIA,
+            selection_rule=_TISSUE_COMPOSITE_SELECTION_RULE,
+            composite_resolution=composite_resolution,
+        )
+
+    if match_count > 0:
+        return OntologyMatch(
+            field="tissue_type",
+            raw_value=raw_value,
+            ontology=ontology,
+            status="LOW_CONFIDENCE",
+            matched_term_id=None,
+            matched_label=None,
+            matched_source=None,
+            match_type=base_match.match_type or "none",
+            score=base_match.score,
+            alternates=list(base_match.alternates),
+            matched_via=_TISSUE_COMPOSITE_PARTIAL_MATCHED_VIA,
+            selection_rule=_TISSUE_COMPOSITE_SELECTION_RULE,
+            composite_resolution=composite_resolution,
+        )
+
+    return None
+
+
 def _failure_code_for_match(field: str, match: OntologyMatch) -> Optional[str]:
     if match.status == "INDEX_UNAVAILABLE":
         return ONTOLOGY_INDEX_UNAVAILABLE
+    if (
+        field == "tissue_type"
+        and match.status == "LOW_CONFIDENCE"
+        and match.matched_via == _TISSUE_COMPOSITE_PARTIAL_MATCHED_VIA
+    ):
+        return ONTOLOGY_PARTIAL_COMPOSITE_TISSUE_TYPE
     return _FIELD_FAILURE_CODES.get(field, {}).get(match.status)
 
 def ground_all_fields(
@@ -595,6 +725,17 @@ def ground_all_fields(
                 )
             if isinstance(result, OntologyMatch):
                 match = result
+                if field == "tissue_type" and not _is_terminal_exact_match(result):
+                    composite_match = _build_composite_tissue_match(
+                        raw_value,
+                        context_text,
+                        ontology,
+                        ontology_config,
+                        result,
+                        grounder_fn,
+                    )
+                    if composite_match is not None:
+                        match = composite_match
             else:
                 match = _make_none_match(field, raw_value, ontology)
 

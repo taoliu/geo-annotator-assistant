@@ -32,6 +32,8 @@ _HEALTHY_CONTROL_FLAG = "disease_normalized_to_healthy"
 _HEALTHY_CONTROL_MATCHED_VIA = "healthy_control_normalized"
 _HEALTHY_GENOTYPE_FLAG = "disease_contains_genotype_context"
 _HEALTHY_GENOTYPE_MATCHED_VIA = "healthy_genotype_normalized"
+_TISSUE_COMPOSITE_SELECTION_RULE = "all_components_required_v1"
+_TISSUE_COMPOSITE_MATCHED_VIA = "composite_all_components_required"
 _NON_ANSWER_FLAGS = {
     "disease": "llm_non_answer_disease",
     "tissue_type": "llm_non_answer_tissue_type",
@@ -135,6 +137,48 @@ def apply_terminal_exact_canonicalization_and_lock(
 
     state.canonicalizations = canonicalizations
     state.locked_fields = locked_fields
+
+
+def apply_tissue_composite_canonicalization(
+    state: PipelineState,
+    config: Optional[Dict[str, Any]],
+) -> None:
+    del config
+    if state.final_output is None:
+        return
+    match = state.ontology_matches.get("tissue_type")
+    if not match:
+        return
+    status = _extract_match_attr(match, "status")
+    matched_via = _extract_match_attr(match, "matched_via")
+    selection_rule = _extract_match_attr(match, "selection_rule")
+    if status != "MATCHED":
+        return
+    if (
+        matched_via != _TISSUE_COMPOSITE_MATCHED_VIA
+        and selection_rule != _TISSUE_COMPOSITE_SELECTION_RULE
+    ):
+        return
+
+    label = _extract_match_attr(match, "matched_label")
+    if not isinstance(label, str) or not label.strip():
+        return
+    canonical_label = label.strip()
+    original_value = state.final_output.get("tissue_type")
+    if original_value == canonical_label:
+        return
+
+    state.final_output["tissue_type"] = canonical_label
+    canonicalizations = dict(state.canonicalizations)
+    canonicalizations["tissue_type"] = {
+        "field": "tissue_type",
+        "original_value": original_value,
+        "canonical_value": canonical_label,
+        "term_id": _extract_match_attr(match, "matched_term_id"),
+        "source": _extract_match_attr(match, "matched_source"),
+        "match_type": _extract_match_attr(match, "match_type"),
+    }
+    state.canonicalizations = canonicalizations
 
 
 def apply_llm_non_answer_placeholders(

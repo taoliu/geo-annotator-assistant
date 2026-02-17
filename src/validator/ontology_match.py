@@ -118,6 +118,7 @@ class OntologyMatch:
     attempted_sources: Optional[List[str]] = None
     selected_source: Optional[str] = None
     selection_rule: Optional[str] = None
+    composite_resolution: Optional[Dict[str, Any]] = None
 
     def __post_init__(self) -> None:
         if self.status not in _ALLOWED_STATUSES:
@@ -159,6 +160,11 @@ class OntologyMatch:
             ),
             "selected_source": self.selected_source,
             "selection_rule": self.selection_rule,
+            "composite_resolution": (
+                dict(self.composite_resolution)
+                if self.composite_resolution is not None
+                else None
+            ),
         }
 
 

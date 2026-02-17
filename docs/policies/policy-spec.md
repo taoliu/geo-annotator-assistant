@@ -41,6 +41,11 @@ All fields are strings. The output schema always includes exactly 8 fields:
 - **Ontology source**: Uberon.
 - **Non-anatomical placeholders**: if value matches non-anatomical registry or equals disease label → fallback to `Unknown`, lock, and flag (`tissue_type_non_anatomical_placeholder`).
 - **Cell type leakage**: `tissue_type_is_cell_type` from semantic validator → repair then fallback to `Unknown` (decision table).
+- **Composite tissue handling (Ticket #176)**: when full-string grounding is not terminal exact, split on `&`, `/`, `,`, `;`, or word-boundary `and` and ground each fragment deterministically.
+  All-components-required semantics:
+  1) all fragments terminal exact → `MATCHED`, joined canonical label with `" & "` in fragment order;
+  2) partial terminal exact coverage → `LOW_CONFIDENCE` + `ontology_partial_composite_tissue_type` failure/flag, no ontology-guided repair;
+  3) zero terminal exact fragments → preserve existing full-string ontology behavior.
 - **Locks**: terminal exact matches locked; placeholder locks override.
 - **Human curation**: required for unresolved ontology failures or consistency flags.
 
@@ -85,6 +90,12 @@ Implemented in `src/validator/ontology_validator.py`, `src/validator/grounders/d
 - **Anatomical-only requirement**: Tissue must be Uberon anatomy.
 - **Non-anatomical placeholders** (Ticket #95): disease terms and tumor-like tokens (e.g., tumor, cancer, lymphoma, leukemia, metastasis, lesion, etc.) trigger deterministic fallback to `Unknown` with flag `tissue_type_non_anatomical_placeholder`.
 - **Disease label leakage**: if tissue equals disease label (normalized), treat as non-anatomical placeholder.
+- **Composite resolution (Ticket #176)**:
+  1) full-string terminal exact match short-circuits composite splitting;
+  2) otherwise split and evaluate each component;
+  3) require terminal exact matches for all components to accept;
+  4) accepted composites are canonicalized to `"label1 & label2"` form in fragment order;
+  5) partial composites emit `ontology_partial_composite_tissue_type` and short-circuit repair as FLAGGED.
 - **LLM non-answer placeholders**: `Unknown` with lock and `llm_non_answer_tissue_type`.
 
 ## 6. Cell Line Policies
@@ -108,6 +119,7 @@ Sources: `src/validator/failure_codes.py`, `spec/decision_table.yaml`, `src/agen
 | ontology_no_match_* | No ontology match | grounders | `src/validator/ontology_validator.py` |
 | ontology_ambiguous_* | Ambiguous match | grounders | `src/validator/ontology_match.py` |
 | ontology_low_confidence_* | Low-confidence match | grounders | `src/validator/ontology_match.py` |
+| ontology_partial_composite_tissue_type | Composite tissue has partial terminal-exact coverage | ontology validator | `src/validator/ontology_validator.py` |
 | tissue_type_is_cell_type | Tissue looks like cell type | semantic validator | `src/validator/semantic_validator.py` |
 | treatment_identity_leakage | Treatment looks like identity label without intervention indicators | semantic validator | `src/validator/semantic_validator.py` |
 | cell_line_yes_invalid | `cell_line = yes` | semantic validator | `src/validator/semantic_validator.py` |
@@ -130,6 +142,7 @@ Sources: `src/validator/failure_codes.py`, `spec/decision_table.yaml`, `src/agen
 | disease_normalized_to_healthy | Healthy/control normalized | healthy control rule | `src/agent/ontology_canonicalization.py` |
 | disease_contains_genotype_context | Healthy + genotype normalized | healthy genotype rule | `src/agent/ontology_canonicalization.py` |
 | tissue_type_non_anatomical_placeholder | Non-anatomical tissue | tissue placeholder rule | `src/agent/ontology_canonicalization.py` |
+| ontology_partial_composite_tissue_type | Composite tissue only partially grounded | tissue composite policy | `src/validator/ontology_validator.py`, `spec/decision_table.yaml` |
 | treatment_not_an_intervention | Treatment identity leakage | treatment fallback | `src/agent/ontology_canonicalization.py` |
 | llm_non_answer_disease | LLM non-answer for disease | non-answer rule | `src/agent/ontology_canonicalization.py` |
 | llm_non_answer_tissue_type | LLM non-answer for tissue | non-answer rule | `src/agent/ontology_canonicalization.py` |
@@ -152,6 +165,7 @@ Repair routing is defined by `spec/decision_table.yaml` and executed in `src/age
 | extra_keys | repair_remove_extra_keys_v1 | Yes | 2 | none | remove extra keys |
 | word_limit_violation | repair_shorten_values_v1 | Yes | 2 | none | shorten values |
 | ontology_* (no/amb/low) | repair_ontology_guided_v1 | Yes | 2 | none | per-field ontology repair |
+| ontology_partial_composite_tissue_type | none | No | 0 | none | deterministic escalate; composite tissue all-components-required policy |
 | tissue_type_is_cell_type | repair_tissue_anatomy_v1 | Yes | 1 | Unknown | anatomy correction |
 | assay_platform_conflict | repair_data_type_from_context_v1 | Yes | 2 | Unknown | data_type repair |
 | single_cell_evidence_missing | repair_data_type_from_context_v1 | Yes | 2 | Unknown | data_type repair |

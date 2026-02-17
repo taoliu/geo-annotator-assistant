@@ -69,6 +69,9 @@ FLAG_TOOLTIP_EXACT: dict[str, str] = {
     "ontology_index_unavailable": (
         "Ontology index was unavailable; grounding could not run."
     ),
+    "ontology_partial_composite_tissue_type": (
+        "Composite tissue value matched only some components; all components are required."
+    ),
     "organism_context_conflict": "Organism label conflicts with context evidence.",
     "repeated_failure": "Repeated validation failures across repair attempts.",
     "single_cell_evidence_missing": (

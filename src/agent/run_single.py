@@ -18,6 +18,7 @@ from agent.ontology_canonicalization import (
     apply_healthy_control_disease_normalization,
     apply_healthy_genotype_disease_normalization,
     apply_treatment_identity_fallback,
+    apply_tissue_composite_canonicalization,
     apply_tissue_placeholder_fallback,
     apply_terminal_exact_canonicalization_and_lock,
 )
@@ -398,6 +399,7 @@ def _update_validation_state(
     )
     apply_llm_non_answer_placeholders(state, cfg)
     apply_terminal_exact_canonicalization_and_lock(state, cfg)
+    apply_tissue_composite_canonicalization(state, cfg)
     apply_disease_token_equiv_lock(state, cfg)
     apply_disease_modifier_generalization(state, cfg)
     apply_tissue_placeholder_fallback(state, cfg)
