@@ -54,6 +54,7 @@ from ui.help_text import (
     table_legend_tooltip,
     uncheck_all_visible_tooltip,
 )
+from ui.ontology_tooltips import build_composite_tooltip_payload
 from ui.checked import merge_visible_checked_updates
 from ui.dashboard import BADGE_TOOLTIPS, build_dashboard_items
 from ui.evidence import EVIDENCE_FIELDS, extract_field_evidence
@@ -1835,6 +1836,53 @@ def _extract_ontology_alternates_from_matches_map(
     return alternates_by_field
 
 
+def _extract_composite_ontology_from_matches_map(
+    matches: Mapping[str, object] | None,
+) -> dict[str, dict[str, str]]:
+    if not isinstance(matches, Mapping):
+        return {}
+    payload_by_field: dict[str, dict[str, str]] = {}
+    for field, match in matches.items():
+        if not isinstance(field, str) or field not in CANONICAL_FIELDS:
+            continue
+        if not isinstance(match, Mapping):
+            continue
+        payload = build_composite_tooltip_payload(match)
+        if payload:
+            payload_by_field[field] = payload
+    return payload_by_field
+
+
+def _extract_composite_ontology_by_field(
+    audit_raw: Mapping[str, object] | None,
+    curation_raw: Mapping[str, object] | None = None,
+) -> dict[str, dict[str, str]]:
+    audit_validation = audit_raw.get("validation") if isinstance(audit_raw, Mapping) else None
+    audit_matches = (
+        audit_validation.get("ontology_matches")
+        if isinstance(audit_validation, Mapping)
+        else None
+    )
+    composite_by_field = _extract_composite_ontology_from_matches_map(
+        audit_matches if isinstance(audit_matches, Mapping) else None
+    )
+
+    if isinstance(curation_raw, Mapping):
+        curation_validation = curation_raw.get("validation")
+        curation_matches = (
+            curation_validation.get("ontology_matches")
+            if isinstance(curation_validation, Mapping)
+            else curation_raw.get("ontology_matches")
+        )
+        curation_composites = _extract_composite_ontology_from_matches_map(
+            curation_matches if isinstance(curation_matches, Mapping) else None
+        )
+        for field, payload in curation_composites.items():
+            composite_by_field.setdefault(field, payload)
+
+    return composite_by_field
+
+
 def _extract_ontology_alternates_by_field(
     audit_raw: Mapping[str, object] | None,
     curation_raw: Mapping[str, object] | None = None,
@@ -1923,6 +1971,18 @@ def _append_aggrid_meta_columns(
     ontology_columns: dict[str, list[str]] = {
         field: [] for field in AGGRID_TOOLTIP_FIELDS
     }
+    ontology_matched_via_columns: dict[str, list[str]] = {
+        field: [] for field in AGGRID_TOOLTIP_FIELDS
+    }
+    ontology_selection_rule_columns: dict[str, list[str]] = {
+        field: [] for field in AGGRID_TOOLTIP_FIELDS
+    }
+    ontology_components_key_columns: dict[str, list[str]] = {
+        field: [] for field in AGGRID_TOOLTIP_FIELDS
+    }
+    ontology_components_value_columns: dict[str, list[str]] = {
+        field: [] for field in AGGRID_TOOLTIP_FIELDS
+    }
 
     for idx, row in enumerate(records):
         row_indices.append(idx)
@@ -2005,6 +2065,10 @@ def _append_aggrid_meta_columns(
             curation_raw if isinstance(curation_raw, Mapping) else None,
             evidence_raw if isinstance(evidence_raw, Mapping) else None,
         )
+        composite_by_field = _extract_composite_ontology_by_field(
+            audit_raw if isinstance(audit_raw, Mapping) else None,
+            curation_raw if isinstance(curation_raw, Mapping) else None,
+        )
 
         for field in AGGRID_TOOLTIP_FIELDS:
             if field == "gse_accession":
@@ -2016,6 +2080,25 @@ def _append_aggrid_meta_columns(
             backend_columns[field].append(_tooltip_safe_value(backend_value))
             llm_columns[field].append(llm_originals.get(field, ""))
             ontology_columns[field].append(alternates_by_field.get(field, ""))
+            composite = composite_by_field.get(field, {})
+            if isinstance(composite, Mapping):
+                ontology_matched_via_columns[field].append(
+                    str(composite.get("matched_via") or "")
+                )
+                ontology_selection_rule_columns[field].append(
+                    str(composite.get("selection_rule") or "")
+                )
+                ontology_components_key_columns[field].append(
+                    str(composite.get("components_key") or "")
+                )
+                ontology_components_value_columns[field].append(
+                    str(composite.get("components_value") or "")
+                )
+            else:
+                ontology_matched_via_columns[field].append("")
+                ontology_selection_rule_columns[field].append("")
+                ontology_components_key_columns[field].append("")
+                ontology_components_value_columns[field].append("")
 
     updated[AGGRID_ROW_INDEX_COLUMN] = row_indices
     updated[AGGRID_ROW_HAS_FLAGS_COLUMN] = row_has_flags
@@ -2035,6 +2118,16 @@ def _append_aggrid_meta_columns(
         updated[f"__backend_{field}"] = backend_columns[field]
         updated[f"__llm_{field}"] = llm_columns[field]
         updated[f"__ontology_{field}"] = ontology_columns[field]
+        updated[f"__ontology_matched_via_{field}"] = ontology_matched_via_columns[field]
+        updated[f"__ontology_selection_rule_{field}"] = ontology_selection_rule_columns[
+            field
+        ]
+        updated[f"__ontology_components_key_{field}"] = ontology_components_key_columns[
+            field
+        ]
+        updated[f"__ontology_components_value_{field}"] = ontology_components_value_columns[
+            field
+        ]
 
     return updated
 
@@ -2221,13 +2314,30 @@ def _aggrid_tooltip_getter(field: str, include_evidence: bool = False) -> JsCode
           const backend = params.data["__backend_{field}"] || "(not available)";
           const llm = params.data["__llm_{field}"];
           const ontology = params.data["__ontology_{field}"];
+          const ontologyMatchedVia = params.data["__ontology_matched_via_{field}"] || "";
+          const ontologySelectionRule = params.data["__ontology_selection_rule_{field}"] || "";
+          const ontologyComponentsKey = params.data["__ontology_components_key_{field}"] || "";
+          const ontologyComponentsValue = params.data["__ontology_components_value_{field}"] || "";
+          const isCompositeOntology =
+            ontologyMatchedVia === "composite_all_components_required" ||
+            ontologyMatchedVia === "composite_partial_components";
           const entries = [];
           entries.push({{ key: "Displayed", value: displayedValue }});
           entries.push({{ key: "Backend", value: backend }});
           if (llm) {{
             entries.push({{ key: "LLM original", value: llm }});
           }}
-          if (ontology) {{
+          if (isCompositeOntology) {{
+            if (ontologySelectionRule) {{
+              entries.push({{ key: "Selection rule", value: ontologySelectionRule }});
+            }}
+            if (ontologyComponentsValue) {{
+              entries.push({{
+                key: ontologyComponentsKey || "Matched components",
+                value: ontologyComponentsValue,
+              }});
+            }}
+          }} else if (ontology) {{
             entries.push({{ key: "Ontology alternates", value: ontology }});
           }}
           {evidence_block}
@@ -2507,7 +2617,12 @@ def _aggrid_diagnostics_tooltip_component() -> JsCode:
             if (key === "Displayed" || key === "Backend" || key === "LLM original") {
               return "Values";
             }
-            if (key === "Ontology alternates" || key === "Ontology status") {
+            if (
+              key === "Ontology alternates" ||
+              key === "Ontology status" ||
+              key === "Selection rule" ||
+              key.indexOf("Matched components") === 0
+            ) {
               return "Ontology";
             }
             if (key === "Attempts" || key === "Terminal fallback") {
@@ -2613,6 +2728,7 @@ def _aggrid_diagnostics_tooltip_component() -> JsCode:
                 valueEl.className = "diag-tooltip-value";
                 valueEl.textContent = entry.value;
                 valueEl.style.color = "inherit";
+                valueEl.style.whiteSpace = "pre-wrap";
                 valueEl.style.overflowWrap = "anywhere";
                 valueEl.style.wordBreak = "break-word";
                 row.appendChild(keyEl);
@@ -2891,6 +3007,10 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
         hidden_columns.append(f"__backend_{field}")
         hidden_columns.append(f"__llm_{field}")
         hidden_columns.append(f"__ontology_{field}")
+        hidden_columns.append(f"__ontology_matched_via_{field}")
+        hidden_columns.append(f"__ontology_selection_rule_{field}")
+        hidden_columns.append(f"__ontology_components_key_{field}")
+        hidden_columns.append(f"__ontology_components_value_{field}")
     for field in hidden_columns:
         if field in df.columns:
             gb.configure_column(field, hide=True)
