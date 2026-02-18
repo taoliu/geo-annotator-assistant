@@ -54,7 +54,7 @@ from validator.format_validator import (
     build_format_error_details,
     validate_format,
 )
-from validator.ontology_validator import ground_all_fields
+from validator.ontology_validator import ground_all_fields, normalize_tissue_type_for_grounding
 from validator.semantic_validator import semantic_validate
 from llm.base import LLMRequest
 from llm.factory import create_llm_client
@@ -386,6 +386,10 @@ def _update_validation_state(
     context_text: str,
     cfg: dict,
 ) -> None:
+    if "tissue_type" in parsed_output:
+        parsed_output["tissue_type"] = normalize_tissue_type_for_grounding(
+            parsed_output.get("tissue_type", "")
+        )
     preserved_disease_match = None
     if state.locked_fields.get("disease", {}).get("reason") == "disease_generalized_for_ontology":
         preserved_disease_match = state.ontology_matches.get("disease")

@@ -57,6 +57,9 @@ _FALLBACK_VALUES = {
 }
 
 _PLACEHOLDER_NORMALIZE_RE = re.compile(r"[^a-z0-9]+")
+_TISSUE_PRE_GROUND_REWRITES = {
+    "peripheral blood": "blood",
+}
 _NON_ANATOMICAL_TISSUE_PLACEHOLDERS = {
     "tumor",
     "tumour",
@@ -234,6 +237,15 @@ def _is_fallback_value(field: str, raw_value: str) -> bool:
 def _normalize_placeholder_value(value: str) -> str:
     normalized = _PLACEHOLDER_NORMALIZE_RE.sub(" ", (value or "").lower())
     return " ".join(normalized.split())
+
+
+def normalize_tissue_type_for_grounding(raw_value: str) -> str:
+    """Apply deterministic tissue_type rewrites before ontology grounding."""
+    normalized = _normalize_placeholder_value(raw_value)
+    rewritten = _TISSUE_PRE_GROUND_REWRITES.get(normalized)
+    if rewritten is None:
+        return raw_value
+    return rewritten
 
 
 def _is_non_anatomical_tissue_placeholder(raw_value: str, raw_disease: str | None = None) -> bool:

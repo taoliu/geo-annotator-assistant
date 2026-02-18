@@ -56,6 +56,7 @@ Ontology synonym exact invariants (Ticket #182):
 
 ### tissue_type
 - **Ontology source**: Uberon.
+- **Pre-ground deterministic rewrite (Ticket #186)**: if tissue normalizes to exact `peripheral blood`, rewrite to `blood` before ontology grounding.
 - **Non-anatomical placeholders**: if value matches non-anatomical registry or equals disease label → fallback to `Unknown`, lock, and flag (`tissue_type_non_anatomical_placeholder`).
 - **Cell type leakage**: `tissue_type_is_cell_type` from semantic validator → repair then fallback to `Unknown` (decision table).
 - **Composite tissue handling (Ticket #176)**: when full-string grounding is not terminal exact, split on `&`, `/`, `,`, `;`, or word-boundary `and` and ground each fragment deterministically.
@@ -109,6 +110,7 @@ Implemented in `src/validator/ontology_validator.py`, `src/validator/grounders/d
 
 ## 5. Tissue Type Policies
 - **Anatomical-only requirement**: Tissue must be Uberon anatomy.
+- **Deterministic pre-ground normalization (Ticket #186)**: exact normalized `peripheral blood` is rewritten to `blood` before Uberon lookup; this is an exact-match rewrite (case/whitespace normalized), not a substring rule.
 - **Non-anatomical placeholders** (Ticket #95): disease terms and tumor-like tokens (e.g., tumor, cancer, lymphoma, leukemia, metastasis, lesion, etc.) trigger deterministic fallback to `Unknown` with flag `tissue_type_non_anatomical_placeholder`.
 - **Disease label leakage**: if tissue equals disease label (normalized), treat as non-anatomical placeholder.
 - **Composite resolution (Ticket #176)**:
