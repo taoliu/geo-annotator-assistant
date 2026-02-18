@@ -90,6 +90,7 @@ Implemented in `src/validator/ontology_validator.py`, `src/validator/grounders/d
 - **Model identifiers (Ticket #89)**: If disease matches model patterns (e.g., CT26, MC38, B16, 4T1, LLC, "xenograft model"), set `disease = Unknown`, lock with flag `disease_model_identifier_not_ontology`, skip grounding/repair.
 - **Healthy/control phrases (Ticket #92)**: Phrases like "healthy donors" normalized to terminal `Healthy`, lock with flag `disease_normalized_to_healthy`.
 - **Healthy + genotype/strain (Ticket #93)**: If healthy indicators + genotype/strain tokens in non-human context, normalize to `Healthy`, lock with flag `disease_contains_genotype_context`.
+- **Healthy + treatment coexistence (Ticket #181)**: `disease = Healthy` with non-empty `treatment` is biologically valid and non-blocking. The run may emit `healthy_disease_conflict` in `consistency_flags`, but this does not create ontology failure, must not be selected as `primary_failure`, and must not escalate `final_decision`.
 - **LLM non-answer placeholders (Ticket #98)**: `Not sure`, `N/A`, `Unknown`, etc → `Unknown`, lock, and `llm_non_answer_disease` flag.
 - **NCIT selection**: DOID queried first; NCIT queried only if trigger terms are present; choose higher score with tie-breaking rules (`score_preference_ncit` or `score_tie_prefer_doid`).
 
@@ -135,7 +136,6 @@ Sources: `src/validator/failure_codes.py`, `spec/decision_table.yaml`, `src/agen
 | cell_line_inferred_without_evidence | Cell line not supported by context | semantic validator | `src/validator/semantic_validator.py` |
 | assay_platform_conflict | Microarray vs sequencing mismatch | consistency validator | `src/validator/consistency_validator.py` |
 | single_cell_evidence_missing | scRNA-seq without cues | consistency validator | `src/validator/consistency_validator.py` |
-| healthy_disease_conflict | Healthy vs disease cues | consistency validator | `src/validator/consistency_validator.py` |
 | organism_context_conflict | Organism mismatch | consistency validator | `src/validator/consistency_validator.py` |
 | disease_unsupported | Unsupported disease → fallback | decision table | `spec/decision_table.yaml` |
 | repeated_failure | Repair cycles exceeded | decision engine | `src/validator/decision_engine.py` |
@@ -160,7 +160,12 @@ Sources: `src/validator/failure_codes.py`, `spec/decision_table.yaml`, `src/agen
 | human_override_applied | Manual override applied | overrides | `src/agent/overrides.py` |
 | gse_outlier_<field> | GSE outlier flag | GSE post-pass | `src/agent/gse_postpass.py` |
 
-Note: consistency flags are also surfaced in audit output; `healthy_disease_conflict` is excluded from failure routing but remains in `consistency_flags`.
+### Consistency Flags (Routing Semantics)
+- Consistency checks are always emitted in `validation.consistency_flags` for audit traceability.
+- `healthy_disease_conflict` is informational only and non-blocking.
+- `healthy_disease_conflict` is excluded from failure routing (`src/agent/run_single.py`, `src/agent/repair_loop.py`, `src/agent/audit.py`).
+- `healthy_disease_conflict` must never be selected as `primary_failure`.
+- `healthy_disease_conflict` must not affect `final_decision` (ACCEPT/FLAGGED).
 
 ### Format Error Attribution (Audit-only)
 - `validation.format_errors` remains the authoritative record-level set used for decision routing.
@@ -187,7 +192,6 @@ Repair routing is defined by `spec/decision_table.yaml` and executed in `src/age
 | tissue_type_is_cell_type | repair_tissue_anatomy_v1 | Yes | 1 | Unknown | anatomy correction |
 | assay_platform_conflict | repair_data_type_from_context_v1 | Yes | 2 | Unknown | data_type repair |
 | single_cell_evidence_missing | repair_data_type_from_context_v1 | Yes | 2 | Unknown | data_type repair |
-| healthy_disease_conflict | repair_disease_from_context_v1 | Yes | 2 | Unknown | disease repair |
 | disease_inferred_without_evidence | repair_disease_evidence_v1 | Yes | 1 | none | evidence-based disease repair |
 | cell_line_inferred_without_evidence | repair_cell_line_evidence_v1 | Yes | 1 | none | evidence-based cell line repair |
 | cell_line_is_cell_type | none | No | 0 | No | deterministic fallback |
@@ -195,6 +199,8 @@ Repair routing is defined by `spec/decision_table.yaml` and executed in `src/age
 | treatment_identity_leakage | none | No | 0 | none | deterministic fallback to None via policy; suppressed when intervention indicators are present |
 | organism_context_conflict | none | No | 0 | none | escalated |
 | repeated_failure | none | No | 0 | none | escalated |
+
+Note: `spec/decision_table.yaml` retains a `healthy_disease_conflict` entry, but current pipeline routing excludes this code before decision selection, so no repair or escalation occurs for that flag.
 
 Terminal fallback values are recorded and prevent further repairs for that field in the same run (`src/agent/repair_loop.py`).
 
