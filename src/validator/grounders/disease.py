@@ -25,6 +25,11 @@ _NCIT_SOURCE = "NCI Thesaurus"
 _TRIGGER_TOKEN_RE = re.compile(r"[a-z0-9]+")
 _LEADING_DIGIT_RE = re.compile(r"\d")
 _TRAILING_ACRONYM_RE = re.compile(r"\s*\(([A-Za-z0-9]{2,10})\)\s*$")
+_GENERIC_MESOTHELIOMA_CANONICAL_QUERY = "mesothelioma, unspecified"
+_GENERIC_MESOTHELIOMA_FORMS = {
+    "mesothelioma",
+    "mesothelioma unspecified",
+}
 _ONCOLOGY_TOKEN_EQUIVALENCE = {
     "cancer": "oncology_cancer",
     "carcinoma": "oncology_cancer",
@@ -116,6 +121,13 @@ def _strip_trailing_acronym(raw_value: str) -> tuple[str, bool]:
     if not stripped:
         return raw_value, False
     return stripped, True
+
+
+def _rewrite_generic_mesothelioma(raw_value: str) -> tuple[str, bool]:
+    normalized, _ = _normalize_trigger_text(raw_value)
+    if normalized in _GENERIC_MESOTHELIOMA_FORMS:
+        return _GENERIC_MESOTHELIOMA_CANONICAL_QUERY, True
+    return raw_value, False
 
 
 def _is_terminal_exact_match(match: OntologyMatch) -> bool:
@@ -429,8 +441,9 @@ def ground_disease(
 
     ncit_enabled, trigger_terms = _extract_ncit_config(config)
     base_query = query_override or raw_value
-    cleaned_query, stripped_acronym = _strip_trailing_acronym(base_query)
+    cleaned_query, _stripped_acronym = _strip_trailing_acronym(base_query)
     query_value, stripped_model = _strip_leading_model_token(cleaned_query)
+    query_value, _ = _rewrite_generic_mesothelioma(query_value)
     match = _ground_disease_with_query(
         raw_value,
         query_value,
@@ -440,9 +453,11 @@ def ground_disease(
         trigger_terms=trigger_terms,
     )
     if stripped_model and query_override is None and not _is_terminal_exact_match(match):
+        fallback_query = raw_value
+        fallback_query, _ = _rewrite_generic_mesothelioma(fallback_query)
         match = _ground_disease_with_query(
             raw_value,
-            raw_value,
+            fallback_query,
             config,
             doid_source=doid_source,
             ncit_enabled=ncit_enabled,

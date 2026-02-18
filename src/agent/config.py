@@ -87,6 +87,7 @@ class NcitFallbackConfig:
         "glioma",
         "glioblastoma",
         "melanoma",
+        "mesothelioma",
         "blastoma",
     ])
 

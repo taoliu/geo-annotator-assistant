@@ -32,6 +32,7 @@ def test_example_config_uses_rag_schema() -> None:
     assert isinstance(ncit_cfg, dict)
     assert ncit_cfg.get("enabled") is True
     assert "cancer" in (ncit_cfg.get("trigger_terms") or [])
+    assert "mesothelioma" in (ncit_cfg.get("trigger_terms") or [])
     embedding_cfg = ontology_cfg.get("embedding")
     assert isinstance(embedding_cfg, dict)
     assert embedding_cfg.get("device") == "cpu"

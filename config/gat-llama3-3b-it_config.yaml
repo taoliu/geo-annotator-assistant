@@ -67,6 +67,7 @@ rag:
           - glioma
           - glioblastoma
           - melanoma
+          - mesothelioma
           - blastoma
     data_type:
       fallback_allowlist_enabled: false

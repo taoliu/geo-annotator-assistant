@@ -82,6 +82,8 @@ Ontology synonym exact invariants (Ticket #182):
 - **Ontology sources**: DOID + NCIT fallback. NCIT queried only when trigger terms match (`src/validator/grounders/disease.py`).
 - **Token-equivalence** (Ticket #96 + #100): oncology synonyms normalized for scoring, including lymphoid/lymphocytic equivalence; match type `token_equiv_similarity` may produce terminal MATCHED + lock (`disease_token_equiv_similarity`).
 - **Parenthetical acronym stripping (Ticket #100)**: trailing parenthetical acronyms are stripped from the **ontology query** (e.g., `X (CLL)` → `X`) while preserving `raw_value`; `query_used` reflects the cleaned query.
+- **NCIT oncology triggers**: NCIT fallback trigger terms include oncology stems plus `mesothelioma`; when triggered, NCIT is queried after DOID for disease source selection.
+- **Generic mesothelioma rewrite (Ticket #184)**: normalize generic forms (`mesothelioma`, `mesothelioma (unspecified)`, `mesothelioma, unspecified`) to ontology query `mesothelioma, unspecified` before lookup. If this rewrite yields NCIT terminal exact, prefer NCIT over DOID similarity results.
 - **Generalizations/normalizations** (see Section 4).
 - **Healthy/Unknown**: deterministic normalization when patterns match.
 - **Locks**: terminal exact + token-equiv similarity + policy-driven locks.
@@ -98,6 +100,7 @@ Implemented in `src/validator/ontology_validator.py`, `src/validator/grounders/d
 - **Modifier generalization (Ticket #84)**: If LOW_CONFIDENCE disease has a top alternate parent label that is a literal substring of raw disease, generalize to parent label and lock (`disease_generalized_for_ontology`).
 - **Sloppy tumor normalization (Ticket #90)**: Human-only, if `tissue_type` is terminal Uberon site and raw disease matches "<site> tumor" pattern, rewrite to `"<site> cancer"`, re-ground, and lock with flag `disease_generalized_from_sloppy_tumor_label`.
 - **Model identifiers (Ticket #89)**: If disease matches model patterns (e.g., CT26, MC38, B16, 4T1, LLC, "xenograft model"), set `disease = Unknown`, lock with flag `disease_model_identifier_not_ontology`, skip grounding/repair.
+- **Generic mesothelioma canonical query (Ticket #184)**: Generic forms (`mesothelioma`, `mesothelioma (unspecified)`, `mesothelioma, unspecified`) are rewritten to `mesothelioma, unspecified` for ontology querying; this enables NCIT exact synonym resolution to `Malignant Mesothelioma` when available.
 - **Healthy/control phrases (Ticket #92)**: Phrases like "healthy donors" normalized to terminal `Healthy`, lock with flag `disease_normalized_to_healthy`.
 - **Healthy + genotype/strain (Ticket #93)**: If healthy indicators + genotype/strain tokens in non-human context, normalize to `Healthy`, lock with flag `disease_contains_genotype_context`.
 - **Healthy + treatment coexistence (Ticket #181)**: `disease = Healthy` with non-empty `treatment` is biologically valid and non-blocking. The run may emit `healthy_disease_conflict` in `consistency_flags`, but this does not create ontology failure, must not be selected as `primary_failure`, and must not escalate `final_decision`.

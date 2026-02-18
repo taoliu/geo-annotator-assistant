@@ -318,3 +318,97 @@ def test_empty_trigger_list_never_queries_ncit(monkeypatch) -> None:
     disease_grounder.ground_disease("lung cancer", "", config)
 
     assert "NCI Thesaurus" not in calls
+
+
+def test_mesothelioma_rewrite_triggers_ncit_and_prefers_exact_ncit(monkeypatch) -> None:
+    calls: list[tuple[str, str]] = []
+
+    def _fake_retrieve(*, query, source, **kwargs):
+        calls.append((query, source))
+        if source == "NCI Thesaurus":
+            return [
+                OntologyCandidate(
+                    term_id="NCIT:C4456",
+                    label="Malignant Mesothelioma",
+                    source="NCI Thesaurus",
+                    definition=None,
+                    synonyms=["mesothelioma, unspecified", "mesothelioma"],
+                    ancestors=[],
+                    distance=0.25,
+                    doc_text=None,
+                    retrieval_mode="vector_fallback",
+                    query_candidate=query,
+                )
+            ]
+        return [
+            OntologyCandidate(
+                term_id="DOID:1790",
+                label="pleural mesothelioma",
+                source="Human Disease Ontology",
+                definition=None,
+                synonyms=[],
+                ancestors=[],
+                distance=0.5,
+                doc_text=None,
+                retrieval_mode=None,
+                query_candidate=query,
+            )
+        ]
+
+    monkeypatch.setattr(
+        disease_grounder,
+        "retrieve_ontology_candidates",
+        _fake_retrieve,
+    )
+
+    config = _base_rag_config()
+    match = disease_grounder.ground_disease("Mesothelioma", "", config)
+
+    assert calls[0] == ("mesothelioma, unspecified", "Human Disease Ontology")
+    assert ("mesothelioma, unspecified", "NCI Thesaurus") in calls
+    assert match.status == "MATCHED"
+    assert match.ncit_triggered is True
+    assert match.selected_source == "NCI Thesaurus"
+    assert match.matched_source == "NCI Thesaurus"
+    assert match.matched_term_id == "NCIT:C4456"
+    assert match.matched_label == "Malignant Mesothelioma"
+    assert match.match_type == "synonym_norm_exact"
+    assert match.query_used == "mesothelioma, unspecified"
+    assert "NCI Thesaurus" in (match.attempted_sources or [])
+
+
+def test_mesothelioma_subtype_keeps_exact_doid_without_rewrite(monkeypatch) -> None:
+    calls: list[tuple[str, str]] = []
+
+    def _fake_retrieve(*, query, source, **kwargs):
+        calls.append((query, source))
+        return [
+            OntologyCandidate(
+                term_id="DOID:1799",
+                label="peritoneal mesothelioma",
+                source="Human Disease Ontology",
+                definition=None,
+                synonyms=[],
+                ancestors=[],
+                distance=0.0,
+                doc_text=None,
+                retrieval_mode=None,
+                query_candidate=query,
+            )
+        ]
+
+    monkeypatch.setattr(
+        disease_grounder,
+        "retrieve_ontology_candidates",
+        _fake_retrieve,
+    )
+
+    config = _base_rag_config()
+    match = disease_grounder.ground_disease("peritoneal mesothelioma", "", config)
+
+    assert calls[0] == ("peritoneal mesothelioma", "Human Disease Ontology")
+    assert "NCI Thesaurus" not in [source for _, source in calls]
+    assert match.status == "MATCHED"
+    assert match.selected_source == "Human Disease Ontology"
+    assert match.matched_label == "peritoneal mesothelioma"
+    assert match.query_used == "peritoneal mesothelioma"
