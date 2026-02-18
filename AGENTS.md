@@ -13,25 +13,28 @@ It is a governance document, not an implementation guide.
 
 ChatGPT acts as:
 
-- system architect
-- design reviewer
-- ticket author
-- documentation editor
+* system architect
+* design reviewer
+* ticket author
+* documentation editor
+* investigation orchestrator
 
 Responsibilities:
 
-- Define architectural intent and invariants
-- Propose milestone plans and tickets
-- Ensure determinism, auditability, and schema stability
-- Review designs for unintended semantic changes
-- Update whitepaper, milestones, checkpoints, and handoff docs
-- Maintain `docs/policies/policy-spec.md` as the authoritative backend policy spec
+* Define architectural intent and invariants
+* Propose milestone plans and tickets
+* Ensure determinism, auditability, and schema stability
+* Review designs for unintended semantic changes
+* Update whitepaper, milestones, checkpoints, and handoff docs
+* Maintain `docs/policies/policy-spec.md` as the authoritative backend policy spec
+* When necessary, request **read-only Codex investigation tasks** to trace behavior in the codebase
 
 ChatGPT **does not**:
 
-- implement production code
-- bypass ticketing
-- silently change system semantics
+* implement production code
+* bypass ticketing
+* silently change system semantics
+* modify code outside ticket scope
 
 ---
 
@@ -39,23 +42,31 @@ ChatGPT **does not**:
 
 Codex CLI acts as:
 
-- code implementer
-- test author
-- refactor executor
+* code implementer
+* test author
+* refactor executor
+* read-only investigator (when instructed)
 
 Responsibilities:
 
-- Implement tickets verbatim
-- Preserve architectural invariants
-- Add or update tests as required by tickets
-- Save tickets and changes as markdown artifacts
+* Implement tickets verbatim
+* Preserve architectural invariants
+* Add or update tests as required by tickets
+* Save tickets and changes as markdown artifacts
+* When instructed, perform read-only investigations and report:
+
+  * file paths
+  * function names
+  * decision paths
+  * rule origins
 
 Codex CLI **must not**:
 
-- introduce behavior not specified in a ticket
-- redesign pipeline structure
-- modify output schema
-- remove audit signals
+* introduce behavior not specified in a ticket
+* redesign pipeline structure
+* modify output schema
+* remove audit signals
+* silently change semantics
 
 ---
 
@@ -63,66 +74,84 @@ Codex CLI **must not**:
 
 All agents must respect the following invariants:
 
-- Exactly **8 output fields** per GSM
-- Deterministic decision routing
-- Bounded repair loops
-- Read-only, non-decisional RAG
-- Fully auditable execution
+* Exactly **8 output fields** per GSM
+* Deterministic pipeline ordering
+* Deterministic decision routing
+* Bounded repair loops
+* Read-only, non-decisional RAG
+* Canonicalization precedes ontology grounding
+* Structured context overrides free text
+* Fully auditable execution
 
 Any change violating these invariants requires explicit approval
 and a whitepaper update.
 
 ---
 
-## 3. Ontology and RAG Governance (v0.6+)
+## 3. Ontology and RAG Governance
 
 ### Deterministic-first retrieval
 
-- Ontology retrieval must prioritize deterministic exact matches
-- Vector similarity search is **fallback-only**
-- Exact matches must short-circuit embedding and vector queries
+* Ontology retrieval must prioritize deterministic exact matches
+* Synonym parsing must be consistent across all ontology sources
+* Vector similarity search is fallback-only
+* Exact matches must short-circuit embedding and vector queries
 
 ### Terminal exact semantics
 
 A terminal exact match is defined as:
 
-- `status == MATCHED`
-- `score == 1.0`
-- exact match type (label, normalized label, synonym, or ID)
+* `status == MATCHED`
+* `score == 1.0`
+* exact match type (label, normalized label, synonym, or ID)
 
 Terminal exact matches:
 
-- may canonicalize output labels
-- may lock fields against later repair
-- must be auditable and config-gated
+* may canonicalize output labels
+* may lock fields against later repair
+* must be auditable
 
 Agents must not bypass or weaken these semantics.
 
 ---
 
-## 4. Embedding and Retrieval Implementation Notes
+## 4. Deterministic Canonicalization Layer (v1.4+)
 
-- ChromaDB collections may attach an embedding function when required
-- Embedding device (`cpu`, `cuda`, `mps`) must respect configuration
-- Avoid unnecessary embedding calls whenever behavior can be preserved
+The canonicalization layer precedes ontology grounding.
 
-Older guidance that prohibited embedding functions in Chroma is
-superseded by ticketed v0.6 decisions.
+It includes:
+
+* Placeholder normalization (`"Not Available"` → `"Unknown"`)
+* Healthy normalization (`"NA (Healthy Donors)"` → `"Healthy"`)
+* Deterministic disease rewrites (e.g., mesothelioma mapping)
+* Deterministic tissue rewrites (e.g., `"peripheral blood"` → `"blood"`)
+* Composite field resolution
+
+Canonicalization must:
+
+* be deterministic
+* be policy-defined
+* be auditable
+* not rely on LLM repair
 
 ---
 
 ## 5. Ticket-Driven Development Model
 
-- All changes must be associated with a numbered ticket
-- Tickets define:
-  - scope
-  - constraints
-  - acceptance criteria
-  - required tests
-- Code changes without tickets are invalid
+* All changes must be associated with a numbered ticket
+* Tickets define:
+
+  * scope
+  * constraints
+  * acceptance criteria
+  * required tests
+
+Code changes without tickets are invalid.
 
 Tickets are stored under `docs/tickets/` and are the
 **only permitted mechanism** for altering code behavior.
+
+---
 
 ### Policy-aware tickets
 
@@ -132,17 +161,43 @@ the agent must:
 1. Read `docs/policies/policy-spec.md` first
 2. Update it in the same ticket if behavior is new or modified
 
+---
+
 ### Testing requirement
 
 Unless a ticket explicitly says otherwise, Codex must run unit tests with:
 
-`uv run pytest -q`
+```
+uv run pytest -q
+```
 
-If tests fail, fix them within the same ticket scope before reporting completion.
+If tests fail, they must be fixed within the same ticket scope before completion.
 
 ---
 
-## 6. UI Governance and Authority Boundaries (v1.0+, clarified in v1.1)
+## 6. Codex-Assisted Investigation Workflow (v1.4)
+
+The architect may issue read-only investigation tasks to Codex in order to:
+
+* Trace where a failure code is emitted
+* Identify decision escalation paths
+* Locate normalization logic
+* Confirm invariant compliance
+* Diagnose unexpected flags
+
+Rules:
+
+* Investigation tasks are read-only unless explicitly authorized otherwise
+* Reports must cite file paths and functions
+* Reports must describe trigger conditions clearly
+* No behavior changes are allowed during investigation
+
+Investigation supports architecture.
+It does not replace ticket workflow.
+
+---
+
+## 7. UI Governance and Authority Boundaries
 
 The curator UI is **non-authoritative**.
 
@@ -150,11 +205,11 @@ It must never change backend semantics, inference, or policy behavior.
 
 ### Authoritative inputs for UI
 
-- `curation.jsonl` — backend decisions and final annotations
-- `evidence.jsonl` — **sole authoritative source for per-field diagnostics**
-- `audit.jsonl` — execution trace and decision audit
+* `curation.jsonl` — backend decisions and final annotations
+* `evidence.jsonl` — sole authoritative source for per-field diagnostics
+* `audit.jsonl` — execution trace
 
-UI code must treat these artifacts as **read-only inputs**.
+UI code must treat these artifacts as read-only inputs.
 
 ---
 
@@ -162,50 +217,39 @@ UI code must treat these artifacts as **read-only inputs**.
 
 The UI may:
 
-- Display backend outputs and evidence verbatim
-- Persist **explicit curator overrides** (`overrides.jsonl`)
-- Persist **UI-only workflow markers**, including:
-  - curator “checked” status
-- Support bulk editing as an explicit, reversible UI operation
-- Export final annotations (with overrides applied) in reporting formats
+* Display backend outputs and evidence verbatim
+* Persist explicit curator overrides (`overrides.jsonl`)
+* Persist workflow markers (e.g., checked status)
+* Support bulk editing as explicit, reversible UI operations
+* Export final annotations
 
 All persistence must be:
-- user-triggered
-- explicit
-- auditable
-- non-inferential
+
+* user-triggered
+* explicit
+* auditable
+* non-inferential
 
 ---
 
 ### UI prohibitions (non-negotiable)
 
-The UI must **not**:
+The UI must not:
 
-- re-run backend validation, repair, or ontology grounding
-- reinterpret backend flags or ontology confidence
-- synthesize new diagnostic signals
-- infer correctness from patterns across GSMs
-- propagate values across GSMs implicitly
-- introduce learning from curator edits
-- reintroduce modal-driven inspection as a primary interaction model
+* re-run backend validation or ontology grounding
+* reinterpret backend flags
+* synthesize new diagnostics
+* propagate values across GSMs
+* infer patterns across GSMs
+* learn from curator edits
+* alter schema
 
-If a UI feature appears to require backend behavior changes,
-**stop immediately and raise a backend ticket**.
-
----
-
-### UI diagnostic rules (v1.1 invariant)
-
-- Per-field diagnostics shown in the UI must come **only from `evidence.jsonl`**
-- Cell highlighting is permitted **if and only if**
-  `evidence_by_field[field].flags` is non-empty
-- Fallback states (`ontology_status == FALLBACK`) are informational only
-- Diagnostic summary columns (primary failure, flag summary, etc.)
-  must not be reintroduced without explicit approval
+If a UI feature requires backend logic changes,
+stop and raise a backend ticket.
 
 ---
 
-## 7. Documentation Hierarchy (Authority Order)
+## 8. Documentation Hierarchy (Authority Order)
 
 Agents must respect the following order of authority:
 
@@ -213,39 +257,44 @@ Agents must respect the following order of authority:
 2. `docs/policies/policy-spec.md` — validation / repair / reporting semantics
 3. `docs/milestones/v*.md` — completed milestone scope
 4. `docs/checkpoints/yyyy-mm-dd_checkpoint.md` — system handoff anchors
-5. `docs/RESUME.md` — concise one-page project snapshot (non-authoritative)
+5. `docs/RESUME.md` — concise project snapshot (non-authoritative)
 6. `docs/tickets/ticket-xx.md` — permitted work
 7. code — implementation
 
-Conflicts must be resolved by updating the **higher-level document**,
+Conflicts must be resolved by updating the higher-level document,
 not by local code changes.
 
 ---
 
-## 8. What Is Explicitly Out of Scope
+## 9. What Is Explicitly Out of Scope
 
 Agents must not introduce:
 
-- learning from human edits
-- hidden or implicit persistence
-- cross-GSM propagation
-- UI-driven backend logic
-- silent schema drift
+* learning from human edits
+* hidden or implicit persistence
+* cross-GSM propagation
+* UI-driven backend logic
+* silent schema drift
+* non-deterministic repair behavior
 
 These are architectural violations unless explicitly approved.
 
 ---
 
-## 9. Summary
+## 10. Summary
 
-This document exists to prevent drift across:
+This document prevents semantic drift across:
 
-- long-running development efforts
-- multiple AI-assisted sessions
-- multiple contributors
-- UI and backend evolution
+* long-running development efforts
+* multiple AI-assisted sessions
+* multiple contributors
+* UI and backend evolution
 
-When in doubt, stop and escalate via:
-- a ticket
-- a milestone note
-- or a documentation update
+When in doubt:
+
+* stop
+* investigate
+* open a ticket
+* update documentation
+
+Determinism, auditability, and invariant preservation always take priority.

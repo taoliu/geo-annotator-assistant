@@ -2,8 +2,7 @@
 
 ## Purpose
 
-**GEO GSM Annotator Agent** is a deterministic, audit-first system for annotating and
-standardizing GEO sample-level (GSM) metadata with explicit human-in-the-loop curation.
+**GEO GSM Annotator Agent** is a deterministic, audit-first system for annotating and standardizing GEO sample-level (GSM) metadata with explicit human-in-the-loop curation.
 
 The system prioritizes correctness, transparency, and reproducibility over automation.
 
@@ -11,24 +10,59 @@ The system prioritizes correctness, transparency, and reproducibility over autom
 
 ## Current Status
 
-- Backend semantics **frozen and authoritative as of v0.9**
-- Curator web UI **production-ready as of v1.1**
-- CLI ergonomics, batch safety, and ingest robustness **completed in v1.2**
-- Web UI refinement: layout tightening, bulk edit redesign, navigation fixes, tooltip system, export integration with geo-gsm-summarize **completed in v1.3**
-- Validation, repair, ontology grounding, and reporting behavior consolidated
-- Real-world GEO edge cases handled deterministically
+* Backend semantics stabilized and consolidated through **v1.4**
+* Curator web UI production-ready as of **v1.1**
+* CLI ergonomics, batch safety, and ingest robustness completed in **v1.2**
+* Web UI refinement completed in **v1.3**
+* Backend determinism and real-world edge-case normalization consolidated in **v1.4**
+* Validation, repair, ontology grounding, and reporting behavior explicitly governed by policy
+* Real-world GEO edge cases handled deterministically with reduced false flags
 
 ---
 
 ## Core Capabilities
 
-- Deterministic annotation pipeline producing **exactly 8 GSM fields**:
-  - `gse_accession`, `gsm_accession`, `data_type`, `organism`,
-    `tissue_type`, `cell_line`, `disease`, `treatment`
-- Policy-governed validation, bounded repair, and explicit flagging
-- Ontology grounding as **validation only**, never decisive
-- Full audit trail for every GSM
-- Explicit, persistent curator overrides
+* Deterministic annotation pipeline producing **exactly 8 GSM fields**:
+
+  * `gse_accession`
+  * `gsm_accession`
+  * `data_type`
+  * `organism`
+  * `tissue_type`
+  * `cell_line`
+  * `disease`
+  * `treatment`
+
+* Policy-governed validation and bounded repair loops
+
+* Deterministic decision routing via explicit decision table
+
+* Ontology grounding used strictly for validation and confidence assessment
+
+* Deterministic canonicalization layer preceding ontology grounding
+
+* Unified placeholder model:
+
+  * `"Healthy"` for biological healthy state
+  * `"Unknown"` for missing or unspecified values
+
+* Structured audit artifacts for every GSM
+
+* Explicit and replayable curator overrides
+
+* Codex-assisted read-only investigation workflow for architectural debugging
+
+---
+
+## Deterministic Normalization (v1.4 Highlights)
+
+* Composite tissue resolution with all-components-required rule
+* Cross-ontology synonym parsing standardized
+* "Not Available" mapped to canonical `"Unknown"`
+* Compound healthy strings normalized to `"Healthy"`
+* Deterministic disease rewrites (e.g., mesothelioma → NCIT malignant mesothelioma)
+* Structured organism context authority enforced (no free-text conflict scanning)
+* Reduced unnecessary ontology repair loops
 
 ---
 
@@ -37,7 +71,7 @@ The system prioritizes correctness, transparency, and reproducibility over autom
 1. Prepare a YAML configuration
 2. Run `geo-gsm-annotate` on GSE(s)
 3. Review and curate results via the web UI
-4. Export final CSVs using `geo-gsm-summarize` or use the export functions through web UI
+4. Export final CSVs using `geo-gsm-summarize` or via web UI export
 
 ---
 
@@ -45,13 +79,16 @@ The system prioritizes correctness, transparency, and reproducibility over autom
 
 Treated as law:
 
-- Fixed 8-field output schema
-- Deterministic decision routing
-- No learning from curator edits
-- RAG as fallback only
-- Ontologies as validation only
-- Full auditability and replayability
-- Human curator as final authority
+* Fixed 8-field output schema
+* Deterministic pipeline ordering
+* LLM proposes, deterministic logic decides
+* No learning from curator edits
+* RAG as fallback only
+* Ontologies as validation only
+* Canonicalization precedes grounding
+* Structured context overrides free text
+* Full auditability and replayability
+* Human curator as final authority
 
 Defined in `docs/whitepaper.md`.
 
@@ -59,14 +96,17 @@ Defined in `docs/whitepaper.md`.
 
 ## Intended Users
 
-- Bioinformatics curators
-- Data integration teams
-- AI-assisted curation pipelines requiring auditability
+* Bioinformatics curators
+* Data integration teams
+* AI-assisted curation pipelines requiring auditability and reproducibility
 
 ---
 
 ## Repository Entry Points
 
-- Agent CLI: `geo-gsm-annotate`
-- Post-curation export CLI: `geo-gsm-summarize`
-- Curator UI: `geo-gsm-ui`
+* Agent CLI: `geo-gsm-annotate`
+* Post-curation export CLI: `geo-gsm-summarize`
+* Curator UI: `geo-gsm-ui`
+
+---
+

@@ -1,4 +1,4 @@
-# Policy Spec (v0.9)
+# Policy Spec (v1.4)
 
 ## 1. Overview
 This document describes **current behavior** of the GEO GSM Annotator Agent as implemented in code. **Code is authoritative**; this document is descriptive and must not be used to infer future behavior.
