@@ -57,6 +57,23 @@ def test_healthy_control_disease_normalization_applies() -> None:
     assert state.locked_fields["disease"]["label"] == "Healthy"
 
 
+def test_healthy_control_disease_normalization_applies_for_compound_placeholder() -> None:
+    state = PipelineState(
+        gsm_accession="GSM000224",
+        gse_accession="GSE000111",
+        final_output=_base_output(disease="NA (Healthy Donors)"),
+        ontology_matches={"disease": _healthy_match("NA (Healthy Donors)")},
+        semantic_errors={"disease": ["disease_inferred_without_evidence"]},
+    )
+
+    apply_healthy_control_disease_normalization(state, {})
+
+    assert state.final_output["disease"] == "Healthy"
+    assert "disease_normalized_to_healthy" in state.flags
+    assert "disease" not in state.semantic_errors
+    assert state.locked_fields["disease"]["label"] == "Healthy"
+
+
 def test_healthy_control_disease_normalization_skips_unmatched() -> None:
     state = PipelineState(
         gsm_accession="GSM000223",

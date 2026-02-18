@@ -86,7 +86,7 @@ Ontology synonym exact invariants (Ticket #182):
 - **NCIT oncology triggers**: NCIT fallback trigger terms include oncology stems plus `mesothelioma`; when triggered, NCIT is queried after DOID for disease source selection.
 - **Generic mesothelioma rewrite (Ticket #184)**: normalize generic forms (`mesothelioma`, `mesothelioma (unspecified)`, `mesothelioma, unspecified`) to ontology query `mesothelioma, unspecified` before lookup. If this rewrite yields NCIT terminal exact, prefer NCIT over DOID similarity results.
 - **Generalizations/normalizations** (see Section 4).
-- **Healthy/Unknown**: deterministic normalization when patterns match.
+- **Healthy/Unknown**: deterministic normalization when patterns match. Precedence is `Healthy` normalization first, then non-answer placeholder fallback to `Unknown` (Ticket #187).
 - **Locks**: terminal exact + token-equiv similarity + policy-driven locks.
 
 ### treatment
@@ -103,9 +103,10 @@ Implemented in `src/validator/ontology_validator.py`, `src/validator/grounders/d
 - **Model identifiers (Ticket #89)**: If disease matches model patterns (e.g., CT26, MC38, B16, 4T1, LLC, "xenograft model"), set `disease = Unknown`, lock with flag `disease_model_identifier_not_ontology`, skip grounding/repair.
 - **Generic mesothelioma canonical query (Ticket #184)**: Generic forms (`mesothelioma`, `mesothelioma (unspecified)`, `mesothelioma, unspecified`) are rewritten to `mesothelioma, unspecified` for ontology querying; this enables NCIT exact synonym resolution to `Malignant Mesothelioma` when available.
 - **Healthy/control phrases (Ticket #92)**: Phrases like "healthy donors" normalized to terminal `Healthy`, lock with flag `disease_normalized_to_healthy`.
+- **Compound healthy placeholders (Ticket #187)**: if disease contains strong healthy indicators (e.g., `healthy donor(s)`, `healthy control(s)`, `normal donor`, `normal healthy`) or matches placeholder-prefix + healthy text (e.g., `NA (Healthy Donors)`, `Unknown healthy controls`), normalize to `Healthy` before placeholder fallback.
 - **Healthy + genotype/strain (Ticket #93)**: If healthy indicators + genotype/strain tokens in non-human context, normalize to `Healthy`, lock with flag `disease_contains_genotype_context`.
 - **Healthy + treatment coexistence (Ticket #181)**: `disease = Healthy` with non-empty `treatment` is biologically valid and non-blocking. The run may emit `healthy_disease_conflict` in `consistency_flags`, but this does not create ontology failure, must not be selected as `primary_failure`, and must not escalate `final_decision`.
-- **LLM non-answer placeholders (Ticket #98 / #185)**: `Not sure`, `Not Available`, `N/A`, `Unknown`, etc → `Unknown`, lock, and `llm_non_answer_disease` flag.
+- **LLM non-answer placeholders (Ticket #98 / #185)**: `Not sure`, `Not Available`, `N/A`, `Unknown`, etc → `Unknown`, lock, and `llm_non_answer_disease` flag, but only when healthy normalization does not apply.
 - **NCIT selection**: DOID queried first; NCIT queried only if trigger terms are present; choose higher score with tie-breaking rules (`score_preference_ncit` or `score_tie_prefer_doid`).
 
 ## 5. Tissue Type Policies

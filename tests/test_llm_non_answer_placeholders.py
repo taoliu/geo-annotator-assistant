@@ -47,6 +47,36 @@ def test_ground_all_fields_handles_not_available_disease() -> None:
     assert "disease" not in failures
 
 
+def test_ground_all_fields_prefers_healthy_for_compound_placeholder_disease() -> None:
+    llm_output = {
+        "data_type": "RNA-seq",
+        "tissue_type": "Blood",
+        "cell_line": "No",
+        "disease": "NA (Healthy Donors)",
+    }
+    matches, failures = ground_all_fields(llm_output, "", {})
+
+    match = matches["disease"]
+    assert match.status == "FALLBACK"
+    assert match.matched_via == "healthy_control_normalized"
+    assert "disease" not in failures
+
+
+def test_ground_all_fields_prefers_healthy_for_unknown_healthy_controls() -> None:
+    llm_output = {
+        "data_type": "RNA-seq",
+        "tissue_type": "Blood",
+        "cell_line": "No",
+        "disease": "Unknown healthy controls",
+    }
+    matches, failures = ground_all_fields(llm_output, "", {})
+
+    match = matches["disease"]
+    assert match.status == "FALLBACK"
+    assert match.matched_via == "healthy_control_normalized"
+    assert "disease" not in failures
+
+
 def test_semantic_validator_skips_non_answer_placeholder() -> None:
     parsed = {
         "tissue_type": "Not clear",

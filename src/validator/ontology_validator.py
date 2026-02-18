@@ -108,6 +108,25 @@ _HEALTHY_CONTROL_DISEASES = {
     "normal control",
     "normal controls",
 }
+_HEALTHY_CONTROL_PHRASES = (
+    ("healthy", "donor"),
+    ("healthy", "donors"),
+    ("healthy", "control"),
+    ("healthy", "controls"),
+    ("normal", "donor"),
+    ("normal", "donors"),
+    ("normal", "control"),
+    ("normal", "controls"),
+    ("normal", "healthy"),
+)
+_HEALTHY_PLACEHOLDER_PREFIXES = (
+    ("na",),
+    ("n", "a"),
+    ("unknown",),
+    ("not", "available"),
+    ("not", "provided"),
+    ("none",),
+)
 _HEALTHY_GENOTYPE_INDICATORS = {"healthy", "normal", "control"}
 _HEALTHY_GENOTYPE_EXCLUDE_TERMS = {
     "tumor",
@@ -288,7 +307,37 @@ def _is_healthy_control_disease(raw_value: str) -> bool:
     normalized = _normalize_placeholder_value(raw_value)
     if not normalized:
         return False
-    return normalized in _HEALTHY_CONTROL_DISEASES
+    if normalized in _HEALTHY_CONTROL_DISEASES:
+        return True
+    tokens = normalized.split()
+    if not tokens:
+        return False
+    if _contains_phrase(tokens, _HEALTHY_CONTROL_PHRASES):
+        return True
+    if "healthy" not in tokens:
+        return False
+    return _starts_with_phrase(tokens, _HEALTHY_PLACEHOLDER_PREFIXES)
+
+
+def _contains_phrase(tokens: list[str], phrases: tuple[tuple[str, ...], ...]) -> bool:
+    for phrase in phrases:
+        size = len(phrase)
+        if size == 0 or size > len(tokens):
+            continue
+        for idx in range(len(tokens) - size + 1):
+            if tuple(tokens[idx : idx + size]) == phrase:
+                return True
+    return False
+
+
+def _starts_with_phrase(tokens: list[str], phrases: tuple[tuple[str, ...], ...]) -> bool:
+    for phrase in phrases:
+        size = len(phrase)
+        if size == 0 or size >= len(tokens):
+            continue
+        if tuple(tokens[:size]) == phrase:
+            return True
+    return False
 
 
 def _has_genotype_marker(raw_value: str, normalized: str, tokens: set[str]) -> bool:
@@ -682,6 +731,12 @@ def ground_all_fields(
 
         if not raw_value:
             match = _make_none_match(field, raw_value, ontology)
+        elif field == "disease" and _is_healthy_genotype_disease(
+            raw_value, (llm_output.get("organism") or "").strip()
+        ):
+            match = _make_healthy_genotype_match(field, raw_value, ontology)
+        elif field == "disease" and _is_healthy_control_disease(raw_value):
+            match = _make_healthy_control_match(field, raw_value, ontology)
         elif is_llm_non_answer_placeholder(raw_value):
             match = _make_llm_non_answer_match(field, raw_value, ontology)
         elif field == "tissue_type" and _is_non_anatomical_tissue_placeholder(
@@ -690,12 +745,6 @@ def ground_all_fields(
             match = _make_placeholder_match(field, raw_value, ontology)
         elif field == "disease" and _is_disease_model_identifier(raw_value):
             match = _make_disease_model_match(field, raw_value, ontology)
-        elif field == "disease" and _is_healthy_genotype_disease(
-            raw_value, (llm_output.get("organism") or "").strip()
-        ):
-            match = _make_healthy_genotype_match(field, raw_value, ontology)
-        elif field == "disease" and _is_healthy_control_disease(raw_value):
-            match = _make_healthy_control_match(field, raw_value, ontology)
         elif _is_fallback_value(field, raw_value):
             match = _make_fallback_match(field, raw_value, ontology)
         elif field == "data_type" and _is_data_type_allowlisted(raw_value, ontology_config):
