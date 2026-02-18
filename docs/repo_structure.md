@@ -20,7 +20,8 @@
 │   │   ├── 2026-02-03_checkpoint.md
 │   │   ├── 2026-02-05_checkpoint.md
 │   │   ├── 2026-02-10_checkpoint.md
-│   │   └── 2026-02-17_checkpoint.md
+│   │   ├── 2026-02-17_checkpoint.md
+│   │   └── 2026-02-18_checkpoint.md
 │   ├── milestones
 │   │   ├── v0.1-llm.md
 │   │   ├── v0.2-ontology-grounding.md
@@ -34,7 +35,8 @@
 │   │   ├── v1.0-curator-UI.md
 │   │   ├── v1.1-curator-ui-ux.md
 │   │   ├── v1.2-cli-ergonomics.md
-│   │   └── v1.3-web-ui-refinement.md
+│   │   ├── v1.3-web-ui-refinement.md
+│   │   └── v1.4-backend-determinism.md
 │   ├── policies
 │   │   └── policy-spec.md
 │   ├── repo_structure.md
@@ -126,10 +128,23 @@
 │   │   ├── ticket-172.md
 │   │   ├── ticket-173.md
 │   │   ├── ticket-174.md
+│   │   ├── ticket-175.md
+│   │   ├── ticket-176.md
+│   │   ├── ticket-177.md
+│   │   ├── ticket-178.md
+│   │   ├── ticket-179.md
 │   │   ├── ticket-17b.md
 │   │   ├── ticket-17c.md
 │   │   ├── ticket-17d.md
 │   │   ├── ticket-18.md
+│   │   ├── ticket-180.md
+│   │   ├── ticket-181.md
+│   │   ├── ticket-182.md
+│   │   ├── ticket-183.md
+│   │   ├── ticket-184.md
+│   │   ├── ticket-185.md
+│   │   ├── ticket-186.md
+│   │   ├── ticket-187.md
 │   │   ├── ticket-19.md
 │   │   ├── ticket-2.md
 │   │   ├── ticket-20.md
@@ -297,6 +312,7 @@
 │   │   ├── gse_navigation.py
 │   │   ├── help_text.py
 │   │   ├── loaders.py
+│   │   ├── ontology_tooltips.py
 │   │   ├── override_safety.py
 │   │   ├── overrides.py
 │   │   ├── paths.py
@@ -322,6 +338,7 @@
 │       ├── heuristics.py
 │       ├── non_answer_placeholders.py
 │       ├── ontology_match.py
+│       ├── ontology_text.py
 │       ├── ontology_validator.py
 │       ├── semantic_validator.py
 │       └── thresholds.py
@@ -340,6 +357,7 @@
 │   ├── test_consistency_validator.py
 │   ├── test_context_fingerprint.py
 │   ├── test_decision_engine.py
+│   ├── test_disease_compound_healthy_placeholders.py
 │   ├── test_disease_generalization.py
 │   ├── test_disease_healthy_genotype_normalization.py
 │   ├── test_disease_healthy_normalization.py
@@ -390,7 +408,9 @@
 │   ├── test_summarize_cli.py
 │   ├── test_terminal_exact_short_circuit.py
 │   ├── test_thresholds_and_ontology_validator.py
+│   ├── test_tissue_type_composite_resolution.py
 │   ├── test_tissue_type_disease_label_fallback.py
+│   ├── test_tissue_type_peripheral_blood_normalization.py
 │   ├── test_tissue_type_placeholder_fallback.py
 │   ├── test_treatment_identity_fallback.py
 │   ├── test_writer.py
@@ -406,6 +426,7 @@
 │       ├── test_guidance.py
 │       ├── test_loaders.py
 │       ├── test_modal.py
+│       ├── test_ontology_tooltips.py
 │       ├── test_override_safety.py
 │       ├── test_overrides.py
 │       ├── test_state.py
@@ -413,4 +434,4 @@
 │       └── test_triage.py
 └── uv.lock
 
-19 directories, 395 files
+19 directories, 416 files
