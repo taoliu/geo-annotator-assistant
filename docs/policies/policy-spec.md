@@ -48,7 +48,10 @@ Ontology synonym exact invariants (Ticket #182):
 
 ### organism
 - **No ontology grounding** in current pipeline.
-- **Consistency**: `organism_context_conflict` if context mentions conflicting organism (`src/validator/consistency_validator.py`).
+- **Consistency**: `organism_context_conflict` is computed from the structured sample organism context only (explicit `Sample Organism` value), not arbitrary free-text mentions (`src/validator/consistency_validator.py`).
+- **Conflict trigger**: emit only when both predicted organism and structured sample organism are present and normalize to different organisms (exact/synonym normalization).
+- **Free-text guard**: protocol/platform/series mentions (including other species names) must not trigger `organism_context_conflict`.
+- **Mixed-series allowance**: mixed-organism series context is allowed as long as the current sample organism remains consistent.
 - **Non-answer placeholders**: `Unknown` with lock when detected.
 
 ### tissue_type
@@ -143,7 +146,7 @@ Sources: `src/validator/failure_codes.py`, `spec/decision_table.yaml`, `src/agen
 | cell_line_inferred_without_evidence | Cell line not supported by context | semantic validator | `src/validator/semantic_validator.py` |
 | assay_platform_conflict | Microarray vs sequencing mismatch | consistency validator | `src/validator/consistency_validator.py` |
 | single_cell_evidence_missing | scRNA-seq without cues | consistency validator | `src/validator/consistency_validator.py` |
-| organism_context_conflict | Organism mismatch | consistency validator | `src/validator/consistency_validator.py` |
+| organism_context_conflict | Predicted organism conflicts with structured sample organism context | consistency validator | `src/validator/consistency_validator.py` |
 | disease_unsupported | Unsupported disease → fallback | decision table | `spec/decision_table.yaml` |
 | repeated_failure | Repair cycles exceeded | decision engine | `src/validator/decision_engine.py` |
 
@@ -204,7 +207,7 @@ Repair routing is defined by `spec/decision_table.yaml` and executed in `src/age
 | cell_line_is_cell_type | none | No | 0 | No | deterministic fallback |
 | disease_unsupported | none | No | 0 | Healthy | deterministic fallback |
 | treatment_identity_leakage | none | No | 0 | none | deterministic fallback to None via policy; suppressed when intervention indicators are present |
-| organism_context_conflict | none | No | 0 | none | escalated |
+| organism_context_conflict | none | No | 0 | none | escalated; computed from structured sample organism only |
 | repeated_failure | none | No | 0 | none | escalated |
 
 Note: `spec/decision_table.yaml` retains a `healthy_disease_conflict` entry, but current pipeline routing excludes this code before decision selection, so no repair or escalation occurs for that flag.

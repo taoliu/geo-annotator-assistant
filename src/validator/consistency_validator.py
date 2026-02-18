@@ -20,6 +20,7 @@ _HEALTHY_VALUE = _CONSISTENCY["healthy_value"].lower()
 _DISEASE_KEYWORDS = [kw.lower() for kw in _CONSISTENCY["disease_keywords"]]
 _ORGANISM_CONFLICTS = _CONSISTENCY["organism_conflicts"]
 _DISEASE_LABEL_RE = re.compile(r"\bdisease(?:\s*state)?\b\s*[:=]\s*([^\n;]+)", re.IGNORECASE)
+_SAMPLE_ORGANISM_RE = re.compile(r"^\s*Sample Organism:\s*(.+?)\s*$", re.IGNORECASE | re.MULTILINE)
 _DISEASE_LABEL_IGNORE = {
     "healthy",
     "none",
@@ -30,6 +31,36 @@ _DISEASE_LABEL_IGNORE = {
     "n/a",
     "unknown",
 }
+_ORGANISM_CONTEXT_EMPTY = {"", "n/a", "na", "none", "unknown"}
+_ORGANISM_SYNONYMS = {
+    "homo sapiens": "homo sapiens",
+    "human": "homo sapiens",
+    "h. sapiens": "homo sapiens",
+    "mus musculus": "mus musculus",
+    "mouse": "mus musculus",
+    "mice": "mus musculus",
+    "m. musculus": "mus musculus",
+}
+
+
+def _normalize_organism(value: str) -> str:
+    normalized = " ".join((value or "").strip().lower().split())
+    if not normalized:
+        return ""
+    return _ORGANISM_SYNONYMS.get(normalized, normalized)
+
+
+def extract_sample_organism(context_text: str) -> str:
+    """Extract the explicit Sample Organism field from context text."""
+    if not context_text:
+        return ""
+    match = _SAMPLE_ORGANISM_RE.search(context_text)
+    if not match:
+        return ""
+    value = " ".join(match.group(1).strip().split())
+    if value.lower() in _ORGANISM_CONTEXT_EMPTY:
+        return ""
+    return value
 
 
 def _has_explicit_disease_terms(ctx: str) -> bool:
@@ -69,6 +100,7 @@ def consistency_validate(
     context_text: str,
     *,
     ontology_matches: Optional[Dict[str, Any]] = None,
+    context_sample_organism: Optional[str] = None,
 ) -> List[str]:
     """Keyword-based cross-field consistency checks."""
     flags: List[str] = []
@@ -88,14 +120,18 @@ def consistency_validate(
         if _has_explicit_disease_terms(ctx) or _has_ontology_disease_match(ontology_matches):
             flags.append(HEALTHY_DISEASE_CONFLICT)
 
-    org = parsed_output.get("organism", "").lower()
-    if org:
+    org = _normalize_organism(parsed_output.get("organism", ""))
+    sample_organism = context_sample_organism
+    if sample_organism is None:
+        sample_organism = extract_sample_organism(context_text)
+    sample_organism_norm = _normalize_organism(sample_organism)
+    if org and sample_organism_norm and org != sample_organism_norm:
         for first, second in _ORGANISM_CONFLICTS:
-            first_lower = first.lower()
-            second_lower = second.lower()
-            if first_lower in org and second_lower in ctx:
+            first_norm = _normalize_organism(first)
+            second_norm = _normalize_organism(second)
+            if org == first_norm and sample_organism_norm == second_norm:
                 flags.append(ORGANISM_CONTEXT_CONFLICT)
-            if second_lower in org and first_lower in ctx:
+            if org == second_norm and sample_organism_norm == first_norm:
                 flags.append(ORGANISM_CONTEXT_CONFLICT)
 
     return sorted(set(flags))

@@ -43,6 +43,7 @@ from validator.consistency_validator import (
     ORGANISM_CONTEXT_CONFLICT,
     SINGLE_CELL_EVIDENCE_MISSING,
     consistency_validate,
+    extract_sample_organism,
 )
 from validator.decision_engine import decide_next_action, load_decision_table
 from validator.format_validator import (
@@ -423,10 +424,12 @@ def _update_validation_state(
         for field, match in matches.items()
     }
     state.ontology_failures = _filter_missing_grounders(ontology_failures)
+    context_sample_organism = extract_sample_organism(context_text)
     state.consistency_flags = consistency_validate(
         parsed_output,
         context_text,
         ontology_matches=state.ontology_matches,
+        context_sample_organism=context_sample_organism,
     )
     apply_llm_non_answer_placeholders(state, cfg)
     apply_terminal_exact_canonicalization_and_lock(state, cfg)

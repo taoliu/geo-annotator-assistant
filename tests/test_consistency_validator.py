@@ -60,7 +60,10 @@ def test_healthy_with_ontology_match_flags() -> None:
 
 
 def test_organism_mismatch_flags() -> None:
-    flags = consistency_validate({"organism": "Mus musculus"}, "Study of Homo sapiens tissue.")
+    flags = consistency_validate(
+        {"organism": "Mus musculus"},
+        "Sample Organism: Homo sapiens\nStudy of mixed samples.",
+    )
     assert flags == [ORGANISM_CONTEXT_CONFLICT]
 
 
@@ -70,3 +73,31 @@ def test_clean_case_ok() -> None:
         "Healthy tissue from human donors.",
     )
     assert flags == []
+
+
+def test_organism_ignores_non_structured_context_mentions() -> None:
+    flags = consistency_validate(
+        {"organism": "Homo sapiens"},
+        (
+            "Sample Organism: Homo sapiens\n"
+            "Platform: Illumina NovaSeq 6000 (Mus musculus)\n"
+            "Protocol mentions mouse controls."
+        ),
+    )
+    assert flags == []
+
+
+def test_organism_missing_sample_context_does_not_flag() -> None:
+    flags = consistency_validate(
+        {"organism": "Homo sapiens"},
+        "Study includes Mus musculus references in protocol text.",
+    )
+    assert flags == []
+
+
+def test_organism_synonym_normalization_conflict() -> None:
+    flags = consistency_validate(
+        {"organism": "human"},
+        "Sample Organism: mouse",
+    )
+    assert flags == [ORGANISM_CONTEXT_CONFLICT]
