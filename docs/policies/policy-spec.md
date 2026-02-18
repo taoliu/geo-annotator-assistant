@@ -6,15 +6,16 @@ This document describes **current behavior** of the GEO GSM Annotator Agent as i
 ## 2. Pipeline Stages and Precedence
 Execution order (see `src/agent/run_single.py`, `src/agent/repair_loop.py`):
 1. **LLM raw output** (prompt `prompts/label_v1.txt`) → parse and normalize to 8 required fields.
-2. **Format validation** (`src/validator/format_validator.py`) against required keys and word limits. Includes JSON extraction and truncated treatment salvage.
+2. **Accession override (authoritative context)**: immediately after parsing, set `gse_accession` and `gsm_accession` from input record context; ignore LLM-predicted accession values for downstream logic.
+3. **Format validation** (`src/validator/format_validator.py`) against required keys and word limits. Includes JSON extraction and truncated treatment salvage.
    Format errors are routed at record level via `validation.format_errors`; audit-level per-field attribution is emitted in `validation.format_error_details`.
-3. **Semantic validation** (`src/validator/semantic_validator.py`) for field-level plausibility.
-4. **Ontology grounding** (`src/validator/ontology_validator.py` + grounders) for `data_type`, `tissue_type`, `cell_line`, `disease`.
-5. **Consistency validation** (`src/validator/consistency_validator.py`) for cross-field/context conflicts.
-6. **Deterministic canonicalization & locks** (`src/agent/ontology_canonicalization.py`).
-7. **Decision routing & repair loop** (`src/validator/decision_engine.py`, `spec/decision_table.yaml`, `src/agent/repair_loop.py`).
-8. **Terminal fallback enforcement** (repair loop + locked fields).
-9. **Final decision**: ACCEPT / FLAGGED / REJECT (see Section 9).
+4. **Semantic validation** (`src/validator/semantic_validator.py`) for field-level plausibility.
+5. **Ontology grounding** (`src/validator/ontology_validator.py` + grounders) for `data_type`, `tissue_type`, `cell_line`, `disease`.
+6. **Consistency validation** (`src/validator/consistency_validator.py`) for cross-field/context conflicts.
+7. **Deterministic canonicalization & locks** (`src/agent/ontology_canonicalization.py`).
+8. **Decision routing & repair loop** (`src/validator/decision_engine.py`, `spec/decision_table.yaml`, `src/agent/repair_loop.py`).
+9. **Terminal fallback enforcement** (repair loop + locked fields).
+10. **Final decision**: ACCEPT / FLAGGED / REJECT (see Section 9).
 
 Precedence rules:
 - Failures are consolidated per field; **primary failure** is selected deterministically (`src/validator/failure_codes.py`).
@@ -24,6 +25,11 @@ Precedence rules:
 ## 3. Field-by-Field Policy Rules
 All fields are strings. The output schema always includes exactly 8 fields:
 `gse_accession`, `gsm_accession`, `data_type`, `organism`, `tissue_type`, `cell_line`, `disease`, `treatment`.
+
+Accession invariants:
+- `gse_accession` and `gsm_accession` are copied from input context immediately after parse.
+- LLM-predicted accession values are ignored for all downstream validation, repair, and decision logic.
+- Format validation therefore operates on context-authoritative accession values, not raw LLM accession text.
 
 ### data_type
 - **Ontology source**: Experimental Factor Ontology (EFO).

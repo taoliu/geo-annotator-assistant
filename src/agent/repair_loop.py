@@ -336,6 +336,11 @@ def apply_repairs(
                 _REQUIRED_KEYS,
                 salvage_limit=format_salvage_limit,
                 repair_recorder=_record_salvage,
+                post_parse_transform=lambda parsed: override_accessions(
+                    dict(parsed),
+                    state.gse_accession,
+                    state.gsm_accession,
+                ),
             )
             state.format_errors = format_errors
             state.format_error_details = build_format_error_details(

@@ -138,7 +138,9 @@ def test_locked_field_survives_unrepaired_format_error() -> None:
     assert "format_unrepaired" in state.flags
 
 
-def test_unrepaired_word_limit_details_include_accessions(monkeypatch) -> None:
+def test_spaced_accessions_do_not_trigger_word_limit_after_pre_validation_override(
+    monkeypatch,
+) -> None:
     cfg = _load_stub_config()
     cfg["limits"]["max_format_repairs"] = 0
     cfg["limits"]["field_word_limits"] = {
@@ -149,7 +151,7 @@ def test_unrepaired_word_limit_details_include_accessions(monkeypatch) -> None:
     record = {
         "gsm_accession": "GSM7091755",
         "gse_accession": "GSE227108",
-        "context_text": "Lung samples profiled with RNA-seq.",
+        "context_text": "Lung influenza samples profiled with RNA-seq.",
     }
     outputs = [
         _make_output(
@@ -157,6 +159,45 @@ def test_unrepaired_word_limit_details_include_accessions(monkeypatch) -> None:
             gsm_accession="GSM7 0 9 1 7 5 6",
         )
     ]
+    fake_client = FakeLLMClient(outputs)
+    def _no_failures(state, _parsed_output, _context_text, _cfg):
+        state.semantic_errors = {}
+        state.ontology_failures = {}
+        state.consistency_flags = []
+    monkeypatch.setattr(
+        run_single_module,
+        "_update_validation_state",
+        _no_failures,
+    )
+    monkeypatch.setattr(
+        run_single_module,
+        "create_llm_client",
+        lambda _cfg: fake_client,
+    )
+
+    _, audit_record, flagged = run_single_from_context_record(record, cfg)
+
+    assert flagged is False
+    assert audit_record["validation"]["format_errors"] == []
+    assert audit_record["validation"]["format_error_details"] == []
+    assert "format_unrepaired" not in audit_record["flags"]
+    assert len(audit_record["llm_raw_outputs"]) == 1
+    assert audit_record["llm_parsed_outputs"][0]["gse_accession"] == "GSE227108"
+    assert audit_record["llm_parsed_outputs"][0]["gsm_accession"] == "GSM7091755"
+    assert audit_record["final_output"]["gse_accession"] == "GSE227108"
+    assert audit_record["final_output"]["gsm_accession"] == "GSM7091755"
+
+
+def test_non_accession_word_limit_still_triggers(monkeypatch) -> None:
+    cfg = _load_stub_config()
+    cfg["limits"]["max_format_repairs"] = 0
+    cfg["limits"]["field_word_limits"] = {"disease": 2, "treatment": 0}
+    record = {
+        "gsm_accession": "GSM001122",
+        "gse_accession": "GSE001122",
+        "context_text": "Validation context text.",
+    }
+    outputs = [_make_output(disease="very long disease label")]
     fake_client = FakeLLMClient(outputs)
     monkeypatch.setattr(
         run_single_module,
@@ -172,16 +213,9 @@ def test_unrepaired_word_limit_details_include_accessions(monkeypatch) -> None:
     assert audit_record["validation"]["format_error_details"] == [
         {
             "code": ERROR_WORD_LIMIT,
-            "field": "gse_accession",
-            "limit_used": 5,
-            "observed_word_count": 6,
+            "field": "disease",
+            "limit_used": 2,
+            "observed_word_count": 4,
             "stage": "initial",
-        },
-        {
-            "code": ERROR_WORD_LIMIT,
-            "field": "gsm_accession",
-            "limit_used": 5,
-            "observed_word_count": 7,
-            "stage": "initial",
-        },
+        }
     ]

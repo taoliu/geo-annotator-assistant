@@ -234,6 +234,7 @@ def validate_format(
     word_limits: Optional[Dict[str, int]] = None,
     salvage_limit: Optional[int] = None,
     repair_recorder: Optional[Callable[[Dict[str, int | str]], None]] = None,
+    post_parse_transform: Optional[Callable[[Dict[str, Any]], Dict[str, Any] | None]] = None,
 ) -> Tuple[Optional[Dict[str, str]], List[str]]:
     """Validate raw LLM output format; returns (parsed_output, errors)."""
     errors: set[str] = set()
@@ -265,6 +266,12 @@ def validate_format(
                 repair_recorder(meta)
     if not isinstance(obj, dict):
         return None, [ERROR_NOT_OBJECT]
+    if post_parse_transform is not None:
+        transformed = post_parse_transform(obj)
+        if transformed is not None:
+            obj = transformed
+        if not isinstance(obj, dict):
+            return None, [ERROR_NOT_OBJECT]
 
     keys = set(obj.keys())
     exp = set(expected_keys)

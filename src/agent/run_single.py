@@ -230,6 +230,18 @@ def _set_format_validation_results(
     )
 
 
+def _override_accessions_pre_validation(
+    parsed_output: Dict[str, Any],
+    *,
+    gse_accession: Optional[str],
+    gsm_accession: str,
+) -> Dict[str, Any]:
+    if gse_accession:
+        parsed_output["gse_accession"] = gse_accession
+    parsed_output["gsm_accession"] = gsm_accession
+    return parsed_output
+
+
 def _format_error_fields(
     parsed_output: Dict[str, str],
     format_errors: List[str],
@@ -532,6 +544,11 @@ def _generate_with_format_repairs(
         word_limits=word_limits,
         salvage_limit=salvage_limit,
         repair_recorder=_record_salvage,
+        post_parse_transform=lambda parsed: _override_accessions_pre_validation(
+            parsed,
+            gse_accession=state.gse_accession,
+            gsm_accession=state.gsm_accession,
+        ),
     )
     _set_format_validation_results(
         state,
@@ -568,6 +585,11 @@ def _generate_with_format_repairs(
             word_limits=word_limits,
             salvage_limit=salvage_limit,
             repair_recorder=_record_salvage,
+            post_parse_transform=lambda parsed: _override_accessions_pre_validation(
+                parsed,
+                gse_accession=state.gse_accession,
+                gsm_accession=state.gsm_accession,
+            ),
         )
         _set_format_validation_results(
             state,
@@ -701,7 +723,15 @@ def _run_decision_repairs(
             raw_result = llm_client.generate(request)
             raw_output = raw_result.text
             _record_llm_output(state, raw_output, cache_hit=False)
-            parsed_output, format_errors = validate_format(raw_output, REQUIRED_KEYS)
+            parsed_output, format_errors = validate_format(
+                raw_output,
+                REQUIRED_KEYS,
+                post_parse_transform=lambda parsed: _override_accessions_pre_validation(
+                    parsed,
+                    gse_accession=state.gse_accession,
+                    gsm_accession=state.gsm_accession,
+                ),
+            )
             _set_format_validation_results(
                 state,
                 parsed_output,
