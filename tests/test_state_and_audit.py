@@ -27,6 +27,7 @@ def test_pipeline_state_defaults() -> None:
     assert state.validation_cache_hit is False
     assert state.grounding_cache_hit is False
     assert state.format_errors == []
+    assert state.format_error_details == []
     assert state.semantic_errors == {}
     assert state.consistency_flags == []
     assert state.ontology_matches == {}
@@ -70,6 +71,7 @@ def test_audit_record_json_and_timestamp() -> None:
     )
     record = build_audit_record(state)
     assert record["validation"]["ontology_matches"]["tissue_type"]["ontology"] == "EFO"
+    assert record["validation"]["format_error_details"] == []
 
     timestamp = record["timestamp"]
     assert "T" in timestamp

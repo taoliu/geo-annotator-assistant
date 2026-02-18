@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 ERROR_INVALID_JSON = "invalid_json"
 ERROR_NOT_OBJECT = "not_object"
@@ -171,6 +171,62 @@ def _ordered_errors(seen: set[str]) -> List[str]:
     return [code for code in _ERROR_ORDER if code in seen]
 
 
+def _word_limit_for_field(
+    field: str,
+    word_limits: Optional[Dict[str, int]],
+) -> int:
+    limit = 5
+    if isinstance(word_limits, dict):
+        limit = word_limits.get(field, 5)
+    try:
+        return int(limit)
+    except (TypeError, ValueError):
+        return 5
+
+
+def build_format_error_details(
+    parsed_output: Optional[Dict[str, str]],
+    format_errors: List[str],
+    expected_keys: List[str],
+    *,
+    stage: str,
+    word_limits: Optional[Dict[str, int]] = None,
+) -> List[Dict[str, Any]]:
+    """Build deterministic per-field attribution details for format errors."""
+    if not isinstance(parsed_output, dict) or not format_errors:
+        return []
+
+    details: List[Dict[str, Any]] = []
+    error_set = set(format_errors)
+    field_index = {field: idx for idx, field in enumerate(expected_keys)}
+
+    if ERROR_WORD_LIMIT in error_set:
+        for field in expected_keys:
+            value = parsed_output.get(field)
+            if not isinstance(value, str):
+                continue
+            limit = _word_limit_for_field(field, word_limits)
+            observed = _word_count(value)
+            if limit > 0 and observed > limit:
+                details.append(
+                    {
+                        "code": ERROR_WORD_LIMIT,
+                        "field": field,
+                        "limit_used": limit,
+                        "observed_word_count": observed,
+                        "stage": stage,
+                    }
+                )
+
+    details.sort(
+        key=lambda item: (
+            str(item.get("code") or ""),
+            field_index.get(str(item.get("field") or ""), len(expected_keys)),
+        )
+    )
+    return details
+
+
 def validate_format(
     raw_output: str,
     expected_keys: List[str],
@@ -231,9 +287,7 @@ def validate_format(
         if not v2:
             errors.add(ERROR_EMPTY_VALUE)
             continue
-        limit = 5
-        if word_limits is not None:
-            limit = word_limits.get(k, 5)
+        limit = _word_limit_for_field(k, word_limits)
         if limit > 0 and _word_count(v2) > limit:
             errors.add(ERROR_WORD_LIMIT)
         parsed[k] = v2

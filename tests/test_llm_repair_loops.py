@@ -13,6 +13,7 @@ from agent.config import load_config
 from agent.run_single import run_single_from_context_record
 import agent.run_single as run_single_module
 from llm.base import LLMRequest, LLMResult, compute_request_fingerprint
+from validator.format_validator import ERROR_WORD_LIMIT
 
 
 class FakeLLMClient:
@@ -171,3 +172,39 @@ def test_unrepaired_format_flags(monkeypatch) -> None:
     assert flagged is True
     assert audit_record["final_decision"] == "FLAGGED"
     assert "format_unrepaired" in audit_record["flags"]
+
+
+def test_format_error_details_stage_format_repair(monkeypatch) -> None:
+    cfg = _load_stub_config()
+    cfg["limits"]["max_format_repairs"] = 1
+    cfg["limits"]["field_word_limits"] = {"treatment": 2}
+    record = {
+        "gsm_accession": "GSM111999",
+        "gse_accession": "GSE111999",
+        "context_text": "Series Accession: GSE111999\nSample ID: GSM111999\n",
+    }
+
+    outputs = [
+        _make_output(treatment="too many words here"),
+        _make_output(treatment="still too many words"),
+    ]
+    fake_client = FakeLLMClient(outputs)
+    monkeypatch.setattr(
+        run_single_module,
+        "create_llm_client",
+        lambda _cfg: fake_client,
+    )
+
+    _, audit_record, flagged = run_single_from_context_record(record, cfg)
+
+    assert flagged is True
+    assert ERROR_WORD_LIMIT in audit_record["validation"]["format_errors"]
+    assert audit_record["validation"]["format_error_details"] == [
+        {
+            "code": ERROR_WORD_LIMIT,
+            "field": "treatment",
+            "limit_used": 2,
+            "observed_word_count": 4,
+            "stage": "format_repair",
+        }
+    ]

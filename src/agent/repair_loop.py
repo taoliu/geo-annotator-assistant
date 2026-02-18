@@ -9,7 +9,7 @@ from typing import Callable, Dict, List, Optional
 from agent.accession import override_accessions
 from agent.state import PipelineState
 from llm.base import LLMRequest
-from validator.format_validator import validate_format
+from validator.format_validator import build_format_error_details, validate_format
 from validator.decision_engine import decide_next_action
 from validator.consistency_validator import HEALTHY_DISEASE_CONFLICT
 
@@ -79,6 +79,7 @@ def _clear_failures_for_field(state: PipelineState, field: str) -> None:
     state.ontology_failures.pop(field, None)
     if field == _FORMAT_FIELD:
         state.format_errors = []
+        state.format_error_details = []
     if field == _CONSISTENCY_FIELD:
         state.consistency_flags = []
 
@@ -337,6 +338,13 @@ def apply_repairs(
                 repair_recorder=_record_salvage,
             )
             state.format_errors = format_errors
+            state.format_error_details = build_format_error_details(
+                parsed_output,
+                format_errors,
+                _REQUIRED_KEYS,
+                stage="repair_loop",
+                word_limits=None,
+            )
             if parsed_output is not None:
                 parsed_output = override_accessions(
                     parsed_output,

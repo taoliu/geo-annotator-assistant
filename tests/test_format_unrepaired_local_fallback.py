@@ -90,6 +90,15 @@ def test_unrepaired_format_error_is_field_local(monkeypatch) -> None:
     assert output["disease"] == "Influenza"
     assert output["treatment"] == "None"
     assert ERROR_WORD_LIMIT in audit_record["validation"]["format_errors"]
+    assert audit_record["validation"]["format_error_details"] == [
+        {
+            "code": ERROR_WORD_LIMIT,
+            "field": "treatment",
+            "limit_used": 2,
+            "observed_word_count": 4,
+            "stage": "initial",
+        }
+    ]
 
 
 def test_locked_field_survives_unrepaired_format_error() -> None:
@@ -127,3 +136,52 @@ def test_locked_field_survives_unrepaired_format_error() -> None:
     assert state.final_output["data_type"] == "RNA-seq data"
     assert state.final_decision == "FLAGGED"
     assert "format_unrepaired" in state.flags
+
+
+def test_unrepaired_word_limit_details_include_accessions(monkeypatch) -> None:
+    cfg = _load_stub_config()
+    cfg["limits"]["max_format_repairs"] = 0
+    cfg["limits"]["field_word_limits"] = {
+        "tissue_type": 10,
+        "disease": 10,
+        "treatment": 0,
+    }
+    record = {
+        "gsm_accession": "GSM7091755",
+        "gse_accession": "GSE227108",
+        "context_text": "Lung samples profiled with RNA-seq.",
+    }
+    outputs = [
+        _make_output(
+            gse_accession="GSE2 7 1 0 8 9",
+            gsm_accession="GSM7 0 9 1 7 5 6",
+        )
+    ]
+    fake_client = FakeLLMClient(outputs)
+    monkeypatch.setattr(
+        run_single_module,
+        "create_llm_client",
+        lambda _cfg: fake_client,
+    )
+
+    _, audit_record, flagged = run_single_from_context_record(record, cfg)
+
+    assert flagged is True
+    assert audit_record["validation"]["format_errors"] == [ERROR_WORD_LIMIT]
+    assert "format_unrepaired" in audit_record["flags"]
+    assert audit_record["validation"]["format_error_details"] == [
+        {
+            "code": ERROR_WORD_LIMIT,
+            "field": "gse_accession",
+            "limit_used": 5,
+            "observed_word_count": 6,
+            "stage": "initial",
+        },
+        {
+            "code": ERROR_WORD_LIMIT,
+            "field": "gsm_accession",
+            "limit_used": 5,
+            "observed_word_count": 7,
+            "stage": "initial",
+        },
+    ]

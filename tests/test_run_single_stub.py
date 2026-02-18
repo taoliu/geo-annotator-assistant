@@ -41,6 +41,7 @@ def test_run_single_stub_accepts() -> None:
     validation = audit_record["validation"]
     for key in (
         "format_errors",
+        "format_error_details",
         "semantic_errors",
         "consistency_flags",
         "ontology_matches",

@@ -86,6 +86,7 @@ def build_audit_record(state: PipelineState) -> Dict[str, Any]:
         "llm_parsed_outputs": state_dict["llm_parsed_outputs"],
         "validation": {
             "format_errors": state_dict["format_errors"],
+            "format_error_details": state_dict.get("format_error_details", []),
             "semantic_errors": state_dict["semantic_errors"],
             "consistency_flags": state_dict["consistency_flags"],
             "ontology_matches": state_dict["ontology_matches"],

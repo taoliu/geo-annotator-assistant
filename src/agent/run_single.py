@@ -50,6 +50,7 @@ from validator.format_validator import (
     ERROR_MISSING_KEYS,
     ERROR_NON_STRING,
     ERROR_WORD_LIMIT,
+    build_format_error_details,
     validate_format,
 )
 from validator.ontology_validator import ground_all_fields
@@ -209,6 +210,24 @@ def _normalize_output(
 
 def _word_count(value: str) -> int:
     return len([token for token in value.strip().split() if token])
+
+
+def _set_format_validation_results(
+    state: PipelineState,
+    parsed_output: Optional[Dict[str, str]],
+    format_errors: List[str],
+    *,
+    stage: str,
+    word_limits: Optional[Dict[str, int]] = None,
+) -> None:
+    state.format_errors = list(format_errors)
+    state.format_error_details = build_format_error_details(
+        parsed_output,
+        state.format_errors,
+        REQUIRED_KEYS,
+        stage=stage,
+        word_limits=word_limits,
+    )
 
 
 def _format_error_fields(
@@ -450,6 +469,7 @@ def _generate_with_format_repairs(
         state.repair_history = [dict(item) for item in entry.repair_history]
         state.attempts_by_field = dict(entry.attempts_by_field)
         state.terminal_fallback_fields = set(entry.terminal_fallback_fields)
+        state.format_error_details = [dict(item) for item in entry.format_error_details]
         state.semantic_errors = {
             field: list(errors) for field, errors in entry.semantic_errors.items()
         }
@@ -513,6 +533,13 @@ def _generate_with_format_repairs(
         salvage_limit=salvage_limit,
         repair_recorder=_record_salvage,
     )
+    _set_format_validation_results(
+        state,
+        parsed_output,
+        format_errors,
+        stage="initial",
+        word_limits=word_limits if isinstance(word_limits, dict) else None,
+    )
     if parsed_output is not None:
         parsed_output = override_accessions(
             parsed_output,
@@ -541,6 +568,13 @@ def _generate_with_format_repairs(
             word_limits=word_limits,
             salvage_limit=salvage_limit,
             repair_recorder=_record_salvage,
+        )
+        _set_format_validation_results(
+            state,
+            parsed_output,
+            format_errors,
+            stage="format_repair",
+            word_limits=word_limits if isinstance(word_limits, dict) else None,
         )
         if parsed_output is not None:
             parsed_output = override_accessions(
@@ -629,6 +663,7 @@ def _run_decision_repairs(
                 }
             )
             state.format_errors = []
+            state.format_error_details = []
             _update_validation_state(state, state.final_output, context_text, cfg)
             continue
 
@@ -667,7 +702,13 @@ def _run_decision_repairs(
             raw_output = raw_result.text
             _record_llm_output(state, raw_output, cache_hit=False)
             parsed_output, format_errors = validate_format(raw_output, REQUIRED_KEYS)
-            state.format_errors = format_errors
+            _set_format_validation_results(
+                state,
+                parsed_output,
+                format_errors,
+                stage="repair_loop",
+                word_limits=None,
+            )
             if parsed_output is not None:
                 parsed_output = override_accessions(
                     parsed_output,
@@ -680,6 +721,7 @@ def _run_decision_repairs(
 
             merge_repair_output(state, parsed_output)
             state.format_errors = []
+            state.format_error_details = []
             _update_validation_state(state, state.final_output, context_text, cfg)
             continue
 
@@ -720,7 +762,7 @@ def _run_llm_pipeline(
         request_builder,
         llm_cache=llm_cache,
     )
-    state.format_errors = format_errors
+    state.format_errors = list(format_errors)
     if parsed_output is None:
         state.final_decision = "FLAGGED"
         if "format_unrepaired" not in state.flags:
@@ -747,6 +789,7 @@ def _run_llm_pipeline(
     if state.final_output is None:
         state.final_output = dict(parsed_output)
     state.format_errors = []
+    state.format_error_details = []
     if not state.validation_cache_hit:
         _update_validation_state(state, state.final_output, context_text, cfg)
     elif state.final_output is not None and state.final_decision is not None:
@@ -762,6 +805,7 @@ def _run_llm_pipeline(
     )
     def _refresh_validation(current_state: PipelineState) -> None:
         current_state.format_errors = []
+        current_state.format_error_details = []
         _update_validation_state(
             current_state,
             current_state.final_output or {},
@@ -817,6 +861,7 @@ def _run_llm_pipeline(
                 dict(item) for item in state.llm_parsed_outputs[parsed_start:]
             ],
             format_errors=list(state.format_errors),
+            format_error_details=[dict(item) for item in state.format_error_details],
             repair_history=[dict(item) for item in state.repair_history[repair_start:]],
             semantic_errors={
                 field: list(errors)

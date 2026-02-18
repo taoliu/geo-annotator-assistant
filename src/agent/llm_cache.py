@@ -16,6 +16,7 @@ class LLMCacheEntry:
     parsed_outputs: list[Dict[str, Any]]
     format_errors: list[str]
     repair_history: list[Dict[str, Any]]
+    format_error_details: list[Dict[str, Any]] = field(default_factory=list)
     semantic_errors: Dict[str, list[str]] = field(default_factory=dict)
     consistency_flags: list[str] = field(default_factory=list)
     ontology_matches: Dict[str, Any] = field(default_factory=dict)

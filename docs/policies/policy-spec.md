@@ -7,6 +7,7 @@ This document describes **current behavior** of the GEO GSM Annotator Agent as i
 Execution order (see `src/agent/run_single.py`, `src/agent/repair_loop.py`):
 1. **LLM raw output** (prompt `prompts/label_v1.txt`) → parse and normalize to 8 required fields.
 2. **Format validation** (`src/validator/format_validator.py`) against required keys and word limits. Includes JSON extraction and truncated treatment salvage.
+   Format errors are routed at record level via `validation.format_errors`; audit-level per-field attribution is emitted in `validation.format_error_details`.
 3. **Semantic validation** (`src/validator/semantic_validator.py`) for field-level plausibility.
 4. **Ontology grounding** (`src/validator/ontology_validator.py` + grounders) for `data_type`, `tissue_type`, `cell_line`, `disease`.
 5. **Consistency validation** (`src/validator/consistency_validator.py`) for cross-field/context conflicts.
@@ -154,6 +155,17 @@ Sources: `src/validator/failure_codes.py`, `spec/decision_table.yaml`, `src/agen
 | gse_outlier_<field> | GSE outlier flag | GSE post-pass | `src/agent/gse_postpass.py` |
 
 Note: consistency flags are also surfaced in audit output; `healthy_disease_conflict` is excluded from failure routing but remains in `consistency_flags`.
+
+### Format Error Attribution (Audit-only)
+- `validation.format_errors` remains the authoritative record-level set used for decision routing.
+- `validation.format_error_details` provides deterministic per-field attribution for format errors without changing routing behavior.
+- Current detail schema:
+  - `code` (format error code),
+  - `field` (triggering field),
+  - `limit_used` (effective per-field word limit),
+  - `observed_word_count` (whitespace-split count),
+  - `stage` (`initial`, `format_repair`, or `repair_loop`).
+- Detail ordering is deterministic: `code` then field order in required output schema.
 
 ## 8. Repair Templates and Fallbacks
 Repair routing is defined by `spec/decision_table.yaml` and executed in `src/agent/repair_loop.py`.

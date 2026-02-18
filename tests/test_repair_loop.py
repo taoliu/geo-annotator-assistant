@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -10,7 +11,9 @@ if str(SRC) not in sys.path:
 
 from agent.repair_loop import apply_repairs
 from agent.state import PipelineState
+from llm.base import LLMResult
 from validator.decision_engine import load_decision_table
+from validator.format_validator import ERROR_WORD_LIMIT
 
 
 def _decision_table() -> dict:
@@ -114,3 +117,64 @@ def test_max_total_repairs_enforced() -> None:
     assert "max_repairs_exceeded" in result.flags
     assert result.attempts_by_field["tissue_type"] == 1
     assert len(result.repair_history) == 1
+
+
+def test_repair_loop_records_format_error_details_for_repair_stage() -> None:
+    class _FakeLLM:
+        def __init__(self, outputs: list[str]) -> None:
+            self._outputs = list(outputs)
+
+        def generate(self, request):
+            text = self._outputs.pop(0)
+            return LLMResult(
+                text=text,
+                request_id=request.request_id,
+                usage=None,
+                transport_meta=None,
+                request_fingerprint=None,
+            )
+
+    state = PipelineState(
+        gsm_accession="GSMRLP",
+        gse_accession="GSERLP",
+        semantic_errors={"disease": ["disease_inferred_without_evidence"]},
+        final_output={"disease": "Unknown"},
+    )
+    llm = _FakeLLM(
+        [
+            json.dumps(
+                {
+                    "gse_accession": "GSERLP",
+                    "gsm_accession": "GSMRLP",
+                    "data_type": "RNA-seq",
+                    "organism": "Homo sapiens",
+                    "tissue_type": "blood",
+                    "cell_line": "No",
+                    "disease": "Healthy",
+                    "treatment": "one two three four five six",
+                },
+                ensure_ascii=True,
+            )
+        ]
+    )
+
+    result = apply_repairs(
+        state,
+        _decision_table(),
+        llm_client=llm,
+        context_text="ctx",
+        prompt_loader=lambda _name: "repair prompt",
+        max_total_repairs=1,
+    )
+
+    assert result.final_decision == "FLAGGED"
+    assert ERROR_WORD_LIMIT in result.format_errors
+    assert result.format_error_details == [
+        {
+            "code": ERROR_WORD_LIMIT,
+            "field": "treatment",
+            "limit_used": 5,
+            "observed_word_count": 6,
+            "stage": "repair_loop",
+        }
+    ]

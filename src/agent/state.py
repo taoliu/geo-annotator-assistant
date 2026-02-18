@@ -32,6 +32,7 @@ class PipelineState:
     grounding_cache_hit: bool = False
 
     format_errors: List[str] = field(default_factory=list)
+    format_error_details: List[Dict[str, Any]] = field(default_factory=list)
     semantic_errors: Dict[str, List[str]] = field(default_factory=dict)
     consistency_flags: List[str] = field(default_factory=list)
     ontology_matches: Dict[str, Any] = field(default_factory=dict)
@@ -63,6 +64,7 @@ class PipelineState:
             "validation_cache_hit": self.validation_cache_hit,
             "grounding_cache_hit": self.grounding_cache_hit,
             "format_errors": list(self.format_errors),
+            "format_error_details": [dict(item) for item in self.format_error_details],
             "semantic_errors": {
                 field_name: list(errors)
                 for field_name, errors in self.semantic_errors.items()

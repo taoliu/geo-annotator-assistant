@@ -16,6 +16,7 @@ from validator.format_validator import (
     ERROR_NON_STRING,
     ERROR_NOT_OBJECT,
     ERROR_WORD_LIMIT,
+    build_format_error_details,
     validate_format,
 )
 
@@ -86,3 +87,31 @@ def test_happy_path() -> None:
     parsed, errors = validate_format('{"a": " ok ", "b": "two words"}', ["a", "b"])
     assert parsed == {"a": "ok", "b": "two words"}
     assert errors == []
+
+
+def test_format_error_details_word_limit_default_fields() -> None:
+    expected_keys = ["gse_accession", "gsm_accession", "tissue_type", "disease", "treatment"]
+    parsed = {
+        "gse_accession": "GSE2 7 1 0 8",
+        "gsm_accession": "GSM7 0 9 1 7 5",
+        "tissue_type": "Lung",
+        "disease": "Healthy",
+        "treatment": "None",
+    }
+    details = build_format_error_details(
+        parsed,
+        [ERROR_WORD_LIMIT],
+        expected_keys,
+        stage="initial",
+        word_limits={"tissue_type": 10, "disease": 10, "treatment": 0},
+    )
+
+    assert details == [
+        {
+            "code": ERROR_WORD_LIMIT,
+            "field": "gsm_accession",
+            "limit_used": 5,
+            "observed_word_count": 6,
+            "stage": "initial",
+        }
+    ]
