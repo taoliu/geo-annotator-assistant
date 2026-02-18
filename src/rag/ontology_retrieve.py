@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import json
 import os
 import re
+import sqlite3
 from typing import List, Optional, Sequence
 
 from rag.chroma_client import build_embedding_function, get_chroma_collection
@@ -33,6 +34,8 @@ _ID_TOKEN_RE = re.compile(r"\b[A-Z]{2,10}:[A-Za-z0-9._-]+\b")
 _HYPHEN_TOKEN_RE = re.compile(r"\b[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)+\b")
 _KEEP_CHARS_RE = re.compile(r"[^a-z0-9-]+")
 _MULTI_DASH_RE = re.compile(r"-{2,}")
+_EXACT_PUNCT_RE = re.compile(r"[-_/,.:]")
+_NON_ALNUM_RE = re.compile(r"[^a-z0-9 ]+")
 
 _SOURCE_FIELD_MAP = {
     "Cellosaurus": "cell_line",
@@ -88,6 +91,116 @@ def normalize_exact_variants(value: str) -> dict[str, str]:
     }
 
 
+def _normalize_exact_match_text(text: str) -> str:
+    if not text:
+        return ""
+    normalized = text.strip().lower()
+    normalized = _EXACT_PUNCT_RE.sub(" ", normalized)
+    normalized = _NON_ALNUM_RE.sub(" ", normalized)
+    normalized = _WS_RE.sub(" ", normalized).strip()
+    return normalized
+
+
+def _singularize_token(token: str) -> str:
+    if token.endswith("ies") and len(token) > 3:
+        return f"{token[:-3]}y"
+    if token.endswith("es") and len(token) > 2:
+        return token[:-2]
+    if token.endswith("s") and len(token) > 3:
+        return token[:-1]
+    return token
+
+
+def _pluralize_token(token: str) -> str:
+    if not token:
+        return token
+    if token.endswith("y") and len(token) > 2 and token[-2] not in "aeiou":
+        return f"{token[:-1]}ies"
+    if token.endswith(("s", "x", "z", "ch", "sh")):
+        return f"{token}es"
+    return f"{token}s"
+
+
+def _expand_exact_query_variants(value: str) -> set[str]:
+    normalized = _normalize_exact_match_text(value)
+    if not normalized:
+        return set()
+    variants = {normalized}
+    tokens = normalized.split()
+    if not tokens:
+        return variants
+    last = tokens[-1]
+    singular = _singularize_token(last)
+    plural = _pluralize_token(last)
+    for variant in {singular, plural}:
+        if variant and variant != last:
+            variants.add(" ".join(tokens[:-1] + [variant]))
+    return variants
+
+
+def _lookup_exact_synonym_ids(
+    sqlite_path: str,
+    source: str,
+    query_candidate: str,
+) -> List[str]:
+    if not sqlite_path or not os.path.isfile(sqlite_path) or not source:
+        return []
+    normalized_query = _normalize_exact_match_text(query_candidate)
+    if not normalized_query:
+        return []
+    normalized_variants = _expand_exact_query_variants(query_candidate)
+    if not normalized_variants:
+        return []
+    tokens = [token for token in normalized_query.split() if token]
+    if not tokens:
+        return []
+
+    token_variant_groups: List[List[str]] = []
+    for token in tokens:
+        variants = []
+        for variant in (token, _singularize_token(token), _pluralize_token(token)):
+            cleaned = (variant or "").strip()
+            if cleaned and cleaned not in variants:
+                variants.append(cleaned)
+        if variants:
+            token_variant_groups.append(variants)
+
+    like_groups: List[str] = []
+    params = [source]
+    for variants in token_variant_groups:
+        like_groups.append(
+            "(" + " OR ".join(["lower(syn.string_value) LIKE ?" for _ in variants]) + ")"
+        )
+        params.extend([f"%{variant}%" for variant in variants])
+
+    like_clause = " AND ".join(like_groups)
+    sql = (
+        "SELECT e.embedding_id, syn.string_value "
+        "FROM embeddings e "
+        "JOIN embedding_metadata src ON src.id = e.id AND src.key = 'source' "
+        "JOIN embedding_metadata syn ON syn.id = e.id AND syn.key = 'synonyms' "
+        "WHERE src.string_value = ? "
+        "AND syn.string_value IS NOT NULL "
+    )
+    if like_clause:
+        sql += f"AND {like_clause} "
+    sql += "ORDER BY e.embedding_id"
+
+    matched_ids: List[str] = []
+    try:
+        with sqlite3.connect(f"file:{sqlite_path}?mode=ro", uri=True) as conn:
+            cur = conn.execute(sql, params)
+            for embedding_id, synonym_blob in cur.fetchall():
+                synonyms = _coerce_synonyms(synonym_blob)
+                for synonym in synonyms:
+                    if _normalize_exact_match_text(synonym) in normalized_variants:
+                        matched_ids.append(str(embedding_id))
+                        break
+    except sqlite3.Error:
+        return []
+    return matched_ids
+
+
 def _coerce_synonyms(value) -> List[str]:
     if isinstance(value, list):
         return [str(item).strip() for item in value if item is not None and str(item).strip()]
@@ -97,20 +210,12 @@ def _coerce_synonyms(value) -> List[str]:
         s = value.strip()
         if not s:
             return []
-        if s.startswith("[") and s.endswith("]"):
-            try:
-                parsed = json.loads(s)
-            except json.JSONDecodeError:
-                parsed = None
-            if isinstance(parsed, list):
-                return [
-                    str(item).strip()
-                    for item in parsed
-                    if item is not None and str(item).strip()
-                ]
-            if isinstance(parsed, str):
-                parsed_value = parsed.strip()
-                return [parsed_value] if parsed_value else []
+        try:
+            parsed = json.loads(s)
+        except json.JSONDecodeError:
+            parsed = None
+        if parsed is not None and parsed != value:
+            return _coerce_synonyms(parsed)
         if "," in s:
             parts = [p.strip() for p in s.split(",")]
             return [p for p in parts if p]
@@ -346,6 +451,28 @@ def retrieve_ontology_candidates(
             )
             if meta_candidates:
                 return _sort_candidates_by_term_id(meta_candidates)[:top_k]
+
+        if source == "NCI Thesaurus":
+            synonym_exact_ids = _lookup_exact_synonym_ids(
+                sqlite_path,
+                source,
+                candidate,
+            )
+            if synonym_exact_ids:
+                synonym_exact_result = _collection_get(
+                    collection,
+                    ids=synonym_exact_ids[:top_k],
+                    include=["metadatas", "documents"],
+                )
+                synonym_exact_candidates = _build_candidates_from_get(
+                    synonym_exact_result,
+                    source,
+                    0.0,
+                    retrieval_mode="synonym_exact_get",
+                    query_candidate=candidate,
+                )
+                if synonym_exact_candidates:
+                    return _sort_candidates_by_term_id(synonym_exact_candidates)[:top_k]
 
     where = {"source": source} if source else None
     embedding_function = build_embedding_function(

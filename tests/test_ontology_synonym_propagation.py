@@ -8,7 +8,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from rag.ontology_retrieve import _build_candidate
+from rag.ontology_retrieve import OntologyCandidate, _build_candidate
 from validator.ontology_match import OntologyThresholds, choose_best_ontology_candidate
 
 
@@ -85,3 +85,28 @@ def test_synonym_exact_tie_break_uses_original_order_on_equal_specificity() -> N
     assert result.best is not None
     assert result.best.term_id == "TEST:0001"
     assert result.confidence == 1.0
+
+
+def test_synonym_exact_matches_when_candidate_synonyms_is_json_string() -> None:
+    candidate = OntologyCandidate(
+        term_id="NCIT:C4913",
+        label="Malignant Female Reproductive System Neoplasm",
+        source="NCI Thesaurus",
+        definition=None,
+        synonyms='["female reproductive cancer", "gynecologic cancer"]',  # type: ignore[arg-type]
+        ancestors=[],
+        distance=0.1,
+        doc_text=None,
+        retrieval_mode="vector_fallback",
+        query_candidate="Gynecologic cancer",
+    )
+
+    thresholds = OntologyThresholds(min_confidence_to_accept=0.80, max_delta_for_ambiguity=0.05)
+    result = choose_best_ontology_candidate("Gynecologic cancer", [candidate], thresholds)
+
+    assert result.status == "MATCHED"
+    assert result.match_type == "synonym_exact"
+    assert result.matched_via == "synonym"
+    assert result.matched_synonym == "gynecologic cancer"
+    assert result.best is not None
+    assert result.best.term_id == "NCIT:C4913"

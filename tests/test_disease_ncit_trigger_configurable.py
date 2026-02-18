@@ -213,6 +213,45 @@ def test_matched_synonym_serializes_cleanly(monkeypatch) -> None:
         assert isinstance(matched_synonym, str)
 
 
+def test_ncit_json_string_synonyms_match_exact_gynecologic_cancer(monkeypatch) -> None:
+    def _fake_retrieve(*, query, source, **kwargs):
+        if source == "NCI Thesaurus":
+            return [
+                OntologyCandidate(
+                    term_id="NCIT:C4913",
+                    label="Malignant Female Reproductive System Neoplasm",
+                    source="NCI Thesaurus",
+                    definition=None,
+                    synonyms='["female reproductive cancer", "gynecologic cancer"]',  # type: ignore[arg-type]
+                    ancestors=[],
+                    distance=0.25,
+                    doc_text=None,
+                    retrieval_mode="vector_fallback",
+                    query_candidate=query,
+                )
+            ]
+        return []
+
+    monkeypatch.setattr(
+        disease_grounder,
+        "retrieve_ontology_candidates",
+        _fake_retrieve,
+    )
+
+    config = _base_rag_config()
+    match = disease_grounder.ground_disease("Gynecologic cancer", "", config)
+
+    assert match.status == "MATCHED"
+    assert match.selected_source == "NCI Thesaurus"
+    assert match.matched_source == "NCI Thesaurus"
+    assert match.matched_term_id == "NCIT:C4913"
+    assert match.matched_label == "Malignant Female Reproductive System Neoplasm"
+    assert match.match_type == "synonym_exact"
+    assert match.matched_via == "synonym"
+    assert match.matched_synonym == "gynecologic cancer"
+    assert match.score == 1.0
+
+
 def test_strip_leading_model_token_for_disease(monkeypatch) -> None:
     calls: list[tuple[str, str]] = []
 

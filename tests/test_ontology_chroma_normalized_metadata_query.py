@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -249,3 +250,106 @@ def test_candidate_extraction_no_token_splitting() -> None:
     assert "Myc-CaP" in candidates
     assert "myc" not in candidates
     assert "cap" not in candidates
+
+
+def test_lookup_exact_synonym_ids_parses_json_string_and_normalizes(tmp_path: Path) -> None:
+    sqlite_path = tmp_path / "chroma.sqlite3"
+    with sqlite3.connect(sqlite_path) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE embeddings (
+                id INTEGER PRIMARY KEY,
+                segment_id TEXT NOT NULL,
+                embedding_id TEXT NOT NULL,
+                seq_id BLOB NOT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (segment_id, embedding_id)
+            );
+            CREATE TABLE embedding_metadata (
+                id INTEGER,
+                key TEXT NOT NULL,
+                string_value TEXT,
+                int_value INTEGER,
+                float_value REAL,
+                bool_value INTEGER,
+                PRIMARY KEY (id, key)
+            );
+            """
+        )
+        conn.execute(
+            "INSERT INTO embeddings (id, segment_id, embedding_id, seq_id) VALUES (1, ?, ?, ?)",
+            ("seg", "NCIT:C4913", b"\x01"),
+        )
+        conn.execute(
+            "INSERT INTO embeddings (id, segment_id, embedding_id, seq_id) VALUES (2, ?, ?, ?)",
+            ("seg", "NCIT:C7000", b"\x02"),
+        )
+        conn.execute(
+            "INSERT INTO embedding_metadata (id, key, string_value) VALUES (1, 'source', 'NCI Thesaurus')"
+        )
+        conn.execute(
+            "INSERT INTO embedding_metadata (id, key, string_value) VALUES (1, 'synonyms', ?)",
+            ('["Malignant Female Reproductive System Tumor", "gynecologic cancer"]',),
+        )
+        conn.execute(
+            "INSERT INTO embedding_metadata (id, key, string_value) VALUES (2, 'source', 'NCI Thesaurus')"
+        )
+        conn.execute(
+            "INSERT INTO embedding_metadata (id, key, string_value) VALUES (2, 'synonyms', ?)",
+            ('["B-Cell Malignancy"]',),
+        )
+
+    gynecologic_ids = ontology_retrieve._lookup_exact_synonym_ids(
+        str(sqlite_path),
+        "NCI Thesaurus",
+        "Gynecologic cancer",
+    )
+    assert gynecologic_ids == ["NCIT:C4913"]
+
+    malignancy_ids = ontology_retrieve._lookup_exact_synonym_ids(
+        str(sqlite_path),
+        "NCI Thesaurus",
+        "B cell malignancies",
+    )
+    assert malignancy_ids == ["NCIT:C7000"]
+
+
+def test_ncit_synonym_exact_ids_short_circuit_vector(monkeypatch, tmp_path: Path) -> None:
+    entries = [
+        {
+            "id": "NCIT:C4913",
+            "meta": {
+                "term_id": "NCIT:C4913",
+                "label": "Malignant Female Reproductive System Neoplasm",
+                "source": "NCI Thesaurus",
+                "synonyms": '["gynecologic cancer"]',
+            },
+            "doc": "Cancer Type: Malignant Female Reproductive System Neoplasm",
+        },
+    ]
+    collection = FakeCollection(entries, raise_on_query=True)
+    monkeypatch.setattr(
+        ontology_retrieve,
+        "get_chroma_collection",
+        lambda *args, **kwargs: collection,
+    )
+    monkeypatch.setattr(
+        ontology_retrieve,
+        "_lookup_exact_synonym_ids",
+        lambda *args, **kwargs: ["NCIT:C4913"],
+    )
+
+    candidates = ontology_retrieve.retrieve_ontology_candidates(
+        query="Gynecologic cancer",
+        source="NCI Thesaurus",
+        persist_path=str(_persist_path(tmp_path)),
+        collection_name="ontology_rag",
+        embedding_model_name="unused",
+        normalize_embeddings=True,
+        top_k=5,
+    )
+
+    assert candidates
+    assert candidates[0].term_id == "NCIT:C4913"
+    assert candidates[0].retrieval_mode == "synonym_exact_get"
+    assert collection.query_calls == 0

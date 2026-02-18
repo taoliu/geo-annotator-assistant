@@ -1,5 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field as dataclass_field
+import json
 import re
 import string
 from typing import Any, Dict, List, Optional
@@ -272,6 +273,28 @@ def _find_exact_synonym(
     return None
 
 
+def _coerce_synonyms(value: Any) -> List[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if item is not None and str(item).strip()]
+    if isinstance(value, (tuple, set)):
+        return [str(item).strip() for item in value if item is not None and str(item).strip()]
+    if isinstance(value, str):
+        s = value.strip()
+        if not s:
+            return []
+        try:
+            parsed = json.loads(s)
+        except json.JSONDecodeError:
+            parsed = None
+        if parsed is not None and parsed != value:
+            return _coerce_synonyms(parsed)
+        if "," in s:
+            parts = [part.strip() for part in s.split(",")]
+            return [part for part in parts if part]
+        return [s]
+    return []
+
+
 def _tokenize(normalized_text: str) -> List[str]:
     if not normalized_text:
         return []
@@ -365,7 +388,7 @@ def choose_best_ontology_candidate(
     ] = []
     for idx, candidate in enumerate(candidates):
         label = candidate.label or ""
-        synonyms = candidate.synonyms or []
+        synonyms = _coerce_synonyms(candidate.synonyms)
         matched_via = None
         matched_synonym = None
         normalized_label_exact = normalize_exact_match_text(label)
