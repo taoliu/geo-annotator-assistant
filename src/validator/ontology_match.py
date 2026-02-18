@@ -1,11 +1,16 @@
 from __future__ import annotations
 from dataclasses import dataclass, field as dataclass_field
-import json
 import re
 import string
 from typing import Any, Dict, List, Optional
 
 from rag.ontology_retrieve import OntologyCandidate
+from validator.ontology_text import (
+    coerce_synonyms,
+    normalize_exact_match_text,
+    normalize_synonyms,
+    synonym_pairs,
+)
 
 _ALLOWED_MATCH_TYPES = {
     "exact",
@@ -13,6 +18,7 @@ _ALLOWED_MATCH_TYPES = {
     "label_exact",
     "label_norm_exact",
     "synonym_exact",
+    "synonym_norm_exact",
     "term_id_exact",
     "jaccard",
     "token_equiv_similarity",
@@ -31,6 +37,7 @@ TERMINAL_EXACT_TYPES = {
     "label_exact",
     "label_norm_exact",
     "synonym_exact",
+    "synonym_norm_exact",
     "term_id_exact",
 }
 
@@ -40,8 +47,6 @@ def is_terminal_exact(status: str, score: float, match_type: str) -> bool:
 
 _PUNCT_TABLE = str.maketrans({char: " " for char in string.punctuation})
 _WS_RE = re.compile(r"\s+")
-_EXACT_PUNCT_RE = re.compile(r"[-_/,.:]")
-_NON_ALNUM_RE = re.compile(r"[^a-z0-9 ]+")
 _PREFIX_PATTERNS = [
     re.compile(r"^\s*[A-Za-z][A-Za-z0-9 _/\-]{0,40}\s*:\s*(.+)$"),
     re.compile(r"^\s*[A-Za-z][A-Za-z0-9 _/\-]{0,40}\s*=\s*(.+)$"),
@@ -212,16 +217,6 @@ def _normalize_text(text: str) -> str:
     return normalized
 
 
-def normalize_exact_match_text(text: str) -> str:
-    if not text:
-        return ""
-    normalized = text.strip().lower()
-    normalized = _EXACT_PUNCT_RE.sub(" ", normalized)
-    normalized = _NON_ALNUM_RE.sub(" ", normalized)
-    normalized = _WS_RE.sub(" ", normalized).strip()
-    return normalized
-
-
 def _singularize_token(token: str) -> str:
     if token.endswith("ies") and len(token) > 3:
         return f"{token[:-3]}y"
@@ -261,38 +256,14 @@ def _expand_exact_variants(normalized_raw: str) -> set[str]:
 
 def _find_exact_synonym(
     normalized_raw_variants: set[str],
-    synonyms: List[str],
+    synonyms: List[tuple[str, str]],
 ) -> Optional[str]:
     if not normalized_raw_variants:
         return None
-    for synonym in synonyms:
-        if not isinstance(synonym, str):
-            continue
-        if normalize_exact_match_text(synonym) in normalized_raw_variants:
+    for synonym, normalized_synonym in synonyms:
+        if normalized_synonym in normalized_raw_variants:
             return synonym
     return None
-
-
-def _coerce_synonyms(value: Any) -> List[str]:
-    if isinstance(value, list):
-        return [str(item).strip() for item in value if item is not None and str(item).strip()]
-    if isinstance(value, (tuple, set)):
-        return [str(item).strip() for item in value if item is not None and str(item).strip()]
-    if isinstance(value, str):
-        s = value.strip()
-        if not s:
-            return []
-        try:
-            parsed = json.loads(s)
-        except json.JSONDecodeError:
-            parsed = None
-        if parsed is not None and parsed != value:
-            return _coerce_synonyms(parsed)
-        if "," in s:
-            parts = [part.strip() for part in s.split(",")]
-            return [part for part in parts if part]
-        return [s]
-    return []
 
 
 def _tokenize(normalized_text: str) -> List[str]:
@@ -388,7 +359,8 @@ def choose_best_ontology_candidate(
     ] = []
     for idx, candidate in enumerate(candidates):
         label = candidate.label or ""
-        synonyms = _coerce_synonyms(candidate.synonyms)
+        synonyms = coerce_synonyms(candidate.synonyms)
+        normalized_synonym_pairs = synonym_pairs(candidate.synonyms)
         matched_via = None
         matched_synonym = None
         normalized_label_exact = normalize_exact_match_text(label)
@@ -405,15 +377,20 @@ def choose_best_ontology_candidate(
             match_type = "label_exact"
             matched_via = "label"
         else:
-            matched_synonym = _find_exact_synonym(normalized_raw_variants, synonyms)
+            matched_synonym = _find_exact_synonym(
+                normalized_raw_variants,
+                normalized_synonym_pairs,
+            )
             if matched_synonym is not None:
                 confidence = 1.0
-                match_type = "synonym_exact"
-                matched_via = "synonym"
+                match_type = "synonym_norm_exact"
+                matched_via = "synonym_norm"
             else:
                 normalized_label = _normalize_text(label)
                 normalized_synonyms = [
-                    _normalize_text(item) for item in synonyms if isinstance(item, str)
+                    _normalize_text(item)
+                    for item in normalize_synonyms(candidate.synonyms)
+                    if isinstance(item, str)
                 ]
                 label_score = _jaccard(raw_tokens, _tokenize(normalized_label))
                 syn_score = 0.0
@@ -458,7 +435,7 @@ def choose_best_ontology_candidate(
         match_rank = 2
         if match_type in {"label_exact", "label_norm_exact"}:
             match_rank = 0
-        elif match_type == "synonym_exact":
+        elif match_type in {"synonym_exact", "synonym_norm_exact"}:
             match_rank = 1
         scored.append(
             (
@@ -481,7 +458,8 @@ def choose_best_ontology_candidate(
     best_confidence, best_match_rank = scored[0][0], scored[0][1]
     if (
         best_confidence == 1.0
-        and scored[0][3] in {"label_exact", "label_norm_exact", "synonym_exact"}
+        and scored[0][3]
+        in {"label_exact", "label_norm_exact", "synonym_exact", "synonym_norm_exact"}
     ):
         tied = [
             item
@@ -561,7 +539,12 @@ def choose_best_ontology_candidate(
         )
 
     status = "MATCHED"
-    if best_match_type in {"label_exact", "label_norm_exact", "synonym_exact"}:
+    if best_match_type in {
+        "label_exact",
+        "label_norm_exact",
+        "synonym_exact",
+        "synonym_norm_exact",
+    }:
         if len(scored) > 1 and not exact_tie_resolved:
             second_confidence = scored[1][0]
             if (

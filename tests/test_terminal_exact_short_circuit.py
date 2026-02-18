@@ -146,7 +146,7 @@ def test_synonym_exact_short_circuit(monkeypatch, tmp_path: Path) -> None:
 
     match = tissue_grounder.ground_tissue_type("heart", "", _config(tmp_path))
     assert match.status == "MATCHED"
-    assert match.match_type == "synonym_exact"
+    assert match.match_type == "synonym_norm_exact"
     assert match.vector_fallback_skipped is True
     assert len(match.alternates) == 1
     assert match.alternates[0]["term_id"] == "UBERON:0003"

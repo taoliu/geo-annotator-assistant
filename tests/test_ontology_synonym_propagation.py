@@ -27,9 +27,9 @@ def test_synonym_propagation_from_metadata() -> None:
     result = choose_best_ontology_candidate("CLL", [candidate], thresholds)
 
     assert result.status == "MATCHED"
-    assert result.match_type == "synonym_exact"
+    assert result.match_type == "synonym_norm_exact"
     assert result.matched_synonym == "CLL"
-    assert result.matched_via == "synonym"
+    assert result.matched_via == "synonym_norm"
     assert result.best is not None
     assert result.best.term_id == "DOID:1040"
     assert result.confidence == 1.0
@@ -55,7 +55,7 @@ def test_synonym_exact_tie_break_prefers_more_specific_label() -> None:
     result = choose_best_ontology_candidate("CLL", [candidate_short, candidate_long], thresholds)
 
     assert result.status == "MATCHED"
-    assert result.match_type == "synonym_exact"
+    assert result.match_type == "synonym_norm_exact"
     assert result.best is not None
     assert result.best.term_id == "DOID:1040"
     assert result.confidence == 1.0
@@ -81,7 +81,7 @@ def test_synonym_exact_tie_break_uses_original_order_on_equal_specificity() -> N
     result = choose_best_ontology_candidate("CLL", [candidate_first, candidate_second], thresholds)
 
     assert result.status == "MATCHED"
-    assert result.match_type == "synonym_exact"
+    assert result.match_type == "synonym_norm_exact"
     assert result.best is not None
     assert result.best.term_id == "TEST:0001"
     assert result.confidence == 1.0
@@ -105,8 +105,8 @@ def test_synonym_exact_matches_when_candidate_synonyms_is_json_string() -> None:
     result = choose_best_ontology_candidate("Gynecologic cancer", [candidate], thresholds)
 
     assert result.status == "MATCHED"
-    assert result.match_type == "synonym_exact"
-    assert result.matched_via == "synonym"
+    assert result.match_type == "synonym_norm_exact"
+    assert result.matched_via == "synonym_norm"
     assert result.matched_synonym == "gynecologic cancer"
     assert result.best is not None
     assert result.best.term_id == "NCIT:C4913"

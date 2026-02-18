@@ -39,7 +39,12 @@ def test_cell_line_exact_tie_break_prefers_raw_label_match() -> None:
     )
 
     assert result.status == "MATCHED"
-    assert result.match_type in {"label_exact", "label_norm_exact", "synonym_exact"}
+    assert result.match_type in {
+        "label_exact",
+        "label_norm_exact",
+        "synonym_exact",
+        "synonym_norm_exact",
+    }
     assert result.best is not None
     assert result.best.term_id == "CVCL:0035"
     assert result.tie_break_rule == "raw_label_exact_match"

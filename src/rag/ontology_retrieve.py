@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import json
 import os
 import re
 import sqlite3
 from typing import List, Optional, Sequence
 
 from rag.chroma_client import build_embedding_function, get_chroma_collection
+from validator.ontology_text import coerce_synonyms, normalize_exact_match_text
 
 
 class OntologyIndexUnavailable(RuntimeError):
@@ -34,8 +34,6 @@ _ID_TOKEN_RE = re.compile(r"\b[A-Z]{2,10}:[A-Za-z0-9._-]+\b")
 _HYPHEN_TOKEN_RE = re.compile(r"\b[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)+\b")
 _KEEP_CHARS_RE = re.compile(r"[^a-z0-9-]+")
 _MULTI_DASH_RE = re.compile(r"-{2,}")
-_EXACT_PUNCT_RE = re.compile(r"[-_/,.:]")
-_NON_ALNUM_RE = re.compile(r"[^a-z0-9 ]+")
 
 _SOURCE_FIELD_MAP = {
     "Cellosaurus": "cell_line",
@@ -91,16 +89,6 @@ def normalize_exact_variants(value: str) -> dict[str, str]:
     }
 
 
-def _normalize_exact_match_text(text: str) -> str:
-    if not text:
-        return ""
-    normalized = text.strip().lower()
-    normalized = _EXACT_PUNCT_RE.sub(" ", normalized)
-    normalized = _NON_ALNUM_RE.sub(" ", normalized)
-    normalized = _WS_RE.sub(" ", normalized).strip()
-    return normalized
-
-
 def _singularize_token(token: str) -> str:
     if token.endswith("ies") and len(token) > 3:
         return f"{token[:-3]}y"
@@ -122,7 +110,7 @@ def _pluralize_token(token: str) -> str:
 
 
 def _expand_exact_query_variants(value: str) -> set[str]:
-    normalized = _normalize_exact_match_text(value)
+    normalized = normalize_exact_match_text(value)
     if not normalized:
         return set()
     variants = {normalized}
@@ -145,7 +133,7 @@ def _lookup_exact_synonym_ids(
 ) -> List[str]:
     if not sqlite_path or not os.path.isfile(sqlite_path) or not source:
         return []
-    normalized_query = _normalize_exact_match_text(query_candidate)
+    normalized_query = normalize_exact_match_text(query_candidate)
     if not normalized_query:
         return []
     normalized_variants = _expand_exact_query_variants(query_candidate)
@@ -191,36 +179,14 @@ def _lookup_exact_synonym_ids(
         with sqlite3.connect(f"file:{sqlite_path}?mode=ro", uri=True) as conn:
             cur = conn.execute(sql, params)
             for embedding_id, synonym_blob in cur.fetchall():
-                synonyms = _coerce_synonyms(synonym_blob)
+                synonyms = coerce_synonyms(synonym_blob)
                 for synonym in synonyms:
-                    if _normalize_exact_match_text(synonym) in normalized_variants:
+                    if normalize_exact_match_text(synonym) in normalized_variants:
                         matched_ids.append(str(embedding_id))
                         break
     except sqlite3.Error:
         return []
     return matched_ids
-
-
-def _coerce_synonyms(value) -> List[str]:
-    if isinstance(value, list):
-        return [str(item).strip() for item in value if item is not None and str(item).strip()]
-    if isinstance(value, (tuple, set)):
-        return [str(item).strip() for item in value if item is not None and str(item).strip()]
-    if isinstance(value, str):
-        s = value.strip()
-        if not s:
-            return []
-        try:
-            parsed = json.loads(s)
-        except json.JSONDecodeError:
-            parsed = None
-        if parsed is not None and parsed != value:
-            return _coerce_synonyms(parsed)
-        if "," in s:
-            parts = [p.strip() for p in s.split(",")]
-            return [p for p in parts if p]
-        return [s]
-    return []
 
 
 def _ensure_list(value) -> List:
@@ -252,7 +218,7 @@ def _build_candidate(
     term_id_value = meta.get("term_id") or term_id
     label = meta.get("label") or ""
     definition = meta.get("definition") or None
-    synonyms = _coerce_synonyms(meta.get("synonyms", []))
+    synonyms = coerce_synonyms(meta.get("synonyms", []))
     ancestors = meta.get("ancestors")
     source_value = meta.get("source") or source
     return OntologyCandidate(
@@ -452,27 +418,26 @@ def retrieve_ontology_candidates(
             if meta_candidates:
                 return _sort_candidates_by_term_id(meta_candidates)[:top_k]
 
-        if source == "NCI Thesaurus":
-            synonym_exact_ids = _lookup_exact_synonym_ids(
-                sqlite_path,
-                source,
-                candidate,
+        synonym_exact_ids = _lookup_exact_synonym_ids(
+            sqlite_path,
+            source,
+            candidate,
+        )
+        if synonym_exact_ids:
+            synonym_exact_result = _collection_get(
+                collection,
+                ids=synonym_exact_ids[:top_k],
+                include=["metadatas", "documents"],
             )
-            if synonym_exact_ids:
-                synonym_exact_result = _collection_get(
-                    collection,
-                    ids=synonym_exact_ids[:top_k],
-                    include=["metadatas", "documents"],
-                )
-                synonym_exact_candidates = _build_candidates_from_get(
-                    synonym_exact_result,
-                    source,
-                    0.0,
-                    retrieval_mode="synonym_exact_get",
-                    query_candidate=candidate,
-                )
-                if synonym_exact_candidates:
-                    return _sort_candidates_by_term_id(synonym_exact_candidates)[:top_k]
+            synonym_exact_candidates = _build_candidates_from_get(
+                synonym_exact_result,
+                source,
+                0.0,
+                retrieval_mode="synonym_exact_get",
+                query_candidate=candidate,
+            )
+            if synonym_exact_candidates:
+                return _sort_candidates_by_term_id(synonym_exact_candidates)[:top_k]
 
     where = {"source": source} if source else None
     embedding_function = build_embedding_function(

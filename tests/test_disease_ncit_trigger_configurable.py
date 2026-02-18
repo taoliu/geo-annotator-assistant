@@ -160,7 +160,7 @@ def test_terminal_exact_ncit_preferred_over_fuzzy_doid(monkeypatch) -> None:
     assert calls[0] == "Human Disease Ontology"
     assert "NCI Thesaurus" in calls
     assert match.selected_source == "NCI Thesaurus"
-    assert match.match_type == "synonym_exact"
+    assert match.match_type == "synonym_norm_exact"
     assert match.score == 1.0
     assert match.matched_label == "B-Cell Malignant Neoplasm"
     assert match.matched_synonym == "B-Cell Malignancy"
@@ -246,8 +246,8 @@ def test_ncit_json_string_synonyms_match_exact_gynecologic_cancer(monkeypatch) -
     assert match.matched_source == "NCI Thesaurus"
     assert match.matched_term_id == "NCIT:C4913"
     assert match.matched_label == "Malignant Female Reproductive System Neoplasm"
-    assert match.match_type == "synonym_exact"
-    assert match.matched_via == "synonym"
+    assert match.match_type == "synonym_norm_exact"
+    assert match.matched_via == "synonym_norm"
     assert match.matched_synonym == "gynecologic cancer"
     assert match.score == 1.0
 

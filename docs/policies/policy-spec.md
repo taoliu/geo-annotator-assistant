@@ -31,6 +31,13 @@ Accession invariants:
 - LLM-predicted accession values are ignored for all downstream validation, repair, and decision logic.
 - Format validation therefore operates on context-authoritative accession values, not raw LLM accession text.
 
+Ontology synonym exact invariants (Ticket #182):
+- Synonym exact matching is required across all ontology sources (`Human Disease Ontology`, `NCI Thesaurus`, `Cellosaurus`, `Uberon Ontology`, `Experimental Factor Ontology`).
+- `metadata["synonyms"]` is parsed uniformly regardless of storage shape (JSON string, list, tuple/set, or empty).
+- Synonyms are normalized with the same exact-match normalizer used for ontology labels (case/lower normalization, whitespace normalization, punctuation and hyphen/space equivalence).
+- Matching order is deterministic and source-uniform: label exact/norm exact → synonym norm exact (`match_type = synonym_norm_exact`, `matched_via = synonym_norm`) → similarity fallback.
+- Deterministic exact synonym hits short-circuit similarity/vector-driven outcomes for candidate selection.
+
 ### data_type
 - **Ontology source**: Experimental Factor Ontology (EFO).
 - **Matching**: exact label/synonym/ID → MATCHED; similarity-based → LOW_CONFIDENCE/AMBIGUOUS; fallback if allowlisted or placeholder.

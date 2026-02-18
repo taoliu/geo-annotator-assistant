@@ -26,8 +26,8 @@ def test_disease_synonym_exact_match() -> None:
     result = choose_best_ontology_candidate("CLL", [candidate], OntologyThresholds())
 
     assert result.status == "MATCHED"
-    assert result.match_type == "synonym_exact"
-    assert result.matched_via == "synonym"
+    assert result.match_type == "synonym_norm_exact"
+    assert result.matched_via == "synonym_norm"
     assert result.matched_synonym == "CLL"
     assert result.confidence == 1.0
 

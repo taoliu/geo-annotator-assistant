@@ -62,6 +62,7 @@ _TERMINAL_EXACT_TYPES = {
     "label_exact",
     "label_norm_exact",
     "synonym_exact",
+    "synonym_norm_exact",
     "term_id_exact",
 }
 

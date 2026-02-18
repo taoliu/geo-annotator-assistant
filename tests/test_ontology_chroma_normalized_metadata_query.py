@@ -285,6 +285,10 @@ def test_lookup_exact_synonym_ids_parses_json_string_and_normalizes(tmp_path: Pa
             ("seg", "NCIT:C7000", b"\x02"),
         )
         conn.execute(
+            "INSERT INTO embeddings (id, segment_id, embedding_id, seq_id) VALUES (3, ?, ?, ?)",
+            ("seg", "CVCL:1511", b"\x03"),
+        )
+        conn.execute(
             "INSERT INTO embedding_metadata (id, key, string_value) VALUES (1, 'source', 'NCI Thesaurus')"
         )
         conn.execute(
@@ -297,6 +301,13 @@ def test_lookup_exact_synonym_ids_parses_json_string_and_normalizes(tmp_path: Pa
         conn.execute(
             "INSERT INTO embedding_metadata (id, key, string_value) VALUES (2, 'synonyms', ?)",
             ('["B-Cell Malignancy"]',),
+        )
+        conn.execute(
+            "INSERT INTO embedding_metadata (id, key, string_value) VALUES (3, 'source', 'Cellosaurus')"
+        )
+        conn.execute(
+            "INSERT INTO embedding_metadata (id, key, string_value) VALUES (3, 'synonyms', ?)",
+            ('["NCI-H1975", "H1975"]',),
         )
 
     gynecologic_ids = ontology_retrieve._lookup_exact_synonym_ids(
@@ -312,6 +323,13 @@ def test_lookup_exact_synonym_ids_parses_json_string_and_normalizes(tmp_path: Pa
         "B cell malignancies",
     )
     assert malignancy_ids == ["NCIT:C7000"]
+
+    h1975_ids = ontology_retrieve._lookup_exact_synonym_ids(
+        str(sqlite_path),
+        "Cellosaurus",
+        "H1975",
+    )
+    assert h1975_ids == ["CVCL:1511"]
 
 
 def test_ncit_synonym_exact_ids_short_circuit_vector(monkeypatch, tmp_path: Path) -> None:
@@ -351,5 +369,49 @@ def test_ncit_synonym_exact_ids_short_circuit_vector(monkeypatch, tmp_path: Path
 
     assert candidates
     assert candidates[0].term_id == "NCIT:C4913"
+    assert candidates[0].retrieval_mode == "synonym_exact_get"
+    assert collection.query_calls == 0
+
+
+def test_cellosaurus_synonym_exact_ids_short_circuit_vector(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    entries = [
+        {
+            "id": "CVCL:1511",
+            "meta": {
+                "term_id": "CVCL:1511",
+                "label": "NCI-H1975",
+                "source": "Cellosaurus",
+                "synonyms": '["H1975"]',
+            },
+            "doc": "Cell line: NCI-H1975",
+        },
+    ]
+    collection = FakeCollection(entries, raise_on_query=True)
+    monkeypatch.setattr(
+        ontology_retrieve,
+        "get_chroma_collection",
+        lambda *args, **kwargs: collection,
+    )
+    monkeypatch.setattr(
+        ontology_retrieve,
+        "_lookup_exact_synonym_ids",
+        lambda *args, **kwargs: ["CVCL:1511"],
+    )
+
+    candidates = ontology_retrieve.retrieve_ontology_candidates(
+        query="H1975",
+        source="Cellosaurus",
+        persist_path=str(_persist_path(tmp_path)),
+        collection_name="ontology_rag",
+        embedding_model_name="unused",
+        normalize_embeddings=True,
+        top_k=5,
+    )
+
+    assert candidates
+    assert candidates[0].term_id == "CVCL:1511"
     assert candidates[0].retrieval_mode == "synonym_exact_get"
     assert collection.query_calls == 0

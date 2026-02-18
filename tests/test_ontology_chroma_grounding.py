@@ -77,8 +77,8 @@ def test_synonym_match(monkeypatch) -> None:
     assert match.status == "MATCHED"
     assert match.matched_term_id == "UBERON:0002"
     assert match.score == 1.0
-    assert match.match_type == "synonym_exact"
-    assert match.matched_via == "synonym"
+    assert match.match_type == "synonym_norm_exact"
+    assert match.matched_via == "synonym_norm"
 
 
 def test_close_tie_ambiguous(monkeypatch) -> None:
