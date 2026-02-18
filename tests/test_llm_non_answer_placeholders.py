@@ -9,6 +9,8 @@ from validator.semantic_validator import semantic_validate
 
 def test_non_answer_placeholder_detection() -> None:
     assert is_llm_non_answer_placeholder("Not sure") is True
+    assert is_llm_non_answer_placeholder("Not Available") is True
+    assert is_llm_non_answer_placeholder("not available") is True
     assert is_llm_non_answer_placeholder("n/a") is True
     assert is_llm_non_answer_placeholder("?") is True
     assert is_llm_non_answer_placeholder("unknown") is True
@@ -21,6 +23,21 @@ def test_ground_all_fields_skips_non_answer_placeholder() -> None:
         "tissue_type": "Blood",
         "cell_line": "No",
         "disease": "Not sure",
+    }
+    matches, failures = ground_all_fields(llm_output, "", {})
+
+    match = matches["disease"]
+    assert match.status == "FALLBACK"
+    assert match.matched_via == "llm_non_answer_placeholder"
+    assert "disease" not in failures
+
+
+def test_ground_all_fields_handles_not_available_disease() -> None:
+    llm_output = {
+        "data_type": "RNA-seq",
+        "tissue_type": "Blood",
+        "cell_line": "No",
+        "disease": "Not Available",
     }
     matches, failures = ground_all_fields(llm_output, "", {})
 

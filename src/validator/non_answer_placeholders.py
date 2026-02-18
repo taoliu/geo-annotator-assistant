@@ -9,6 +9,7 @@ _NON_ANSWER_PLACEHOLDERS = {
     "not sure",
     "not clear",
     "unclear",
+    "not available",
     "n a",
     "na",
     "none",

@@ -104,7 +104,7 @@ Implemented in `src/validator/ontology_validator.py`, `src/validator/grounders/d
 - **Healthy/control phrases (Ticket #92)**: Phrases like "healthy donors" normalized to terminal `Healthy`, lock with flag `disease_normalized_to_healthy`.
 - **Healthy + genotype/strain (Ticket #93)**: If healthy indicators + genotype/strain tokens in non-human context, normalize to `Healthy`, lock with flag `disease_contains_genotype_context`.
 - **Healthy + treatment coexistence (Ticket #181)**: `disease = Healthy` with non-empty `treatment` is biologically valid and non-blocking. The run may emit `healthy_disease_conflict` in `consistency_flags`, but this does not create ontology failure, must not be selected as `primary_failure`, and must not escalate `final_decision`.
-- **LLM non-answer placeholders (Ticket #98)**: `Not sure`, `N/A`, `Unknown`, etc → `Unknown`, lock, and `llm_non_answer_disease` flag.
+- **LLM non-answer placeholders (Ticket #98 / #185)**: `Not sure`, `Not Available`, `N/A`, `Unknown`, etc → `Unknown`, lock, and `llm_non_answer_disease` flag.
 - **NCIT selection**: DOID queried first; NCIT queried only if trigger terms are present; choose higher score with tie-breaking rules (`score_preference_ncit` or `score_tie_prefer_doid`).
 
 ## 5. Tissue Type Policies
