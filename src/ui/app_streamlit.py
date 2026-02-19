@@ -17,7 +17,6 @@ from urllib.parse import quote
 
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 from st_aggrid import AgGrid, DataReturnMode, GridOptionsBuilder, GridUpdateMode, JsCode
 
 from agent import summarize_cli
@@ -58,6 +57,12 @@ from ui.ontology_tooltips import build_composite_tooltip_payload
 from ui.checked import merge_visible_checked_updates
 from ui.dashboard import BADGE_TOOLTIPS, build_dashboard_items
 from ui.evidence import EVIDENCE_FIELDS, extract_field_evidence
+from ui.gse_dropdown import (
+    GseDropdownOptionModel,
+    GseDropdownSummary,
+    build_gse_dropdown_option_models,
+    build_gse_dropdown_summaries,
+)
 from ui.gse_navigation import ensure_active_gse, step_active_gse
 from ui.bulk_edit import (
     apply_bulk_edit,
@@ -214,6 +219,136 @@ def _inject_layout_styles() -> None:
           border: none;
           border-top: 1px solid #e6e0d5;
           margin: 0.2rem 0 0.25rem 0;
+        }
+        .st-key-gse_workload_panel button {
+          width: auto !important;
+          min-width: 0 !important;
+          max-width: none !important;
+          height: auto !important;
+          min-height: 0 !important;
+          display: inline-flex !important;
+          align-items: center !important;
+          line-height: 1.1 !important;
+          padding: 0 !important;
+          border: none !important;
+          outline: none !important;
+          border-radius: 0 !important;
+          box-shadow: none !important;
+          background: transparent !important;
+          color: #2f3646 !important;
+          font-size: 0.78rem !important;
+          font-weight: 400 !important;
+          text-align: left !important;
+          justify-content: flex-start !important;
+          text-decoration: none !important;
+          white-space: nowrap !important;
+        }
+        .st-key-gse_workload_panel div[data-testid="stButton"] {
+          margin: 0 !important;
+          padding: 0 !important;
+          display: flex !important;
+          justify-content: flex-start !important;
+          align-items: center !important;
+        }
+        .st-key-gse_workload_panel button:hover,
+        .st-key-gse_workload_panel button:focus,
+        .st-key-gse_workload_panel button:focus-visible,
+        .st-key-gse_workload_panel button:active {
+          border: none !important;
+          outline: none !important;
+          box-shadow: none !important;
+          background: transparent !important;
+          color: #1f4f8a !important;
+          text-decoration: underline !important;
+        }
+        .st-key-gse_workload_panel button:disabled,
+        .st-key-gse_workload_panel button[disabled],
+        .st-key-gse_workload_panel button[aria-disabled="true"] {
+          color: #2f3646 !important;
+          font-weight: 700 !important;
+          opacity: 1 !important;
+          text-decoration: none !important;
+          cursor: default !important;
+        }
+        .st-key-gse_workload_panel button:disabled p,
+        .st-key-gse_workload_panel button[disabled] p,
+        .st-key-gse_workload_panel button[aria-disabled="true"] p {
+          font-weight: 800 !important;
+          color: #2f3646 !important;
+        }
+        .st-key-gse_workload_panel button p {
+          margin: 0 !important;
+          display: inline-flex !important;
+          align-items: center !important;
+          font-size: 0.78rem !important;
+          font-weight: 400 !important;
+          line-height: 1 !important;
+          color: inherit !important;
+          text-decoration: inherit !important;
+          white-space: nowrap !important;
+        }
+        .st-key-gse_workload_panel [data-testid="stVerticalBlock"] {
+          gap: 0.04rem !important;
+        }
+        .st-key-gse_workload_panel div[data-testid="stLayoutWrapper"] {
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+        .st-key-gse_workload_panel div[data-testid="stElementContainer"] {
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+        .st-key-gse_workload_panel div[data-testid="stElementContainer"] + div[data-testid="stElementContainer"] {
+          margin-top: 0.04rem !important;
+        }
+        .st-key-gse_workload_panel [data-testid="stHorizontalBlock"]:has(button) {
+          border: 1px solid #b9bcc5 !important;
+          border-radius: 0.72rem !important;
+          padding: 0.24rem 0.52rem !important;
+          margin: 0.04rem 0 !important;
+          align-items: center !important;
+          min-height: 2.0rem !important;
+        }
+        .st-key-gse_workload_panel [data-testid="stHorizontalBlock"] {
+          flex-wrap: nowrap !important;
+          align-items: center !important;
+        }
+        .st-key-gse_workload_panel [data-testid="stHorizontalBlock"] > div {
+          flex: 0 0 auto !important;
+          display: flex !important;
+          align-items: center !important;
+          align-self: center !important;
+        }
+        .st-key-gse_workload_panel div[data-testid="stMarkdown"] {
+          display: flex !important;
+          align-items: center !important;
+        }
+        .st-key-gse_workload_panel div[data-testid="stMarkdownContainer"] {
+          display: flex !important;
+          align-items: center !important;
+          min-height: 1.1rem !important;
+        }
+        .st-key-gse_workload_panel div[data-testid="stMarkdownContainer"] > p {
+          margin: 0 !important;
+          display: flex !important;
+          align-items: center !important;
+          min-height: 1.1rem !important;
+          line-height: 1 !important;
+        }
+        .st-key-gse_workload_panel div[data-testid="stHtml"],
+        .st-key-gse_workload_panel div[data-testid="stHTML"] {
+          display: flex !important;
+          align-items: center !important;
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+        .st-key-gse_workload_panel div[data-testid="stHtml"] > div,
+        .st-key-gse_workload_panel div[data-testid="stHTML"] > div {
+          display: flex !important;
+          align-items: center !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          line-height: 1 !important;
         }
         .gse-biology-card {
           background: #fffdfa;
@@ -495,7 +630,6 @@ def _inject_layout_styles() -> None:
         """,
         unsafe_allow_html=True,
     )
-
 def _resolve_input_dir() -> str | None:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--input-dir")
@@ -592,9 +726,82 @@ def _render_filters(rows: list[dict]) -> tuple[str | None, str]:
     return gse_filter, search_text
 
 
+def _file_signature(path: Path) -> tuple[int, int]:
+    if not path.is_file():
+        return (0, 0)
+    stat = path.stat()
+    return (int(stat.st_mtime_ns), int(stat.st_size))
+
+
+def _build_gse_dropdown_cache_key(
+    gse_paths: Mapping[str, InputPaths],
+) -> tuple[tuple[str, str, int, int, str, int, int], ...]:
+    entries: list[tuple[str, str, int, int, str, int, int]] = []
+    for gse in sorted(gse_paths):
+        paths = gse_paths[gse]
+        checked_path = _checked_path(paths)
+        curation_mtime, curation_size = _file_signature(paths.curation_path)
+        checked_mtime, checked_size = _file_signature(checked_path)
+        entries.append(
+            (
+                gse,
+                str(paths.curation_path),
+                curation_mtime,
+                curation_size,
+                str(checked_path),
+                checked_mtime,
+                checked_size,
+            )
+        )
+    return tuple(entries)
+
+
+@st.cache_data(show_spinner=False)
+def _load_gse_dropdown_summaries_cached(
+    cache_key: tuple[tuple[str, str, int, int, str, int, int], ...],
+) -> dict[str, GseDropdownSummary]:
+    summaries: dict[str, GseDropdownSummary] = {}
+    for (
+        gse,
+        curation_path,
+        _curation_mtime,
+        _curation_size,
+        checked_path,
+        _checked_mtime,
+        _checked_size,
+    ) in cache_key:
+        try:
+            curation_records = load_curation_jsonl(curation_path)
+        except Exception:
+            curation_records = []
+        checked_state = _load_checked_jsonl(Path(checked_path), gse)
+        per_gse = build_gse_dropdown_summaries(curation_records, checked_state)
+        summary = per_gse.get(gse)
+        if summary is None:
+            summary = GseDropdownSummary(
+                gse_accession=gse,
+                flagged_count=0,
+                checked_count=0,
+                total_count=0,
+            )
+        summaries[gse] = summary
+    return summaries
+
+
+def _build_gse_dropdown_models(
+    gse_paths: Mapping[str, InputPaths],
+) -> dict[str, GseDropdownOptionModel]:
+    gse_options = sorted(gse_paths.keys())
+    cache_key = _build_gse_dropdown_cache_key(gse_paths)
+    summaries = _load_gse_dropdown_summaries_cached(cache_key)
+    models = build_gse_dropdown_option_models(gse_options, summaries)
+    return {model.gse_accession: model for model in models}
+
+
 def _render_gse_switcher(
     gse_options: list[str],
     skipped: dict[str, str],
+    dropdown_models: Mapping[str, GseDropdownOptionModel],
 ) -> str:
     st.sidebar.header("GSE Selection")
     state_key = "active_gse"
@@ -638,91 +845,92 @@ def _render_gse_switcher(
             return next_active
     if previous and previous != active:
         st.session_state["active_row_idx"] = None
+    quick_target = _render_gse_workload_selector(gse_options, dropdown_models, active)
+    if isinstance(quick_target, str) and quick_target in gse_options and quick_target != active:
+        st.session_state["active_gse_nav_target"] = quick_target
+        st.session_state["active_row_idx"] = None
+        _request_rerun()
+        return quick_target
     if skipped:
         with st.sidebar.expander("Skipped GSE directories", expanded=False):
             for name, reason in sorted(skipped.items()):
                 st.write(f"{name}: {reason}")
-    _inject_active_gse_scroll_script()
     return active
 
 
-def _inject_active_gse_scroll_script() -> None:
-    components.html(
-        """
-        <script>
-        (function() {
-          const doc = window.parent && window.parent.document ? window.parent.document : null;
-          if (!doc) return;
-          const sidebar = doc.querySelector('section[data-testid="stSidebar"]');
-          if (!sidebar) return;
+def _render_gse_workload_selector(
+    gse_options: list[str],
+    dropdown_models: Mapping[str, GseDropdownOptionModel],
+    active_gse: str,
+) -> str | None:
+    with st.sidebar.expander("GSE Workload / Progress", expanded=False):
+        query = st.text_input(
+            "Find GSE",
+            key="active_gse_workload_query",
+            help="Filter GSE accessions in the quick selector.",
+        )
+        query_lower = query.strip().lower()
+        filtered = [
+            gse for gse in gse_options if not query_lower or query_lower in gse.lower()
+        ]
+        if not filtered:
+            st.caption("No matching GSE accessions.")
+            return None
 
-          const selectboxes = sidebar.querySelectorAll('div[data-testid="stSelectbox"]');
-          let activeBox = null;
-          for (const box of selectboxes) {
-            const label = box.querySelector('label');
-            const text = label ? (label.textContent || "") : "";
-            if (text.indexOf("Active GSE") >= 0) {
-              activeBox = box;
-              break;
-            }
-          }
-          if (!activeBox) return;
+        list_container = st.container(height=380, border=True, key="gse_workload_panel")
+        for gse in filtered:
+            model = dropdown_models.get(gse)
+            if model is None:
+                model = GseDropdownOptionModel(
+                    gse_accession=gse,
+                    flagged_count=0,
+                    checked_count=0,
+                    total_count=0,
+                    flagged_ratio="0/0",
+                    checked_ratio="0/0",
+                    fallback_label=f"{gse} 0/0 0/0",
+                )
+            row = list_container.container(
+                horizontal=True,
+                horizontal_alignment="left",
+                vertical_alignment="center",
+                gap=None,
+            )
+            if gse == active_gse:
+                row.button(
+                    gse,
+                    key=f"active_gse_current_{gse}",
+                    disabled=True,
+                )
+            elif row.button(
+                gse,
+                key=f"active_gse_open_{gse}",
+                help="Open this GSE",
+            ):
+                return gse
+            row.html(_gse_badge_row_html(model))
+    return None
 
-          const combobox = activeBox.querySelector('[role="combobox"]');
-          if (!combobox) return;
-          if (combobox.dataset.gseScrollBound === "1") return;
-          combobox.dataset.gseScrollBound = "1";
 
-          const centerSelected = function() {
-            window.setTimeout(function() {
-              const options = doc.querySelectorAll('[role="option"]');
-              let selected = null;
-              for (const option of options) {
-                if (option.getAttribute('aria-selected') === 'true') {
-                  selected = option;
-                  break;
-                }
-              }
-              if (selected && typeof selected.scrollIntoView === "function") {
-                selected.scrollIntoView({ block: "center" });
-              }
-            }, 40);
-          };
-
-          combobox.addEventListener('mousedown', centerSelected);
-          combobox.addEventListener('keydown', function(evt) {
-            const isExpanded = combobox.getAttribute("aria-expanded") === "true";
-            if (!isExpanded && !evt.repeat && (evt.key === "ArrowDown" || evt.key === "ArrowUp")) {
-              const buttons = sidebar.querySelectorAll("button");
-              let prevButton = null;
-              let nextButton = null;
-              for (const button of buttons) {
-                const text = (button.textContent || "").trim();
-                if (text === "◀ Prev GSE") prevButton = button;
-                if (text === "Next GSE ▶") nextButton = button;
-              }
-              if (evt.key === "ArrowDown" && nextButton) {
-                evt.preventDefault();
-                evt.stopPropagation();
-                nextButton.click();
-                return;
-              }
-              if (evt.key === "ArrowUp" && prevButton) {
-                evt.preventDefault();
-                evt.stopPropagation();
-                prevButton.click();
-                return;
-              }
-            }
-            if (evt.key === 'Enter' || evt.key === ' ' || evt.key === 'ArrowDown') {
-              centerSelected();
-            }
-          });
-        })();
-        </script>
-        """,
-        height=0,
-        width=0,
+def _gse_badge_row_html(model: GseDropdownOptionModel) -> str:
+    flagged = html.escape(model.flagged_ratio)
+    checked = html.escape(model.checked_ratio)
+    flagged_full = model.total_count > 0 and model.flagged_count == model.total_count
+    checked_full = model.total_count > 0 and model.checked_count == model.total_count
+    flagged_bg = "#D55E00" if flagged_full else "#F4D8C3"
+    flagged_fg = "#ffffff" if flagged_full else "#7A3200"
+    checked_bg = "#009E73" if checked_full else "#CFEDE3"
+    checked_fg = "#ffffff" if checked_full else "#0B5E48"
+    return (
+        '<div style="display:flex;align-items:center;gap:0.16rem;flex-wrap:nowrap;white-space:nowrap;min-height:1.1rem;">'
+        '<span style="display:inline-flex;align-items:center;justify-content:center;'
+        'height:1.1rem;padding:0 0.43rem;'
+        'border-radius:999px;font-size:0.72rem;font-weight:600;line-height:1;'
+        f'background:{flagged_bg};color:{flagged_fg};">{flagged}</span>'
+        '<span style="display:inline-flex;align-items:center;justify-content:center;'
+        'height:1.1rem;padding:0 0.43rem;'
+        'border-radius:999px;font-size:0.72rem;font-weight:600;line-height:1;'
+        f'background:{checked_bg};color:{checked_fg};">{checked}</span></div>'
     )
 
 
@@ -4269,7 +4477,12 @@ def run_app() -> None:
     active_paths: InputPaths
     if inputs.mode == "multi":
         gse_options = sorted(inputs.gse_paths.keys())
-        active_gse = _render_gse_switcher(gse_options, inputs.skipped)
+        dropdown_models = _build_gse_dropdown_models(inputs.gse_paths)
+        active_gse = _render_gse_switcher(
+            gse_options,
+            inputs.skipped,
+            dropdown_models,
+        )
         _render_export_all_sidebar(inputs)
         active_paths = inputs.gse_paths[active_gse]
     else:
@@ -4358,6 +4571,7 @@ def run_app() -> None:
     saved_overrides = saved_by_gse.get(gse_id, {})
     raw_checked_state = checked_by_gse.get(gse_id, {})
     checked_state = dict(raw_checked_state) if isinstance(raw_checked_state, dict) else {}
+    checked_state_changed = False
     active_row_idx = st.session_state.get("active_row_idx")
     if not isinstance(active_row_idx, int):
         active_row_idx = None
@@ -4461,6 +4675,7 @@ def run_app() -> None:
             checked_by_gse = dict(checked_by_gse)
             checked_by_gse[gse_id] = checked_state
             st.session_state["checked_by_gse"] = checked_by_gse
+            checked_state_changed = True
             if not grid_version_bumped:
                 grid_version = _bump_grid_version()
                 grid_version_bumped = True
@@ -4626,6 +4841,7 @@ def run_app() -> None:
         checked_by_gse = dict(checked_by_gse)
         checked_by_gse[gse_id] = checked_state
         st.session_state["checked_by_gse"] = checked_by_gse
+        checked_state_changed = True
 
     if selected_rows:
         row_idx = selected_rows[0]
@@ -4655,6 +4871,7 @@ def run_app() -> None:
     rerun_needed = (
         overrides_changed
         or (persistence_changed and (revert_saved_clicked or discard_saved_clicked))
+        or checked_state_changed
     )
     if rerun_needed:
         refreshed_table_df = _build_editable_df(
