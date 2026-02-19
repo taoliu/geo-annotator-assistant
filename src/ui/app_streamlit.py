@@ -302,12 +302,12 @@ def _inject_layout_styles() -> None:
           margin-top: 0.04rem !important;
         }
         .st-key-gse_workload_panel [data-testid="stHorizontalBlock"]:has(button) {
-          border: 1px solid #b9bcc5 !important;
-          border-radius: 0.72rem !important;
-          padding: 0.24rem 0.52rem !important;
-          margin: 0.04rem 0 !important;
+          border: none !important;
+          border-radius: 0 !important;
+          padding: 0.06rem 0.18rem !important;
+          margin: 0.02rem 0 !important;
           align-items: center !important;
-          min-height: 2.0rem !important;
+          min-height: 0 !important;
         }
         .st-key-gse_workload_panel [data-testid="stHorizontalBlock"] {
           flex-wrap: nowrap !important;
@@ -318,6 +318,9 @@ def _inject_layout_styles() -> None:
           display: flex !important;
           align-items: center !important;
           align-self: center !important;
+        }
+        .st-key-gse_workload_panel [data-testid="stHorizontalBlock"]:has(button) > div + div {
+          margin-left: 0.2rem !important;
         }
         .st-key-gse_workload_panel div[data-testid="stMarkdown"] {
           display: flex !important;
