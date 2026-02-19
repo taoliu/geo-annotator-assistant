@@ -911,29 +911,42 @@ def _render_gse_workload_selector(
                 help="Open this GSE",
             ):
                 return gse
-            row.html(_gse_badge_row_html(model))
+            badges_html = _gse_badge_row_html(model)
+            if badges_html:
+                row.html(badges_html)
     return None
 
 
 def _gse_badge_row_html(model: GseDropdownOptionModel) -> str:
-    flagged = html.escape(model.flagged_ratio)
-    checked = html.escape(model.checked_ratio)
     flagged_full = model.total_count > 0 and model.flagged_count == model.total_count
     checked_full = model.total_count > 0 and model.checked_count == model.total_count
-    flagged_bg = "#D55E00" if flagged_full else "#F4D8C3"
-    flagged_fg = "#ffffff" if flagged_full else "#7A3200"
-    checked_bg = "#009E73" if checked_full else "#CFEDE3"
-    checked_fg = "#ffffff" if checked_full else "#0B5E48"
+    badges: list[str] = []
+    if model.flagged_count > 0:
+        flagged = html.escape(model.flagged_ratio)
+        flagged_bg = "#D55E00" if flagged_full else "#F4D8C3"
+        flagged_fg = "#ffffff" if flagged_full else "#7A3200"
+        badges.append(
+            '<span style="display:inline-flex;align-items:center;justify-content:center;'
+            'height:1.1rem;padding:0 0.43rem;'
+            'border-radius:999px;font-size:0.72rem;font-weight:600;line-height:1;'
+            f'background:{flagged_bg};color:{flagged_fg};">{flagged}</span>'
+        )
+    if model.checked_count > 0:
+        checked = html.escape(model.checked_ratio)
+        checked_bg = "#009E73" if checked_full else "#CFEDE3"
+        checked_fg = "#ffffff" if checked_full else "#0B5E48"
+        badges.append(
+            '<span style="display:inline-flex;align-items:center;justify-content:center;'
+            'height:1.1rem;padding:0 0.43rem;'
+            'border-radius:999px;font-size:0.72rem;font-weight:600;line-height:1;'
+            f'background:{checked_bg};color:{checked_fg};">{checked}</span>'
+        )
+    if not badges:
+        return ""
     return (
         '<div style="display:flex;align-items:center;gap:0.16rem;flex-wrap:nowrap;white-space:nowrap;min-height:1.1rem;">'
-        '<span style="display:inline-flex;align-items:center;justify-content:center;'
-        'height:1.1rem;padding:0 0.43rem;'
-        'border-radius:999px;font-size:0.72rem;font-weight:600;line-height:1;'
-        f'background:{flagged_bg};color:{flagged_fg};">{flagged}</span>'
-        '<span style="display:inline-flex;align-items:center;justify-content:center;'
-        'height:1.1rem;padding:0 0.43rem;'
-        'border-radius:999px;font-size:0.72rem;font-weight:600;line-height:1;'
-        f'background:{checked_bg};color:{checked_fg};">{checked}</span></div>'
+        + "".join(badges)
+        + "</div>"
     )
 
 
