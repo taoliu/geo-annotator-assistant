@@ -33,6 +33,7 @@ def test_table_guidance_text_mentions_accession() -> None:
     assert "hover" in text.casefold() or "tooltip" in text.casefold()
     assert "green" in text.casefold()
     assert "orange" in text.casefold()
+    assert "blue" in text.casefold()
 
 
 def test_table_help_lines_include_session_only() -> None:
@@ -40,7 +41,7 @@ def test_table_help_lines_include_session_only() -> None:
 
     assert any("session-only" in line for line in lines)
     assert any("orange" in line.casefold() and "green" in line.casefold() for line in lines)
-    assert any("border" in line.casefold() and "both" in line.casefold() for line in lines)
+    assert any("advisory" in line.casefold() and "marker" in line.casefold() for line in lines)
     assert any(
         "hover" in line.casefold()
         or "diagnostic" in line.casefold()

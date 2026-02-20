@@ -17,6 +17,8 @@ from ui.flags import (
     build_flag_category_summary,
     build_flags_index,
     categorize_flag,
+    extract_advisory_fields,
+    extract_blocking_fields,
     extract_field_flags,
     flag_tooltip,
     primary_failure_tooltip,
@@ -84,6 +86,35 @@ def test_build_flags_index_deterministic() -> None:
     second = build_flags_index(list(reversed(records)))
 
     assert first == second
+
+
+def test_extract_blocking_fields_from_primary_and_validation() -> None:
+    curation_raw = {
+        "rationale": {"primary_failure": "ontology_low_confidence_disease"},
+        "validation": {
+            "ontology_failures": {"disease": ["NO_MATCH"]},
+            "semantic_errors": {"treatment": ["conflict"]},
+            "format_error_details": [{"field": "cell_line", "message": "bad"}],
+        },
+    }
+
+    blocking = extract_blocking_fields(curation_raw)
+
+    assert blocking == {"disease", "treatment", "cell_line"}
+
+
+def test_extract_advisory_fields_uses_prefix_and_allowlist_only() -> None:
+    curation_raw = {
+        "flags": [
+            "gse_outlier_disease",
+            "healthy_disease_conflict",
+            "ontology_low_confidence_disease",
+        ]
+    }
+
+    advisory = extract_advisory_fields(curation_raw, evidence_raw=None)
+
+    assert advisory == {"disease"}
 
 
 def test_style_curation_table_highlights_flagged_cell() -> None:

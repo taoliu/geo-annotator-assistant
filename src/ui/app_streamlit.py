@@ -32,6 +32,8 @@ from ui.flags import (
     build_flags_index,
     build_primary_failure_index,
     categorize_flag,
+    extract_advisory_fields,
+    extract_blocking_fields,
     extract_curation_flags,
     extract_primary_failure,
     flag_tooltip,
@@ -465,15 +467,53 @@ def _inject_layout_styles() -> None:
         .ag-theme-streamlit .ag-row.ag-row-selected .ag-cell:first-child {
           border-left: 3px solid #355a7d !important;
         }
-        .ag-theme-streamlit .ag-cell.ag-cell-flagged {
-          background-color: #ffe7cc !important;
-        }
         .ag-theme-streamlit .ag-cell.ag-cell-overridden {
           background-color: #dff4df !important;
         }
-        .ag-theme-streamlit .ag-cell.ag-cell-overridden-flagged {
-          background-color: #dff4df !important;
-          box-shadow: inset 0 0 0 2px #e47b00 !important;
+        .ag-theme-streamlit .ag-cell.ag-cell-advisory {
+          border-left: 2px solid #0072B2 !important;
+        }
+        .ag-theme-streamlit .ag-cell.ag-cell-marker-blocking,
+        .ag-theme-streamlit .ag-cell.ag-cell-marker-advisory {
+          position: relative;
+          padding-right: 1.5rem !important;
+        }
+        .ag-theme-streamlit .ag-cell.ag-cell-marker-blocking::after {
+          content: "!";
+          position: absolute;
+          right: 0.25rem;
+          top: 0.18rem;
+          width: 0.74rem;
+          height: 0.74rem;
+          border-radius: 999px;
+          background: #D55E00;
+          color: #ffffff;
+          font-size: 0.52rem;
+          font-weight: 700;
+          line-height: 0.74rem;
+          text-align: center;
+        }
+        .ag-theme-streamlit .ag-cell.ag-cell-marker-advisory::before {
+          content: "i";
+          position: absolute;
+          right: 0.25rem;
+          top: 0.18rem;
+          width: 0.7rem;
+          height: 0.7rem;
+          border-radius: 999px;
+          border: 1px solid #0072B2;
+          color: #0072B2;
+          background: #ffffff;
+          font-size: 0.5rem;
+          font-weight: 700;
+          line-height: 0.68rem;
+          text-align: center;
+        }
+        .ag-theme-streamlit .ag-cell.ag-cell-marker-blocking.ag-cell-marker-advisory {
+          padding-right: 2.35rem !important;
+        }
+        .ag-theme-streamlit .ag-cell.ag-cell-marker-blocking.ag-cell-marker-advisory::before {
+          right: 1.18rem;
         }
         .ag-theme-streamlit .ag-cell.ag-status-flagged {
           background-color: #fde2e2 !important;
@@ -2178,6 +2218,12 @@ def _append_aggrid_meta_columns(
     evidence_flagged_columns: dict[str, list[bool]] = {
         field: [] for field in AGGRID_FLAG_FIELDS
     }
+    blocking_columns: dict[str, list[bool]] = {
+        field: [] for field in AGGRID_FLAG_FIELDS
+    }
+    advisory_columns: dict[str, list[bool]] = {
+        field: [] for field in AGGRID_FLAG_FIELDS
+    }
     evidence_attempts_columns: dict[str, list[int]] = {
         field: [] for field in AGGRID_FLAG_FIELDS
     }
@@ -2221,6 +2267,16 @@ def _append_aggrid_meta_columns(
             if isinstance(evidence_raw, dict)
             else None
         )
+        curation = curation_lookup.get(key) if key else None
+        backend_fields = curation.get("fields", {}) if isinstance(curation, dict) else {}
+        curation_raw = curation.get("raw") if isinstance(curation, dict) else None
+        blocking_fields = extract_blocking_fields(
+            curation_raw if isinstance(curation_raw, Mapping) else None
+        )
+        advisory_fields = extract_advisory_fields(
+            curation_raw if isinstance(curation_raw, Mapping) else None,
+            evidence_raw if isinstance(evidence_raw, Mapping) else None,
+        )
 
         row_flagged = False
         for field in AGGRID_FLAG_FIELDS:
@@ -2246,13 +2302,15 @@ def _append_aggrid_meta_columns(
             evidence_flag_columns[field].append(flags)
             flagged = bool(flags)
             evidence_flagged_columns[field].append(flagged)
+            blocking_columns[field].append(field in blocking_fields)
+            advisory_columns[field].append(field in advisory_fields)
             evidence_attempts_columns[field].append(attempts)
             evidence_status_columns[field].append(status)
             evidence_terminal_columns[field].append(terminal)
             if flagged:
                 row_flagged = True
 
-        row_has_flags.append(row_flagged)
+        row_has_flags.append(row_flagged or bool(blocking_fields) or bool(advisory_fields))
 
         primary_failure = primary_failures.get(key, "") if key else ""
         if primary_failure:
@@ -2268,9 +2326,6 @@ def _append_aggrid_meta_columns(
         else:
             summary_colors.append("")
 
-        curation = curation_lookup.get(key) if key else None
-        backend_fields = curation.get("fields", {}) if isinstance(curation, dict) else {}
-        curation_raw = curation.get("raw") if isinstance(curation, dict) else None
         backend_gse = None
         backend_gsm = None
         if isinstance(curation, dict):
@@ -2332,6 +2387,10 @@ def _append_aggrid_meta_columns(
         updated[f"evidence_flags_{field}"] = values
     for field, values in evidence_flagged_columns.items():
         updated[f"__evidence_flagged_{field}"] = values
+    for field, values in blocking_columns.items():
+        updated[f"__blocking_field_{field}"] = values
+    for field, values in advisory_columns.items():
+        updated[f"__advisory_field_{field}"] = values
     for field, values in evidence_attempts_columns.items():
         updated[f"evidence_attempts_{field}"] = values
     for field, values in evidence_status_columns.items():
@@ -3062,18 +3121,25 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
             f"data.__override_cell_{field} === 1"
         )
         cell_rules = {"ag-cell-overridden": override_rule}
-        flagged_rule = "false"
+        blocking_rule = "false"
+        advisory_rule = "false"
         if field in AGGRID_FLAG_FIELDS:
-            flagged_rule = (
-                f"data.__evidence_flagged_{field} === true || "
-                f"data.__evidence_flagged_{field} === 'true' || "
-                f"data.__evidence_flagged_{field} === 'True' || "
-                f"data.__evidence_flagged_{field} === 1"
+            blocking_rule = (
+                f"data.__blocking_field_{field} === true || "
+                f"data.__blocking_field_{field} === 'true' || "
+                f"data.__blocking_field_{field} === 'True' || "
+                f"data.__blocking_field_{field} === 1"
             )
-            cell_rules["ag-cell-flagged"] = flagged_rule
-            cell_rules["ag-cell-overridden-flagged"] = (
-                f"({override_rule}) && ({flagged_rule})"
+            advisory_rule = (
+                f"data.__advisory_field_{field} === true || "
+                f"data.__advisory_field_{field} === 'true' || "
+                f"data.__advisory_field_{field} === 'True' || "
+                f"data.__advisory_field_{field} === 1"
             )
+            cell_rules["ag-cell-blocking"] = blocking_rule
+            cell_rules["ag-cell-advisory"] = advisory_rule
+            cell_rules["ag-cell-marker-blocking"] = blocking_rule
+            cell_rules["ag-cell-marker-advisory"] = advisory_rule
         cell_style = JsCode(
             f"""
             function(params) {{
@@ -3083,21 +3149,15 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
                 row.__override_cell_{field} === 1 ||
                 row.__override_cell_{field} === "true" ||
                 row.__override_cell_{field} === "True";
-              const isFlagged =
-                row.__evidence_flagged_{field} === true ||
-                row.__evidence_flagged_{field} === 1 ||
-                row.__evidence_flagged_{field} === "true" ||
-                row.__evidence_flagged_{field} === "True";
-              if (isOverridden && isFlagged) {{
-                return {{
-                  backgroundColor: "#dff4df",
-                  boxShadow: "inset 0 0 0 2px #e47b00"
-                }};
-              }}
+              const isBlocking =
+                row.__blocking_field_{field} === true ||
+                row.__blocking_field_{field} === 1 ||
+                row.__blocking_field_{field} === "true" ||
+                row.__blocking_field_{field} === "True";
               if (isOverridden) {{
                 return {{ backgroundColor: "#dff4df" }};
               }}
-              if (isFlagged) {{
+              if (isBlocking) {{
                 return {{ backgroundColor: "#ffe7cc" }};
               }}
               return {{}};
@@ -3206,6 +3266,12 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
     hidden_columns.extend([f"evidence_flags_{field}" for field in AGGRID_FLAG_FIELDS])
     hidden_columns.extend(
         [f"__evidence_flagged_{field}" for field in AGGRID_FLAG_FIELDS]
+    )
+    hidden_columns.extend(
+        [f"__blocking_field_{field}" for field in AGGRID_FLAG_FIELDS]
+    )
+    hidden_columns.extend(
+        [f"__advisory_field_{field}" for field in AGGRID_FLAG_FIELDS]
     )
     hidden_columns.extend([f"__override_cell_{field}" for field in CANONICAL_FIELDS])
     hidden_columns.extend(
@@ -4919,4 +4985,5 @@ def run_app() -> None:
 
 
 
-run_app()
+if __name__ == "__main__":
+    run_app()

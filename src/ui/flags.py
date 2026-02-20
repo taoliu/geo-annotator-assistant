@@ -149,6 +149,10 @@ _INFO_FLAG_EXACT = {
     "disease_generalized_for_ontology",
     "disease_normalized_to_healthy",
 }
+_ADVISORY_FLAG_PREFIXES = ("gse_outlier_",)
+_ADVISORY_FLAG_FIELD_MAP = {
+    "healthy_disease_conflict": "disease",
+}
 _INFO_FLAG_SUBSTRINGS = (
     "canonical",
     "generalized",
@@ -235,6 +239,91 @@ def extract_primary_failure(curation_raw: Mapping[str, Any] | None) -> str:
     if isinstance(value, str):
         return value.strip()
     return ""
+
+
+def extract_blocking_fields(curation_raw: Mapping[str, Any] | None) -> set[str]:
+    """Return fields implicated by backend routing metadata only."""
+    if not isinstance(curation_raw, Mapping):
+        return set()
+
+    blocking_fields: set[str] = set()
+
+    rationale = curation_raw.get("rationale")
+    rationale_primary = (
+        rationale.get("primary_failure") if isinstance(rationale, Mapping) else None
+    )
+    primary_failure = ""
+    if isinstance(rationale_primary, str):
+        primary_failure = rationale_primary.strip()
+    if not primary_failure:
+        primary_failure = extract_primary_failure(curation_raw)
+    mapped_primary = _field_from_signal(primary_failure)
+    if mapped_primary:
+        blocking_fields.add(mapped_primary)
+
+    validation = curation_raw.get("validation")
+    if not isinstance(validation, Mapping):
+        return blocking_fields
+
+    ontology_failures = validation.get("ontology_failures")
+    if isinstance(ontology_failures, Mapping):
+        for field in ontology_failures:
+            if isinstance(field, str) and field in CANONICAL_FIELDS:
+                blocking_fields.add(field)
+
+    semantic_errors = validation.get("semantic_errors")
+    if isinstance(semantic_errors, Mapping):
+        for field in semantic_errors:
+            if isinstance(field, str) and field in CANONICAL_FIELDS:
+                blocking_fields.add(field)
+
+    format_error_details = validation.get("format_error_details")
+    if isinstance(format_error_details, list):
+        for item in format_error_details:
+            if not isinstance(item, Mapping):
+                continue
+            field = item.get("field")
+            if isinstance(field, str) and field in CANONICAL_FIELDS:
+                blocking_fields.add(field)
+
+    return blocking_fields
+
+
+def extract_advisory_fields(
+    curation_raw: Mapping[str, Any] | None,
+    evidence_raw: Mapping[str, Any] | None = None,
+) -> set[str]:
+    """Return fields with explicitly advisory backend signals only."""
+    advisory_fields: set[str] = set()
+
+    for flag in extract_curation_flags(curation_raw):
+        field = _advisory_field_from_flag(flag)
+        if field:
+            advisory_fields.add(field)
+
+    evidence_by_field = (
+        evidence_raw.get("evidence_by_field")
+        if isinstance(evidence_raw, Mapping)
+        else None
+    )
+    if not isinstance(evidence_by_field, Mapping):
+        return advisory_fields
+
+    for field in CANONICAL_FIELDS:
+        field_evidence = evidence_by_field.get(field)
+        if not isinstance(field_evidence, Mapping):
+            continue
+        raw_flags = field_evidence.get("flags")
+        if not isinstance(raw_flags, list):
+            continue
+        for flag in raw_flags:
+            if not isinstance(flag, str) or not flag:
+                continue
+            advisory_field = _advisory_field_from_flag(flag)
+            if advisory_field:
+                advisory_fields.add(advisory_field)
+
+    return advisory_fields
 
 
 def build_curation_flags_index(
@@ -432,6 +521,45 @@ def _suffix_field(flag: str, prefix: str) -> str | None:
     return None
 
 
+def _field_from_signal(signal: str) -> str | None:
+    normalized = (signal or "").strip()
+    if not normalized:
+        return None
+    if normalized in CANONICAL_FIELDS:
+        return normalized
+
+    for prefix in (
+        "ontology_low_confidence_",
+        "ontology_ambiguous_",
+        "ontology_no_match_",
+        "gse_outlier_",
+    ):
+        mapped = _suffix_field(normalized, prefix)
+        if mapped:
+            return mapped
+
+    for field in CANONICAL_FIELDS:
+        if normalized.endswith(f"_{field}"):
+            return field
+    return None
+
+
+def _advisory_field_from_flag(flag: str) -> str | None:
+    normalized = (flag or "").strip()
+    if not normalized:
+        return None
+    if normalized in _ADVISORY_FLAG_FIELD_MAP:
+        mapped = _ADVISORY_FLAG_FIELD_MAP[normalized]
+        if mapped in CANONICAL_FIELDS:
+            return mapped
+        return None
+    for prefix in _ADVISORY_FLAG_PREFIXES:
+        mapped = _suffix_field(normalized, prefix)
+        if mapped:
+            return mapped
+    return None
+
+
 def _split_flag_label(label: str) -> tuple[str, str | None]:
     raw = (label or "").strip()
     if not raw:
@@ -495,6 +623,8 @@ __all__ = [
     "build_primary_failure_index",
     "categorize_flag",
     "extract_curation_flags",
+    "extract_advisory_fields",
+    "extract_blocking_fields",
     "extract_field_flags",
     "extract_primary_failure",
     "flag_tooltip",
