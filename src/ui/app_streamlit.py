@@ -34,6 +34,7 @@ from ui.flags import (
     categorize_flag,
     extract_advisory_fields,
     extract_blocking_fields,
+    extract_blocking_fields_with_fallback,
     extract_curation_flags,
     extract_primary_failure,
     flag_tooltip,
@@ -469,6 +470,9 @@ def _inject_layout_styles() -> None:
         }
         .ag-theme-streamlit .ag-cell.ag-cell-overridden {
           background-color: #dff4df !important;
+        }
+        .ag-theme-streamlit .ag-cell.ag-cell-nonblocking {
+          background-color: #E6F2FB !important;
         }
         .ag-theme-streamlit .ag-cell.ag-cell-advisory {
           border-left: 2px solid #0072B2 !important;
@@ -2224,6 +2228,9 @@ def _append_aggrid_meta_columns(
     advisory_columns: dict[str, list[bool]] = {
         field: [] for field in AGGRID_FLAG_FIELDS
     }
+    nonblocking_columns: dict[str, list[bool]] = {
+        field: [] for field in AGGRID_FLAG_FIELDS
+    }
     evidence_attempts_columns: dict[str, list[int]] = {
         field: [] for field in AGGRID_FLAG_FIELDS
     }
@@ -2270,9 +2277,24 @@ def _append_aggrid_meta_columns(
         curation = curation_lookup.get(key) if key else None
         backend_fields = curation.get("fields", {}) if isinstance(curation, dict) else {}
         curation_raw = curation.get("raw") if isinstance(curation, dict) else None
-        blocking_fields = extract_blocking_fields(
-            curation_raw if isinstance(curation_raw, Mapping) else None
-        )
+        final_decision = ""
+        if isinstance(curation, dict):
+            value = curation.get("final_decision")
+            if isinstance(value, str):
+                final_decision = value
+            if not final_decision and isinstance(curation_raw, Mapping):
+                raw_value = curation_raw.get("final_decision")
+                if isinstance(raw_value, str):
+                    final_decision = raw_value
+        if final_decision == "FLAGGED":
+            blocking_fields = extract_blocking_fields_with_fallback(
+                curation_raw if isinstance(curation_raw, Mapping) else None,
+                evidence_raw if isinstance(evidence_raw, Mapping) else None,
+            )
+        else:
+            blocking_fields = extract_blocking_fields(
+                curation_raw if isinstance(curation_raw, Mapping) else None
+            )
         advisory_fields = extract_advisory_fields(
             curation_raw if isinstance(curation_raw, Mapping) else None,
             evidence_raw if isinstance(evidence_raw, Mapping) else None,
@@ -2302,8 +2324,11 @@ def _append_aggrid_meta_columns(
             evidence_flag_columns[field].append(flags)
             flagged = bool(flags)
             evidence_flagged_columns[field].append(flagged)
-            blocking_columns[field].append(field in blocking_fields)
-            advisory_columns[field].append(field in advisory_fields)
+            is_blocking = field in blocking_fields
+            is_advisory = field in advisory_fields
+            blocking_columns[field].append(is_blocking)
+            advisory_columns[field].append(is_advisory)
+            nonblocking_columns[field].append((flagged or is_advisory) and not is_blocking)
             evidence_attempts_columns[field].append(attempts)
             evidence_status_columns[field].append(status)
             evidence_terminal_columns[field].append(terminal)
@@ -2391,6 +2416,8 @@ def _append_aggrid_meta_columns(
         updated[f"__blocking_field_{field}"] = values
     for field, values in advisory_columns.items():
         updated[f"__advisory_field_{field}"] = values
+    for field, values in nonblocking_columns.items():
+        updated[f"__nonblocking_field_{field}"] = values
     for field, values in evidence_attempts_columns.items():
         updated[f"evidence_attempts_{field}"] = values
     for field, values in evidence_status_columns.items():
@@ -3123,6 +3150,7 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
         cell_rules = {"ag-cell-overridden": override_rule}
         blocking_rule = "false"
         advisory_rule = "false"
+        nonblocking_rule = "false"
         if field in AGGRID_FLAG_FIELDS:
             blocking_rule = (
                 f"data.__blocking_field_{field} === true || "
@@ -3136,8 +3164,15 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
                 f"data.__advisory_field_{field} === 'True' || "
                 f"data.__advisory_field_{field} === 1"
             )
+            nonblocking_rule = (
+                f"data.__nonblocking_field_{field} === true || "
+                f"data.__nonblocking_field_{field} === 'true' || "
+                f"data.__nonblocking_field_{field} === 'True' || "
+                f"data.__nonblocking_field_{field} === 1"
+            )
             cell_rules["ag-cell-blocking"] = blocking_rule
             cell_rules["ag-cell-advisory"] = advisory_rule
+            cell_rules["ag-cell-nonblocking"] = nonblocking_rule
             cell_rules["ag-cell-marker-blocking"] = blocking_rule
             cell_rules["ag-cell-marker-advisory"] = advisory_rule
         cell_style = JsCode(
@@ -3154,11 +3189,19 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
                 row.__blocking_field_{field} === 1 ||
                 row.__blocking_field_{field} === "true" ||
                 row.__blocking_field_{field} === "True";
+              const isNonBlocking =
+                row.__nonblocking_field_{field} === true ||
+                row.__nonblocking_field_{field} === 1 ||
+                row.__nonblocking_field_{field} === "true" ||
+                row.__nonblocking_field_{field} === "True";
               if (isOverridden) {{
                 return {{ backgroundColor: "#dff4df" }};
               }}
               if (isBlocking) {{
                 return {{ backgroundColor: "#ffe7cc" }};
+              }}
+              if (isNonBlocking) {{
+                return {{ backgroundColor: "#E6F2FB" }};
               }}
               return {{}};
             }}
@@ -3272,6 +3315,9 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
     )
     hidden_columns.extend(
         [f"__advisory_field_{field}" for field in AGGRID_FLAG_FIELDS]
+    )
+    hidden_columns.extend(
+        [f"__nonblocking_field_{field}" for field in AGGRID_FLAG_FIELDS]
     )
     hidden_columns.extend([f"__override_cell_{field}" for field in CANONICAL_FIELDS])
     hidden_columns.extend(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 TABLE_GUIDANCE_TEXT = (
     "Hover cells for diagnostics. GSE/GSM accessions open GEO. "
-    "Cell states: green=override, orange=blocking backend signal, blue info marker=advisory signal."
+    "Cell states: green=override, orange=blocking backend signal, blue=non-blocking signal, blue info marker=advisory signal."
 )
 GSM_ACCESSION_TOOLTIP = "Open GEO page"
 STATUS_ICON_TOOLTIP = "Decision status (✅ = ACCEPT, 🚩 = FLAGGED)"
@@ -42,6 +42,7 @@ TABLE_HELP_LINES = (
     "Hover cells for diagnostics and backend context.",
     "GSE/GSM accessions link out to GEO.",
     "Cell colors: orange = blocking backend signal, green = curator override.",
+    "Blue fill = non-blocking backend signal.",
     "Blue info marker + left accent = advisory signal (for example, GSE outliers).",
     "If overridden, green fill remains dominant and blocking/advisory remain visible as markers.",
     "Edits are session-only until you export overrides.",

@@ -111,6 +111,7 @@ def test_append_aggrid_meta_columns_accept_record_can_show_advisory_without_bloc
     row = updated.iloc[0]
     assert bool(row["__advisory_field_disease"]) is True
     assert bool(row["__blocking_field_disease"]) is False
+    assert bool(row["__nonblocking_field_disease"]) is True
 
 
 def test_append_aggrid_meta_columns_healthy_disease_conflict_is_advisory_only() -> None:
@@ -133,6 +134,83 @@ def test_append_aggrid_meta_columns_healthy_disease_conflict_is_advisory_only() 
     row = updated.iloc[0]
     assert bool(row["__advisory_field_disease"]) is True
     assert bool(row["__blocking_field_disease"]) is False
+    assert bool(row["__nonblocking_field_disease"]) is True
+
+
+def test_append_aggrid_meta_columns_accept_nonblocking_flag_is_not_blocking() -> None:
+    df = _base_df()
+    curation_lookup = {
+        ("GSE1", "GSM1"): _base_curation_record(
+            raw={"flags": ["treatment_not_an_intervention"]}
+        )
+    }
+    evidence_lookup = {
+        ("GSE1", "GSM1"): {
+            "raw": {
+                "evidence_by_field": {
+                    "treatment": {
+                        "flags": ["treatment_not_an_intervention"],
+                        "ontology_status": "",
+                        "attempts": 0,
+                        "terminal_fallback": False,
+                    }
+                }
+            }
+        }
+    }
+
+    updated = _append_aggrid_meta_columns(
+        df,
+        curation_lookup=curation_lookup,
+        evidence_lookup=evidence_lookup,
+        audit_lookup={},
+        flag_summaries={},
+        primary_failures={},
+    )
+    row = updated.iloc[0]
+    assert bool(row["__blocking_field_treatment"]) is False
+    assert bool(row["__nonblocking_field_treatment"]) is True
+
+
+def test_append_aggrid_meta_columns_uses_raw_final_decision_for_blocking_fallback() -> None:
+    df = _base_df()
+    curation_lookup = {
+        ("GSE1", "GSM1"): {
+            "gse_accession": "GSE1",
+            "gsm_accession": "GSM1",
+            "fields": {field: f"value-{field}" for field in CANONICAL_FIELDS},
+            "raw": {
+                "final_decision": "FLAGGED",
+                "flags": ["tissue_type_non_anatomical_placeholder"],
+            },
+        }
+    }
+    evidence_lookup = {
+        ("GSE1", "GSM1"): {
+            "raw": {
+                "evidence_by_field": {
+                    "tissue_type": {
+                        "flags": ["tissue_type_non_anatomical_placeholder"],
+                        "ontology_status": "FALLBACK",
+                        "attempts": 0,
+                        "terminal_fallback": False,
+                    }
+                }
+            }
+        }
+    }
+
+    updated = _append_aggrid_meta_columns(
+        df,
+        curation_lookup=curation_lookup,
+        evidence_lookup=evidence_lookup,
+        audit_lookup={},
+        flag_summaries={},
+        primary_failures={},
+    )
+    row = updated.iloc[0]
+    assert bool(row["__blocking_field_tissue_type"]) is True
+    assert bool(row["__nonblocking_field_tissue_type"]) is False
 
 
 def test_build_aggrid_options_override_fill_dominates_with_both_markers_present() -> None:
@@ -160,6 +238,7 @@ def test_build_aggrid_options_override_fill_dominates_with_both_markers_present(
         row[f"__override_cell_{field}"] = field == "disease"
         row[f"__blocking_field_{field}"] = field == "disease"
         row[f"__advisory_field_{field}"] = field == "disease"
+        row[f"__nonblocking_field_{field}"] = False
         row[f"__evidence_flagged_{field}"] = False
         row[f"evidence_flags_{field}"] = []
         row[f"evidence_attempts_{field}"] = 0
@@ -177,4 +256,5 @@ def test_build_aggrid_options_override_fill_dominates_with_both_markers_present(
     style_js = disease_col["cellStyle"].js_code
     assert 'return { backgroundColor: "#dff4df" };' in style_js
     assert 'return { backgroundColor: "#ffe7cc" };' in style_js
+    assert 'return { backgroundColor: "#E6F2FB" };' in style_js
     assert style_js.index("if (isOverridden)") < style_js.index("if (isBlocking)")

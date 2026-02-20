@@ -19,6 +19,7 @@ from ui.flags import (
     categorize_flag,
     extract_advisory_fields,
     extract_blocking_fields,
+    extract_blocking_fields_with_fallback,
     extract_field_flags,
     flag_tooltip,
     primary_failure_tooltip,
@@ -115,6 +116,54 @@ def test_extract_advisory_fields_uses_prefix_and_allowlist_only() -> None:
     advisory = extract_advisory_fields(curation_raw, evidence_raw=None)
 
     assert advisory == {"disease"}
+
+
+def test_extract_blocking_fields_with_fallback_uses_non_advisory_field_flags() -> None:
+    curation_raw = {
+        "primary_failure": "extra_keys",
+        "flags": ["tissue_type_non_anatomical_placeholder", "format_unrepaired"],
+    }
+    evidence_raw = {
+        "evidence_by_field": {
+            "tissue_type": {
+                "flags": ["tissue_type_non_anatomical_placeholder"],
+                "ontology_status": "FALLBACK",
+            },
+            "disease": {
+                "flags": ["gse_outlier_disease"],
+                "ontology_status": "MATCHED",
+            },
+        }
+    }
+
+    blocking = extract_blocking_fields_with_fallback(curation_raw, evidence_raw)
+
+    assert blocking == {"tissue_type"}
+
+
+def test_extract_blocking_fields_with_fallback_prefers_highest_severity_field() -> None:
+    curation_raw = {
+        "flags": [
+            "tissue_type_non_anatomical_placeholder",
+            "treatment_not_an_intervention",
+        ]
+    }
+    evidence_raw = {
+        "evidence_by_field": {
+            "tissue_type": {
+                "flags": ["tissue_type_non_anatomical_placeholder"],
+                "ontology_status": "FALLBACK",
+            },
+            "treatment": {
+                "flags": ["treatment_not_an_intervention"],
+                "ontology_status": "",
+            },
+        }
+    }
+
+    blocking = extract_blocking_fields_with_fallback(curation_raw, evidence_raw)
+
+    assert blocking == {"tissue_type"}
 
 
 def test_style_curation_table_highlights_flagged_cell() -> None:

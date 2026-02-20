@@ -289,6 +289,70 @@ def extract_blocking_fields(curation_raw: Mapping[str, Any] | None) -> set[str]:
     return blocking_fields
 
 
+def extract_blocking_fields_with_fallback(
+    curation_raw: Mapping[str, Any] | None,
+    evidence_raw: Mapping[str, Any] | None = None,
+) -> set[str]:
+    """Return blocking fields, with legacy fallback when routing metadata is absent.
+
+    Preferred source remains explicit routing metadata via ``extract_blocking_fields``.
+    If that yields no fields (older artifact shape), derive field-level blocking from
+    explicit backend flags that are not advisory.
+    """
+    blocking_fields = extract_blocking_fields(curation_raw)
+    if blocking_fields:
+        return blocking_fields
+
+    primary_failure = extract_primary_failure(curation_raw)
+    mapped_primary = _field_from_signal(primary_failure)
+    if mapped_primary:
+        return {mapped_primary}
+
+    field_min_rank: dict[str, int] = {}
+
+    for flag in extract_curation_flags(curation_raw):
+        if _advisory_field_from_flag(flag):
+            continue
+        mapped = _field_from_signal(flag)
+        if not mapped:
+            continue
+        rank = _category_rank(categorize_flag(flag))
+        previous = field_min_rank.get(mapped)
+        if previous is None or rank < previous:
+            field_min_rank[mapped] = rank
+
+    evidence_by_field = (
+        evidence_raw.get("evidence_by_field")
+        if isinstance(evidence_raw, Mapping)
+        else None
+    )
+    if isinstance(evidence_by_field, Mapping):
+        for field in CANONICAL_FIELDS:
+            field_evidence = evidence_by_field.get(field)
+            if not isinstance(field_evidence, Mapping):
+                continue
+            raw_flags = field_evidence.get("flags")
+            if not isinstance(raw_flags, list):
+                continue
+            for flag in raw_flags:
+                if not isinstance(flag, str) or not flag:
+                    continue
+                if _advisory_field_from_flag(flag):
+                    continue
+                rank = _category_rank(categorize_flag(flag))
+                previous = field_min_rank.get(field)
+                if previous is None or rank < previous:
+                    field_min_rank[field] = rank
+
+    if not field_min_rank:
+        return set()
+
+    best_rank = min(field_min_rank.values())
+    return {
+        field for field, rank in field_min_rank.items() if rank == best_rank
+    }
+
+
 def extract_advisory_fields(
     curation_raw: Mapping[str, Any] | None,
     evidence_raw: Mapping[str, Any] | None = None,
@@ -597,6 +661,13 @@ def _is_info_flag(flag: str) -> bool:
     return any(token in flag for token in _INFO_FLAG_SUBSTRINGS)
 
 
+def _category_rank(category: str) -> int:
+    try:
+        return FLAG_CATEGORY_ORDER.index(category)
+    except ValueError:
+        return len(FLAG_CATEGORY_ORDER)
+
+
 def _dedupe_preserve(items: Iterable[str]) -> list[str]:
     seen: set[str] = set()
     ordered: list[str] = []
@@ -625,6 +696,7 @@ __all__ = [
     "extract_curation_flags",
     "extract_advisory_fields",
     "extract_blocking_fields",
+    "extract_blocking_fields_with_fallback",
     "extract_field_flags",
     "extract_primary_failure",
     "flag_tooltip",
