@@ -2404,42 +2404,50 @@ def _append_aggrid_meta_columns(
                 ontology_components_key_columns[field].append("")
                 ontology_components_value_columns[field].append("")
 
-    updated[AGGRID_ROW_INDEX_COLUMN] = row_indices
-    updated[AGGRID_ROW_HAS_FLAGS_COLUMN] = row_has_flags
-    updated[AGGRID_PRIMARY_FAILURE_COLOR_COLUMN] = primary_colors
-    updated[AGGRID_FLAG_SUMMARY_COLOR_COLUMN] = summary_colors
+    meta_columns: dict[str, list[object]] = {
+        AGGRID_ROW_INDEX_COLUMN: row_indices,
+        AGGRID_ROW_HAS_FLAGS_COLUMN: row_has_flags,
+        AGGRID_PRIMARY_FAILURE_COLOR_COLUMN: primary_colors,
+        AGGRID_FLAG_SUMMARY_COLOR_COLUMN: summary_colors,
+    }
     for field, values in evidence_flag_columns.items():
-        updated[f"evidence_flags_{field}"] = values
+        meta_columns[f"evidence_flags_{field}"] = values
     for field, values in evidence_flagged_columns.items():
-        updated[f"__evidence_flagged_{field}"] = values
+        meta_columns[f"__evidence_flagged_{field}"] = values
     for field, values in blocking_columns.items():
-        updated[f"__blocking_field_{field}"] = values
+        meta_columns[f"__blocking_field_{field}"] = values
     for field, values in advisory_columns.items():
-        updated[f"__advisory_field_{field}"] = values
+        meta_columns[f"__advisory_field_{field}"] = values
     for field, values in nonblocking_columns.items():
-        updated[f"__nonblocking_field_{field}"] = values
+        meta_columns[f"__nonblocking_field_{field}"] = values
     for field, values in evidence_attempts_columns.items():
-        updated[f"evidence_attempts_{field}"] = values
+        meta_columns[f"evidence_attempts_{field}"] = values
     for field, values in evidence_status_columns.items():
-        updated[f"evidence_status_{field}"] = values
+        meta_columns[f"evidence_status_{field}"] = values
     for field, values in evidence_terminal_columns.items():
-        updated[f"evidence_terminal_{field}"] = values
+        meta_columns[f"evidence_terminal_{field}"] = values
     for field in AGGRID_TOOLTIP_FIELDS:
-        updated[f"__backend_{field}"] = backend_columns[field]
-        updated[f"__llm_{field}"] = llm_columns[field]
-        updated[f"__ontology_{field}"] = ontology_columns[field]
-        updated[f"__ontology_matched_via_{field}"] = ontology_matched_via_columns[field]
-        updated[f"__ontology_selection_rule_{field}"] = ontology_selection_rule_columns[
+        meta_columns[f"__backend_{field}"] = backend_columns[field]
+        meta_columns[f"__llm_{field}"] = llm_columns[field]
+        meta_columns[f"__ontology_{field}"] = ontology_columns[field]
+        meta_columns[f"__ontology_matched_via_{field}"] = ontology_matched_via_columns[field]
+        meta_columns[f"__ontology_selection_rule_{field}"] = ontology_selection_rule_columns[
             field
         ]
-        updated[f"__ontology_components_key_{field}"] = ontology_components_key_columns[
+        meta_columns[f"__ontology_components_key_{field}"] = ontology_components_key_columns[
             field
         ]
-        updated[f"__ontology_components_value_{field}"] = ontology_components_value_columns[
+        meta_columns[f"__ontology_components_value_{field}"] = ontology_components_value_columns[
             field
         ]
 
-    return updated
+    # Append metadata columns in one batch to avoid DataFrame fragmentation warnings
+    # from repeated per-column insertion during frequent Streamlit rerenders.
+    existing_meta = [name for name in meta_columns if name in updated.columns]
+    if existing_meta:
+        updated = updated.drop(columns=existing_meta)
+    meta_df = pd.DataFrame(meta_columns, index=updated.index)
+    return pd.concat([updated, meta_df], axis=1)
 
 
 def _evidence_flagged_fields(
@@ -3079,9 +3087,11 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
         editable=False,
     )
     gb.configure_grid_options(
-        suppressRowClickSelection=False,
-        rowSelection="multiple",
-        rowMultiSelectWithClick=True,
+        rowSelection={
+            "mode": "multiRow",
+            "enableClickSelection": True,
+            "enableSelectionWithoutKeys": True,
+        },
         enableBrowserTooltips=False,
         tooltipMouseTrack=False,
         tooltipShowDelay=0,

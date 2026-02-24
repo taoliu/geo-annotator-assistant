@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import sys
+import warnings
 from pathlib import Path
 
 import pandas as pd
+from pandas.errors import PerformanceWarning
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src"
@@ -258,3 +260,39 @@ def test_build_aggrid_options_override_fill_dominates_with_both_markers_present(
     assert 'return { backgroundColor: "#ffe7cc" };' in style_js
     assert 'return { backgroundColor: "#E6F2FB" };' in style_js
     assert style_js.index("if (isOverridden)") < style_js.index("if (isBlocking)")
+
+
+def test_build_aggrid_options_uses_object_row_selection_without_deprecated_keys() -> None:
+    options = _build_aggrid_options(_base_df(), edit_mode=True)
+
+    assert "suppressRowClickSelection" not in options
+    assert "rowMultiSelectWithClick" not in options
+    row_selection = options.get("rowSelection")
+    assert isinstance(row_selection, dict)
+    assert row_selection.get("mode") == "multiRow"
+    assert row_selection.get("enableClickSelection") is True
+    assert row_selection.get("enableSelectionWithoutKeys") is True
+
+
+def test_append_aggrid_meta_columns_emits_no_fragmentation_warning() -> None:
+    df = _base_df()
+    curation_lookup = {("GSE1", "GSM1"): _base_curation_record()}
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", PerformanceWarning)
+        updated = _append_aggrid_meta_columns(
+            df,
+            curation_lookup=curation_lookup,
+            evidence_lookup={},
+            audit_lookup={},
+            flag_summaries={},
+            primary_failures={},
+        )
+
+    perf_warnings = [
+        warning
+        for warning in caught
+        if issubclass(warning.category, PerformanceWarning)
+    ]
+    assert perf_warnings == []
+    assert updated.columns.is_unique
