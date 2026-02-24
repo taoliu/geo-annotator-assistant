@@ -3089,6 +3089,8 @@ def _build_aggrid_options(df: pd.DataFrame, edit_mode: bool) -> dict:
     gb.configure_grid_options(
         rowSelection={
             "mode": "multiRow",
+            "checkboxes": False,
+            "headerCheckbox": False,
             "enableClickSelection": True,
             "enableSelectionWithoutKeys": True,
         },

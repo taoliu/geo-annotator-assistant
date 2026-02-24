@@ -270,6 +270,8 @@ def test_build_aggrid_options_uses_object_row_selection_without_deprecated_keys(
     row_selection = options.get("rowSelection")
     assert isinstance(row_selection, dict)
     assert row_selection.get("mode") == "multiRow"
+    assert row_selection.get("checkboxes") is False
+    assert row_selection.get("headerCheckbox") is False
     assert row_selection.get("enableClickSelection") is True
     assert row_selection.get("enableSelectionWithoutKeys") is True
 
