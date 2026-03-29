@@ -5,6 +5,10 @@ import random
 
 random.seed(1234)
 
+
+class SoftFileParseError(RuntimeError):
+    """Raised when a SOFT file cannot be read or parsed at all."""
+
 # Constant
 sample_field_names = {
     "sample organism": "organism_ch1",
@@ -27,9 +31,10 @@ def extract_sample_level_data(input_soft_file):
     """
     try:
         gse = get_GEO(filepath=input_soft_file, geotype='GSE', silent=True)
-    except Exception:
-        print(f"Error occurs while reading {input_soft_file}")
-        return None
+    except Exception as exc:
+        raise SoftFileParseError(
+            f"Error occurs while reading {input_soft_file}"
+        ) from exc
 
     metadata = gse.metadata
     samples = gse.gsms

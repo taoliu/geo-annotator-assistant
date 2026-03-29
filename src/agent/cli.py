@@ -25,7 +25,7 @@ from agent.suggestions import build_gse_suggestions
 from agent import standardize_cli
 from agent.writer import write_run_outputs
 from llm.factory import create_llm_client
-from ingest.soft_to_context_jsonl import LocalSoftMissingError
+from ingest.soft_to_context_jsonl import LocalSoftSkipError
 
 
 class _ArgumentParser(argparse.ArgumentParser):
@@ -263,9 +263,9 @@ def main(argv: list[str] | None = None) -> None:
                         output_base_dir,
                         llm_client=llm_client,
                     )
-                except LocalSoftMissingError as exc:
+                except LocalSoftSkipError as exc:
                     print(
-                        f"WARNING: GEO SOFT file not found for {exc.gse_accession} at {exc.path}; skipping.",
+                        f"WARNING: {exc}; skipping.",
                         file=sys.stderr,
                     )
                     return
@@ -286,9 +286,9 @@ def main(argv: list[str] | None = None) -> None:
                             output_base_dir,
                             llm_client=llm_client,
                         )
-                    except LocalSoftMissingError as exc:
+                    except LocalSoftSkipError as exc:
                         print(
-                            f"WARNING: GEO SOFT file not found for {exc.gse_accession} at {exc.path}; skipping.",
+                            f"WARNING: {exc}; skipping.",
                             file=sys.stderr,
                         )
                         continue

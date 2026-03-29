@@ -5,7 +5,7 @@ import os
 import json
 import argparse as ap
 
-from .gse_soft_parser import extract_sample_level_data
+from .gse_soft_parser import SoftFileParseError, extract_sample_level_data
 from .utils import gse_dict_to_prompt
 
 def main():
@@ -36,7 +36,11 @@ Example:
     output_file_path = args.ofile
 
     with open(output_file_path, "wt") as f:
-        gse_dict = extract_sample_level_data(input_file_path)
+        try:
+            gse_dict = extract_sample_level_data(input_file_path)
+        except SoftFileParseError as exc:
+            print(str(exc))
+            return
         if gse_dict is None:
             print(f"No sample data extracted from {input_file_path}.")
         else:

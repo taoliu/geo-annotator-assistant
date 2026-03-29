@@ -373,6 +373,49 @@ def test_local_parse_failure_redownloads_overwrite_and_retries_once(
     assert f"INFO: {gse_accession}: re-download complete; retrying parse" in stderr
 
 
+def test_local_no_sample_data_skips_without_redownload(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    gse_accession = "GSE5004"
+    local_dir = tmp_path / "mirror"
+    local_path = Path(get_local_path(gse_accession, str(local_dir)))
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+    local_path.write_text("VALID-BUT-EMPTY", encoding="utf-8")
+
+    monkeypatch.setattr(soft_module, "extract_sample_level_data", lambda _path: None)
+    monkeypatch.setattr(
+        soft_module,
+        "download_file_via_https",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("download should not be called for no-sample local SOFT")
+        ),
+    )
+    monkeypatch.setattr(
+        soft_module,
+        "download_file_via_ftp",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("download should not be called for no-sample local SOFT")
+        ),
+    )
+
+    with pytest.raises(soft_module.LocalSoftNoSampleDataError):
+        soft_module.soft_to_context_jsonl(
+            gse_accession=gse_accession,
+            work_dir=tmp_path,
+            geo_soft_local_dir=local_dir,
+            geo_soft_on_missing="remote",
+            geo_soft_remote_transport="https",
+        )
+
+    stderr = capsys.readouterr().err
+    assert (
+        f"WARNING: {gse_accession}: SOFT contains no SAMPLE data "
+        f"(No sample data extracted from {local_path}); skipping without re-download"
+    ) in stderr
+
+
 def test_local_parse_failure_after_redownload_does_not_retry_again(
     tmp_path: Path,
     monkeypatch,

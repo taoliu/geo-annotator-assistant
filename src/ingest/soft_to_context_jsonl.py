@@ -89,11 +89,35 @@ def _context_basename(source: Path) -> str:
     return name or source.stem
 
 
-class LocalSoftMissingError(FileNotFoundError):
-    def __init__(self, gse_accession: str, path: str) -> None:
-        super().__init__(f"GEO SOFT file not found for {gse_accession} at {path}")
+class LocalSoftSkipError(RuntimeError):
+    def __init__(self, gse_accession: str, path: str, message: str) -> None:
+        super().__init__(message)
         self.gse_accession = gse_accession
         self.path = path
+
+
+class LocalSoftMissingError(LocalSoftSkipError):
+    def __init__(self, gse_accession: str, path: str) -> None:
+        super().__init__(
+            gse_accession,
+            path,
+            f"GEO SOFT file not found for {gse_accession} at {path}",
+        )
+
+
+class LocalSoftNoSampleDataError(LocalSoftSkipError):
+    def __init__(self, gse_accession: str, path: str) -> None:
+        super().__init__(
+            gse_accession,
+            path,
+            f"GEO SOFT file for {gse_accession} at {path} contains no sample data",
+        )
+
+
+class NoSampleDataExtractedError(ValueError):
+    def __init__(self, soft_path: Path) -> None:
+        self.soft_path = str(soft_path)
+        super().__init__(f"No sample data extracted from {soft_path}")
 
 
 def _error_reason(exc: Exception) -> str:
@@ -106,7 +130,7 @@ def _error_reason(exc: Exception) -> str:
 def _write_context_jsonl(soft_path: Path, output_path: Path) -> str:
     gse_dict = extract_sample_level_data(str(soft_path))
     if not gse_dict:
-        raise ValueError(f"No sample data extracted from {soft_path}")
+        raise NoSampleDataExtractedError(soft_path)
     records = gse_dict_to_prompt(gse_dict)
     if not records:
         raise ValueError(f"No context records built from {soft_path}")
@@ -209,6 +233,16 @@ def soft_to_context_jsonl(
             return str(jsonl_path)
         try:
             result = _write_context_jsonl(soft_file, jsonl_path)
+        except NoSampleDataExtractedError as exc:
+            reason = _error_reason(exc)
+            action = "skipping without re-download"
+            if downloaded_fresh_copy:
+                action = "skipping"
+            print(
+                f"WARNING: {gse_accession}: SOFT contains no SAMPLE data ({reason}); {action}",
+                file=sys.stderr,
+            )
+            raise LocalSoftNoSampleDataError(gse_accession, str(soft_file)) from exc
         except Exception as exc:
             reason = _error_reason(exc)
             if geo_soft_on_missing != "remote":
@@ -248,6 +282,13 @@ def soft_to_context_jsonl(
             )
             try:
                 result = _write_context_jsonl(soft_file, jsonl_path)
+            except NoSampleDataExtractedError as retry_exc:
+                retry_reason = _error_reason(retry_exc)
+                print(
+                    f"WARNING: {gse_accession}: SOFT contains no SAMPLE data after re-download ({retry_reason}); skipping",
+                    file=sys.stderr,
+                )
+                raise LocalSoftNoSampleDataError(gse_accession, str(soft_file)) from retry_exc
             except Exception as retry_exc:
                 retry_reason = _error_reason(retry_exc)
                 print(
