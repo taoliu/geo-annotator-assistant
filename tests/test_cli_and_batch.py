@@ -685,3 +685,38 @@ def test_cli_gse_file_skips_no_sample_local_soft(tmp_path: Path, monkeypatch, ca
     assert "WARNING: GEO SOFT file for GSE111" in warning
     assert "contains no sample data; skipping." in warning
     assert (tmp_path / "out" / "GSE222" / "annotations.jsonl").exists()
+
+
+def test_cli_gse_soft_skips_no_sample_soft_file(tmp_path: Path, monkeypatch, capsys) -> None:
+    from agent import cli
+    from ingest.soft_to_context_jsonl import SoftNoSampleDataError
+
+    config_path = str(ROOT / "config" / "example_config.yaml")
+    soft_path = tmp_path / "GSE111_family.soft.gz"
+    soft_path.write_text("VALID-BUT-EMPTY", encoding="utf-8")
+
+    def _fake_run_gse_from_soft_file(
+        soft_file: str,
+        cfg: dict,
+        work_dir: str,
+        llm_client=None,
+    ):
+        raise SoftNoSampleDataError(soft_file, gse_accession="GSE111")
+
+    monkeypatch.setattr(cli, "run_gse_from_soft_file", _fake_run_gse_from_soft_file)
+
+    cli.main(
+        [
+            "--gse-soft",
+            str(soft_path),
+            "--config",
+            config_path,
+            "--output-dir",
+            str(tmp_path / "out"),
+        ]
+    )
+
+    warning = capsys.readouterr().err
+    assert "WARNING: GEO SOFT file for GSE111" in warning
+    assert "contains no sample data; skipping." in warning
+    assert not (tmp_path / "out" / "annotations.jsonl").exists()

@@ -416,6 +416,71 @@ def test_local_no_sample_data_skips_without_redownload(
     ) in stderr
 
 
+def test_remote_only_cached_no_sample_data_skips_without_download(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    gse_accession = "GSE5005"
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    cached_soft = cache_dir / f"{gse_accession}_family.soft.gz"
+    cached_soft.write_text("VALID-BUT-EMPTY", encoding="utf-8")
+
+    monkeypatch.setattr(soft_module, "extract_sample_level_data", lambda _path: None)
+    monkeypatch.setattr(
+        soft_module,
+        "download_file_via_https",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("download should not be called for cached no-sample SOFT")
+        ),
+    )
+    monkeypatch.setattr(
+        soft_module,
+        "download_file_via_ftp",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("download should not be called for cached no-sample SOFT")
+        ),
+    )
+
+    with pytest.raises(soft_module.SoftNoSampleDataError):
+        soft_module.soft_to_context_jsonl(
+            gse_accession=gse_accession,
+            work_dir=tmp_path,
+            soft_cache_dir=cache_dir,
+        )
+
+    stderr = capsys.readouterr().err
+    assert f"INFO: {gse_accession}: using cached SOFT at {cached_soft}" in stderr
+    assert (
+        f"WARNING: {gse_accession}: SOFT contains no SAMPLE data "
+        f"(No sample data extracted from {cached_soft}); skipping"
+    ) in stderr
+
+
+def test_explicit_soft_path_no_sample_data_skips(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    soft_path = tmp_path / "GSE5006_family.soft.gz"
+    soft_path.write_text("VALID-BUT-EMPTY", encoding="utf-8")
+
+    monkeypatch.setattr(soft_module, "extract_sample_level_data", lambda _path: None)
+
+    with pytest.raises(soft_module.SoftNoSampleDataError):
+        soft_module.soft_to_context_jsonl(
+            soft_path=str(soft_path),
+            work_dir=tmp_path,
+        )
+
+    stderr = capsys.readouterr().err
+    assert (
+        f"WARNING: SOFT contains no SAMPLE data "
+        f"(No sample data extracted from {soft_path}); skipping"
+    ) in stderr
+
+
 def test_local_parse_failure_after_redownload_does_not_retry_again(
     tmp_path: Path,
     monkeypatch,

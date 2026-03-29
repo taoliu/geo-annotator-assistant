@@ -25,7 +25,7 @@ from agent.suggestions import build_gse_suggestions
 from agent import standardize_cli
 from agent.writer import write_run_outputs
 from llm.factory import create_llm_client
-from ingest.soft_to_context_jsonl import LocalSoftSkipError
+from ingest.soft_to_context_jsonl import GseSoftSkipError
 
 
 class _ArgumentParser(argparse.ArgumentParser):
@@ -263,7 +263,7 @@ def main(argv: list[str] | None = None) -> None:
                         output_base_dir,
                         llm_client=llm_client,
                     )
-                except LocalSoftSkipError as exc:
+                except GseSoftSkipError as exc:
                     print(
                         f"WARNING: {exc}; skipping.",
                         file=sys.stderr,
@@ -286,7 +286,7 @@ def main(argv: list[str] | None = None) -> None:
                             output_base_dir,
                             llm_client=llm_client,
                         )
-                    except LocalSoftSkipError as exc:
+                    except GseSoftSkipError as exc:
                         print(
                             f"WARNING: {exc}; skipping.",
                             file=sys.stderr,
@@ -327,19 +327,26 @@ def main(argv: list[str] | None = None) -> None:
                     _print_summary(summary, output_paths, args.dry_run)
                 return
             elif args.gse_soft:
-                (
-                    annotations,
-                    audits,
-                    flagged,
-                    summary,
-                    gse_report,
-                    gse_values,
-                ) = run_gse_from_soft_file(
-                    args.gse_soft,
-                    config,
-                    output_base_dir,
-                    llm_client=llm_client,
-                )
+                try:
+                    (
+                        annotations,
+                        audits,
+                        flagged,
+                        summary,
+                        gse_report,
+                        gse_values,
+                    ) = run_gse_from_soft_file(
+                        args.gse_soft,
+                        config,
+                        output_base_dir,
+                        llm_client=llm_client,
+                    )
+                except GseSoftSkipError as exc:
+                    print(
+                        f"WARNING: {exc}; skipping.",
+                        file=sys.stderr,
+                    )
+                    return
             else:
                 raise ValueError("No input mode selected.")
 
