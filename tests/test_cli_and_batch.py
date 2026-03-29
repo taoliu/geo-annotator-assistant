@@ -280,6 +280,154 @@ def test_cli_gse_file_outputs_per_gse(tmp_path: Path, monkeypatch) -> None:
         assert (output_dir / "audit.jsonl").exists()
 
 
+def test_cli_gse_file_resume_skips_completed_gse_dirs(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    from agent import cli
+
+    config_path = str(ROOT / "config" / "example_config.yaml")
+    gse_file = tmp_path / "gse_list.txt"
+    gse_file.write_text("GSE111\nGSE222\n", encoding="utf-8")
+    completed_dir = tmp_path / "out" / "GSE111"
+    completed_dir.mkdir(parents=True)
+    for filename in (
+        "annotations.jsonl",
+        "audit.jsonl",
+        "flagged.jsonl",
+        "curation.tsv",
+        "curation.jsonl",
+        "evidence.jsonl",
+    ):
+        (completed_dir / filename).write_text("done\n", encoding="utf-8")
+
+    calls: list[str] = []
+
+    def _fake_run_gse_from_accession(
+        gse_accession: str,
+        cfg: dict,
+        work_dir: str,
+        llm_client=None,
+    ):
+        calls.append(gse_accession)
+        annotation = {
+            "gse_accession": gse_accession,
+            "gsm_accession": f"{gse_accession}_GSM1",
+            "data_type": "Unknown",
+            "organism": "Unknown",
+            "tissue_type": "Unknown",
+            "cell_line": "No",
+            "disease": "Healthy",
+            "treatment": "None",
+        }
+        audit = {
+            "gse_accession": gse_accession,
+            "gsm_accession": f"{gse_accession}_GSM1",
+            "final_decision": "ACCEPTED",
+            "final_output": dict(annotation),
+            "rationale": {
+                "final_decision": "ACCEPTED",
+                "primary_failure": None,
+                "terminal_fallback_fields": [],
+                "n_llm_calls": 0,
+                "attempts_by_field": {},
+                "ontology_status_by_field": {},
+                "flags": [],
+            },
+        }
+        summary = {"n_total": 1, "n_accepted": 1, "n_flagged": 0}
+        return [annotation], [audit], [], summary, None, None
+
+    monkeypatch.setattr(cli, "run_gse_from_accession", _fake_run_gse_from_accession)
+
+    cli.main(
+        [
+            "--gse-file",
+            str(gse_file),
+            "--config",
+            config_path,
+            "--output-dir",
+            str(tmp_path / "out"),
+            "--resume",
+        ]
+    )
+
+    assert calls == ["GSE222"]
+    stderr = capsys.readouterr().err
+    assert (
+        f"INFO: GSE111: existing outputs found at {completed_dir}; skipping (--resume)"
+        in stderr
+    )
+
+
+def test_cli_gse_file_resume_does_not_skip_partial_gse_dirs(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from agent import cli
+
+    config_path = str(ROOT / "config" / "example_config.yaml")
+    gse_file = tmp_path / "gse_list.txt"
+    gse_file.write_text("GSE111\n", encoding="utf-8")
+    partial_dir = tmp_path / "out" / "GSE111"
+    partial_dir.mkdir(parents=True)
+    (partial_dir / "annotations.jsonl").write_text("partial\n", encoding="utf-8")
+
+    calls: list[str] = []
+
+    def _fake_run_gse_from_accession(
+        gse_accession: str,
+        cfg: dict,
+        work_dir: str,
+        llm_client=None,
+    ):
+        calls.append(gse_accession)
+        annotation = {
+            "gse_accession": gse_accession,
+            "gsm_accession": f"{gse_accession}_GSM1",
+            "data_type": "Unknown",
+            "organism": "Unknown",
+            "tissue_type": "Unknown",
+            "cell_line": "No",
+            "disease": "Healthy",
+            "treatment": "None",
+        }
+        audit = {
+            "gse_accession": gse_accession,
+            "gsm_accession": f"{gse_accession}_GSM1",
+            "final_decision": "ACCEPTED",
+            "final_output": dict(annotation),
+            "rationale": {
+                "final_decision": "ACCEPTED",
+                "primary_failure": None,
+                "terminal_fallback_fields": [],
+                "n_llm_calls": 0,
+                "attempts_by_field": {},
+                "ontology_status_by_field": {},
+                "flags": [],
+            },
+        }
+        summary = {"n_total": 1, "n_accepted": 1, "n_flagged": 0}
+        return [annotation], [audit], [], summary, None, None
+
+    monkeypatch.setattr(cli, "run_gse_from_accession", _fake_run_gse_from_accession)
+
+    cli.main(
+        [
+            "--gse-file",
+            str(gse_file),
+            "--config",
+            config_path,
+            "--output-dir",
+            str(tmp_path / "out"),
+            "--resume",
+        ]
+    )
+
+    assert calls == ["GSE111"]
+
+
 def test_cli_verbose_gse_file_emits_start_and_output_messages(
     tmp_path: Path,
     monkeypatch,

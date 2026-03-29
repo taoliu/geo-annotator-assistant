@@ -37,6 +37,14 @@ class _ArgumentParser(argparse.ArgumentParser):
 
 
 _OUTPUT_DIR_SENTINEL = object()
+_CORE_GSE_OUTPUT_FILENAMES = (
+    "annotations.jsonl",
+    "audit.jsonl",
+    "flagged.jsonl",
+    "curation.tsv",
+    "curation.jsonl",
+    "evidence.jsonl",
+)
 
 
 def _read_gsm_file(path: str) -> list[str]:
@@ -125,6 +133,22 @@ def _resolve_output_dir(
     return base_dir
 
 
+def _expected_gse_output_dir(base_dir: str, gse_accession: str) -> Path:
+    return Path(base_dir) / gse_accession
+
+
+def _has_complete_gse_outputs(
+    output_dir: str | Path,
+    *,
+    include_suggestions: bool = False,
+) -> bool:
+    output_path = Path(output_dir)
+    required = list(_CORE_GSE_OUTPUT_FILENAMES)
+    if include_suggestions:
+        required.append("suggestions.jsonl")
+    return all((output_path / filename).is_file() for filename in required)
+
+
 def _collect_gse_accessions(annotations: list[dict]) -> list[str]:
     gse_values = {
         str(record.get("gse_accession"))
@@ -181,6 +205,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--verbose",
         action="store_true",
         help="Emit runtime milestone tracing to stderr for pipeline execution steps.",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="For `--gse-file`, skip GSEs whose per-GSE output directory already has complete outputs.",
     )
     return parser
 
@@ -271,6 +300,19 @@ def main(argv: list[str] | None = None) -> None:
                     return
             elif args.gse_file:
                 for gse_accession in gse_ids:
+                    expected_output_dir = _expected_gse_output_dir(
+                        output_base_dir,
+                        gse_accession,
+                    )
+                    if args.resume and _has_complete_gse_outputs(
+                        expected_output_dir,
+                        include_suggestions=args.emit_suggestions,
+                    ):
+                        print(
+                            f"INFO: {gse_accession}: existing outputs found at {expected_output_dir}; skipping (--resume)",
+                            file=sys.stderr,
+                        )
+                        continue
                     log_gse_start_processing(gse_accession)
                     try:
                         (
