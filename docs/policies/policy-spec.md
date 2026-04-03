@@ -219,6 +219,7 @@ Repair routing is defined by `spec/decision_table.yaml` and executed in `src/age
 Note: `spec/decision_table.yaml` retains a `healthy_disease_conflict` entry, but current pipeline routing excludes this code before decision selection, so no repair or escalation occurs for that flag.
 
 Terminal fallback values are recorded and prevent further repairs for that field in the same run (`src/agent/repair_loop.py`).
+If decision routing later targets a field that is already locked, already terminal-fallbacked, or already set to the same fallback value, the repair loop clears that routed failure and continues **without** a fresh validation pass because `final_output` is unchanged. This preserves bounded convergence for no-op authoritative branches.
 
 ## 9. Final Decision Logic
 - **ACCEPT**: no unresolved failures after repair loop, or failures mapped to ACCEPT in the decision table.

@@ -95,6 +95,32 @@ def test_terminal_fallback_blocks_repair() -> None:
     assert result.repair_history[0]["failure_code"] == "cell_line_is_cell_type"
 
 
+def test_existing_fallback_value_does_not_revalidate() -> None:
+    state = PipelineState(
+        gsm_accession="GSM557",
+        semantic_errors={"cell_line": ["cell_line_is_cell_type"]},
+        final_output={"cell_line": "No"},
+    )
+    callback_calls = {"n": 0}
+
+    def _should_not_run(_state: PipelineState) -> None:
+        callback_calls["n"] += 1
+        raise AssertionError("validation callback should not run for no-op fallback")
+
+    result = apply_repairs(
+        state,
+        _decision_table(),
+        validation_callback=_should_not_run,
+    )
+
+    assert result.final_decision == "ACCEPT"
+    assert result.final_output == {"cell_line": "No"}
+    assert result.attempts_by_field == {}
+    assert result.repair_history == []
+    assert result.terminal_fallback_fields == {"cell_line"}
+    assert callback_calls["n"] == 0
+
+
 def test_unknown_failure_escalates() -> None:
     state = PipelineState(
         gsm_accession="GSM333",

@@ -12,7 +12,11 @@ if str(SRC) not in sys.path:
 from agent.config import load_config
 from agent.run_single import run_single_from_context_record
 import agent.run_single as run_single_module
+from ingest.read_context_jsonl import iter_gsm_contexts
+from ingest.soft_to_context_jsonl import soft_to_context_jsonl
 from llm.base import LLMRequest, LLMResult, compute_request_fingerprint
+from validator.consistency_validator import ASSAY_PLATFORM_CONFLICT
+from validator.ontology_match import OntologyMatch
 from validator.format_validator import ERROR_WORD_LIMIT
 
 
@@ -55,6 +59,30 @@ def _make_output(**overrides: str) -> str:
     }
     base.update(overrides)
     return json.dumps(base, ensure_ascii=True)
+
+
+def _load_soft_record(tmp_path: Path, gsm_accession: str) -> dict:
+    soft_path = ROOT / "testing_data" / "GSE297202_family.soft.gz"
+    jsonl_path = soft_to_context_jsonl(soft_path=str(soft_path), work_dir=tmp_path)
+    for record in iter_gsm_contexts(jsonl_path):
+        if record["gsm_accession"] == gsm_accession:
+            return record
+    raise AssertionError(f"Context record not found for {gsm_accession}")
+
+
+def _matched_ontology(field: str, raw_value: str) -> OntologyMatch:
+    return OntologyMatch(
+        field=field,
+        raw_value=raw_value,
+        ontology=f"{field}-test",
+        status="MATCHED",
+        matched_term_id=f"{field}:1",
+        matched_label=raw_value,
+        matched_source="test",
+        match_type="label_exact",
+        score=1.0,
+        alternates=[],
+    )
 
 
 def test_format_repair_pre_loop_fixes_word_limit(monkeypatch) -> None:
@@ -208,3 +236,86 @@ def test_format_error_details_stage_format_repair(monkeypatch) -> None:
             "stage": "format_repair",
         }
     ]
+
+
+def test_gsm8986011_noop_terminal_fallback_does_not_spin(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    cfg = _load_stub_config()
+    record = _load_soft_record(tmp_path, "GSM8986011")
+
+    outputs = [
+        _make_output(
+            gse_accession="GSE297202",
+            gsm_accession="GSM8986011",
+            data_type="Microarray",
+            organism="Mus musculus",
+            tissue_type="Blood",
+            cell_line="No",
+            disease="Healthy",
+            treatment="None",
+        ),
+        _make_output(
+            gse_accession="GSE297202",
+            gsm_accession="GSM8986011",
+            data_type="Microarray",
+            organism="Mus musculus",
+            tissue_type="Blood",
+            cell_line="No",
+            disease="Healthy",
+            treatment="None",
+        ),
+        _make_output(
+            gse_accession="GSE297202",
+            gsm_accession="GSM8986011",
+            data_type="Microarray",
+            organism="Mus musculus",
+            tissue_type="Blood",
+            cell_line="No",
+            disease="Healthy",
+            treatment="None",
+        ),
+    ]
+    fake_client = FakeLLMClient(outputs)
+
+    def _fake_ground_all_fields(parsed_output, context_text, rag_cfg):
+        del context_text, rag_cfg
+        matches = {
+            field: _matched_ontology(field, parsed_output.get(field, ""))
+            for field in ("data_type", "tissue_type", "cell_line", "disease")
+        }
+        return matches, {}
+
+    monkeypatch.setattr(run_single_module, "ground_all_fields", _fake_ground_all_fields)
+    monkeypatch.setattr(
+        run_single_module,
+        "consistency_validate",
+        lambda parsed_output, context_text, **kwargs: [ASSAY_PLATFORM_CONFLICT],
+    )
+
+    validation_calls = {"n": 0}
+
+    def _count_validation(_gsm_accession: str) -> None:
+        validation_calls["n"] += 1
+        if validation_calls["n"] > 6:
+            raise AssertionError("validation loop exceeded bounded no-op retries")
+
+    monkeypatch.setattr(
+        run_single_module,
+        "log_gsm_validation_completed",
+        _count_validation,
+    )
+
+    output, audit_record, flagged = run_single_from_context_record(
+        record,
+        cfg,
+        llm_client=fake_client,
+    )
+
+    assert flagged is False
+    assert output["data_type"] == "Unknown"
+    assert audit_record["final_decision"] == "ACCEPT"
+    assert audit_record["attempts_by_field"] == {"data_type": 3}
+    assert audit_record["rationale"]["terminal_fallback_fields"] == ["data_type"]
+    assert validation_calls["n"] == 4

@@ -84,6 +84,18 @@ def _clear_failures_for_field(state: PipelineState, field: str) -> None:
         state.consistency_flags = []
 
 
+def _clear_routed_failure(
+    state: PipelineState,
+    field: str,
+    failure_code: Optional[str],
+) -> None:
+    _clear_failures_for_field(state, field)
+    if failure_code and failure_code in state.consistency_flags:
+        state.consistency_flags = [
+            flag for flag in state.consistency_flags if flag != failure_code
+        ]
+
+
 def _increment_attempts(state: PipelineState, field: str) -> None:
     state.attempts_by_field[field] = state.attempts_by_field.get(field, 0) + 1
 
@@ -207,23 +219,16 @@ def apply_repairs(
             decision.decision_type in {"FALLBACK", "REPAIR"}
             and field in state.locked_fields
         ):
-            _clear_failures_for_field(state, field)
-            if validation_callback is not None:
-                validation_callback(state)
+            # Locked fields are authoritative; avoid revalidating unchanged output.
+            _clear_routed_failure(state, field, decision.failure_code)
             continue
 
         if (
             decision.decision_type in {"FALLBACK", "REPAIR"}
             and field in state.terminal_fallback_fields
         ):
-            _clear_failures_for_field(state, field)
-            if decision.failure_code and decision.failure_code in state.consistency_flags:
-                state.consistency_flags = [
-                    flag for flag in state.consistency_flags
-                    if flag != decision.failure_code
-                ]
-            if validation_callback is not None:
-                validation_callback(state)
+            # Terminal fallback fields are authoritative for the rest of the run.
+            _clear_routed_failure(state, field, decision.failure_code)
             continue
 
         if decision.decision_type == "FALLBACK":
@@ -242,17 +247,7 @@ def apply_repairs(
                 # Already at fallback value → do NOT count another attempt
                 if is_terminal:
                     state.terminal_fallback_fields.add(field)
-                _clear_failures_for_field(state, field)
-
-                if decision.failure_code in state.consistency_flags:
-                    state.consistency_flags = [
-                        flag for flag in state.consistency_flags
-                        if flag != decision.failure_code
-                    ]
-
-                if validation_callback is not None:
-                    validation_callback(state)
-
+                _clear_routed_failure(state, field, decision.failure_code)
                 continue
 
             # Normal fallback (first time)
@@ -269,13 +264,7 @@ def apply_repairs(
                 }
             )
 
-            _clear_failures_for_field(state, field)
-
-            if decision.failure_code in state.consistency_flags:
-                state.consistency_flags = [
-                    flag for flag in state.consistency_flags
-                    if flag != decision.failure_code
-                ]
+            _clear_routed_failure(state, field, decision.failure_code)
 
             if validation_callback is not None:
                 validation_callback(state)
