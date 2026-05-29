@@ -32,9 +32,9 @@ dependencies = [
 ]
 
 [project.scripts]
-geo-gsm-annotate = "agent.cli:main"
-geo-gsm-summarize = "agent.summarize_cli:main"
-geo-gsm-ui = "ui.cli:main"
+gaa-annotate = "agent.cli:main"
+gaa-summarize = "agent.summarize_cli:main"
+gaa-ui = "ui.cli:main"
 
 [project.urls]
 Repository = "https://github.com/taoliu/geo-annotator-assistant"

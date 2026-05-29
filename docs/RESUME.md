@@ -69,9 +69,9 @@ The system prioritizes correctness, transparency, and reproducibility over autom
 ## Intended Workflow
 
 1. Prepare a YAML configuration
-2. Run `geo-gsm-annotate` on GSE(s)
+2. Run `gaa-annotate` on GSE(s)
 3. Review and curate results via the web UI
-4. Export final CSVs using `geo-gsm-summarize` or via web UI export
+4. Export final CSVs using `gaa-summarize` or via web UI export
 
 ---
 
@@ -104,9 +104,8 @@ Defined in `docs/whitepaper.md`.
 
 ## Repository Entry Points
 
-* Agent CLI: `geo-gsm-annotate`
-* Post-curation export CLI: `geo-gsm-summarize`
-* Curator UI: `geo-gsm-ui`
+* Agent CLI: `gaa-annotate`
+* Post-curation export CLI: `gaa-summarize`
+* Curator UI: `gaa-ui`
 
 ---
-

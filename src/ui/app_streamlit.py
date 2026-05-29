@@ -4555,7 +4555,7 @@ def _render_export_final_annotations(inputs: InputScanResult) -> None:
     with st.expander("Exports", expanded=False):
         if error:
             st.error(
-                "Export generation failed for geo-gsm-summarize-equivalent outputs: "
+                "Export generation failed for gaa-summarize-equivalent outputs: "
                 f"{error}"
             )
             return
@@ -4581,7 +4581,7 @@ def _render_export_all_sidebar(inputs: InputScanResult) -> None:
     error = cache.get("error", "")
     if error:
         st.sidebar.error(
-            "Export generation failed for geo-gsm-summarize-equivalent outputs: "
+            "Export generation failed for gaa-summarize-equivalent outputs: "
             f"{error}"
         )
         return

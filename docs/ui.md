@@ -5,7 +5,7 @@
 From the repository root:
 
 ```
-geo-gsm-ui --input-dir <DIR>
+gaa-ui --input-dir <DIR>
 ```
 
 Where `<DIR>` contains:

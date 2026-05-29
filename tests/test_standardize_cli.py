@@ -57,10 +57,10 @@ def test_standardize_cli_help_includes_defaults_and_examples() -> None:
     assert "audit: <output>.audit.jsonl" in help_text
     assert "canonicalize: respect config" in help_text
     assert "Examples:" in help_text
-    assert "geo-gsm-annotate standardize-terms -i curated.jsonl" in help_text
+    assert "gaa-annotate standardize-terms -i curated.jsonl" in help_text
 
 
-def test_geo_gsm_annotate_help_lists_standardize_terms(capsys) -> None:
+def test_gaa_annotate_help_lists_standardize_terms(capsys) -> None:
     with pytest.raises(SystemExit) as exc:
         agent_cli.main(["--help"])
     assert exc.value.code == 0

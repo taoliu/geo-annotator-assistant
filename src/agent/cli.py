@@ -164,7 +164,7 @@ def _build_parser() -> argparse.ArgumentParser:
         [
             "Subcommands:",
             "  standardize-terms  Standardize curator-provided GSM annotations.",
-            "Use `geo-gsm-annotate standardize-terms --help` for details.",
+            "Use `gaa-annotate standardize-terms --help` for details.",
         ]
     )
     parser = _ArgumentParser(

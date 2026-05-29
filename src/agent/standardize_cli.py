@@ -60,8 +60,8 @@ def _examples_text() -> str:
     return "\n".join(
         [
             "Examples:",
-            "  geo-gsm-annotate standardize-terms -i curated.jsonl",
-            "  geo-gsm-annotate standardize-terms -i curated.jsonl -o out.jsonl -f disease,cell_line",
+            "  gaa-annotate standardize-terms -i curated.jsonl",
+            "  gaa-annotate standardize-terms -i curated.jsonl -o out.jsonl -f disease,cell_line",
         ]
     )
 

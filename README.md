@@ -5,11 +5,11 @@ Deterministic, audit-first annotation pipeline for GEO GSM metadata, with human 
 ## Intended Workflow
 
 1. Prepare a YAML configuration.
-2. Run `geo-gsm-annotate` on GSE(s).
+2. Run `gaa-annotate` on GSE(s).
 3. Curate results in the web UI.
-4. Export reporting CSVs with `geo-gsm-summarize` or similar functions on web UI.
+4. Export reporting CSVs with `gaa-summarize` or similar functions on web UI.
 
-Curator overrides are post-processing inputs. They are not accepted by `geo-gsm-annotate`.
+Curator overrides are post-processing inputs. They are not accepted by `gaa-annotate`.
 
 ## Install / Run
 
@@ -23,7 +23,7 @@ Run tests:
 uv run pytest -q
 ```
 
-## CLI: `geo-gsm-annotate`
+## CLI: `gaa-annotate`
 
 Primary backend runner.
 
@@ -43,26 +43,26 @@ Core flags:
 - `--verbose` (runtime milestone logs to stderr)
 
 Subcommand:
-- `geo-gsm-annotate standardize-terms ...`
+- `gaa-annotate standardize-terms ...`
 
 Examples:
 
 ```bash
 # Single GSE
-uv run geo-gsm-annotate \
+uv run gaa-annotate \
   --gse GSE161517 \
   --config config/example_config.yaml \
   --output-dir out/run_single
 
 # Multi-GSE batch from file
-uv run geo-gsm-annotate \
+uv run gaa-annotate \
   --gse-file gse_list.txt \
   --config config/example_config.yaml \
   --output-dir out/batch \
   --verbose
 
 # Dry run
-uv run geo-gsm-annotate \
+uv run gaa-annotate \
   --gse GSE161517 \
   --config config/example_config.yaml \
   --dry-run
@@ -72,12 +72,12 @@ Batch behavior:
 - `--gse-file` processes each GSE independently and writes per-GSE outputs.
 - Local SOFT missing/skip cases are handled per GSE (warnings + continue where applicable).
 
-## Web UI: `geo-gsm-ui`
+## Web UI: `gaa-ui`
 
 Human-in-the-loop curation interface over existing outputs.
 
 ```bash
-uv run geo-gsm-ui --input-dir out/batch
+uv run gaa-ui --input-dir out/batch
 ```
 
 Notes:
@@ -85,12 +85,12 @@ Notes:
 - UI actions do not rerun backend inference/validation/repair/grounding.
 - Saved UI artifacts are reused by summarization.
 
-## CLI: `geo-gsm-summarize`
+## CLI: `gaa-summarize`
 
 Read-only export command for curated outputs.
 
 ```bash
-uv run geo-gsm-summarize --input-dir out/batch --output-dir out/reports
+uv run gaa-summarize --input-dir out/batch --output-dir out/reports
 ```
 
 Behavior:
@@ -158,4 +158,3 @@ ingest:
 - Architecture and invariants: `docs/whitepaper.md`
 - Policy semantics: `docs/policies/policy-spec.md`
 - Ticketed changes: `docs/tickets/`
-
