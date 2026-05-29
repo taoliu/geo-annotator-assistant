@@ -1,4 +1,4 @@
-# GEO GSM Annotator Agent
+# GEO Annotator Assistant
 
 Deterministic, audit-first annotation pipeline for GEO GSM metadata, with human curation and post-processing export.
 
